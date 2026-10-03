@@ -39,4 +39,10 @@ describe('module access (R-AUTH-05, R-AUTH-06)', () => {
     expect(hasAnyRole([], [])).toBe(true);
     expect(hasAnyRole([], ['ADMIN'])).toBe(false);
   });
+
+  it('ADMIN has every module, others only theirs', () => {
+    expect(hasAnyRole(['ADMIN'], ['COMPTA'])).toBe(true);
+    expect(hasAnyRole(['CAISSE'], ['COMPTA'])).toBe(false);
+    expect(visibleModules(['ADMIN']).map((m) => m.key)).toContain('compta');
+  });
 });

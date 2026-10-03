@@ -57,8 +57,10 @@ export function parseLegacyPerms(perms: string | null | undefined): LegacyPermsR
   return { roles: ROLE_CODES.filter((r) => found.has(r)), unknown };
 }
 
+/** ADMIN opens everything: the administrator has every module without being given each role. */
 export function hasAnyRole(userRoles: readonly RoleCode[], required: readonly RoleCode[]): boolean {
   if (required.length === 0) return true;
+  if (userRoles.includes('ADMIN')) return true;
   return required.some((r) => userRoles.includes(r));
 }
 

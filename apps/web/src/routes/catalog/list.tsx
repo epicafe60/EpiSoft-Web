@@ -1,3 +1,4 @@
+import { hasAnyRole } from '@episoft/shared';
 import { useDeferredValue, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +24,7 @@ import { QueryError } from '../errors';
 
 export function ProductsPage() {
   const me = useMe();
-  const canEdit = me.roles.includes('PRODUITS');
+  const canEdit = hasAnyRole(me.roles, ['PRODUITS']);
   const queryClient = useQueryClient();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<ProductStatus | ''>('ACTIVE');

@@ -1,3 +1,4 @@
+import { hasAnyRole } from '@episoft/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Trash2 } from 'lucide-react';
 import {
@@ -63,7 +64,7 @@ export function PaymentDialog({
     .filter((p) => p.method === 'WALLET')
     .reduce((s, p) => s + p.amountCents, 0);
   const overdraft = parseAmountToCents(settings?.overdraftLimit ?? '0') ?? 0;
-  const canForce = me.roles.includes('ADHERENTS');
+  const canForce = hasAnyRole(me.roles, ['ADHERENTS']);
 
   useEffect(() => {
     if (open) {

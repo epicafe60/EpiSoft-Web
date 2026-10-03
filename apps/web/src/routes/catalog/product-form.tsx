@@ -1,3 +1,4 @@
+import { hasAnyRole } from '@episoft/shared';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -165,7 +166,7 @@ export function EditProductPage() {
 function ProductForm({ product }: { product: ProductDetail | null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const readOnly = !useMe().roles.includes('PRODUITS');
+  const readOnly = !hasAnyRole(useMe().roles, ['PRODUITS']);
   const [form, setForm] = useState<FormState>(product ? toForm(product) : EMPTY);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const refs = useQuery({
