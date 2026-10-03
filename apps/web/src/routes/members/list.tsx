@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import type { MemberListItem } from '@/lib/types';
 import { PageHeader } from '../shell';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 export function MembershipBadge({ end }: { end: string | null }) {
@@ -26,6 +27,14 @@ export function MembershipBadge({ end }: { end: string | null }) {
     return <Badge variant="destructive">Adhésion expirée le {formatDate(end)}</Badge>;
   return <Badge variant="muted">Pas d’adhésion</Badge>;
 }
+
+const MEMBER_SORT = {
+  number: (m: MemberListItem) => m.number,
+  name: (m: MemberListItem) => `${m.lastName} ${m.firstName}`,
+  contact: (m: MemberListItem) => m.email ?? m.phone,
+  household: (m: MemberListItem) => m.householdNumber,
+  balance: (m: MemberListItem) => (m.balance === null ? null : Number(m.balance)),
+};
 
 export function MembersPage() {
   const [q, setQ] = useState('');
@@ -41,6 +50,8 @@ export function MembersPage() {
     },
     placeholderData: (prev) => prev,
   });
+
+  const sort = useSort(data, MEMBER_SORT);
 
   return (
     <>
@@ -84,11 +95,21 @@ export function MembersPage() {
         <Table>
           <thead>
             <tr>
-              <th className="w-16">N°</th>
-              <th>Membre</th>
-              <th className="hidden md:table-cell">Contact</th>
-              <th>Foyer</th>
-              <th className="text-right">Cagnotte</th>
+              <SortTh state={sort} sortKey="number" className="w-16">
+                N°
+              </SortTh>
+              <SortTh state={sort} sortKey="name">
+                Membre
+              </SortTh>
+              <SortTh state={sort} sortKey="contact" className="hidden md:table-cell">
+                Contact
+              </SortTh>
+              <SortTh state={sort} sortKey="household">
+                Foyer
+              </SortTh>
+              <SortTh state={sort} sortKey="balance" className="text-right">
+                Cagnotte
+              </SortTh>
             </tr>
           </thead>
           <tbody>
@@ -105,7 +126,7 @@ export function MembersPage() {
                 </td>
               </tr>
             ) : (
-              data?.map((m) => (
+              sort.rows?.map((m) => (
                 <tr key={m.id}>
                   <td className="tabular-nums text-muted-foreground">{m.number}</td>
                   <td>

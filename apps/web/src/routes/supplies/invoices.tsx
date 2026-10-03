@@ -18,9 +18,18 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select, Textarea } from '@/components/ui/inputs';
 import type { InvoiceDetail, InvoiceRow, SupplierDetail, SupplierRow } from '@/lib/types-supplies';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const isDue = (d: string) => d <= todayIso();
+
+const INVOICE_SORT = {
+  due: (r: InvoiceRow) => r.dueDate,
+  supplier: (r: InvoiceRow) => r.supplierName,
+  piece: (r: InvoiceRow) => r.pieceRef,
+  status: (r: InvoiceRow) => r.status,
+  total: (r: InvoiceRow) => Number(r.totalIncl),
+};
 
 export function InvoicesPage() {
   const [view, setView] = useState<'schedule' | 'all'>('schedule');
@@ -39,6 +48,7 @@ export function InvoicesPage() {
     view === 'schedule'
       ? [...(data ?? [])].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       : (data ?? []);
+  const sort = useSort(rows, INVOICE_SORT);
   const total = rows
     .filter((r) => r.status === 'TO_PAY')
     .reduce((s, r) => s + Math.round(Number(r.totalIncl) * 100), 0);
@@ -76,11 +86,21 @@ export function InvoicesPage() {
         <Table>
           <thead>
             <tr>
-              <th>Échéance</th>
-              <th>Fournisseur</th>
-              <th>Pièce</th>
-              <th>État</th>
-              <th className="text-right">TTC</th>
+              <SortTh state={sort} sortKey="due">
+                Échéance
+              </SortTh>
+              <SortTh state={sort} sortKey="supplier">
+                Fournisseur
+              </SortTh>
+              <SortTh state={sort} sortKey="piece">
+                Pièce
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
+              <SortTh state={sort} sortKey="total" className="text-right">
+                TTC
+              </SortTh>
             </tr>
           </thead>
           <tbody>

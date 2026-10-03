@@ -29,12 +29,21 @@ import {
   type OrderStatus,
   type SupplierRow,
 } from '@/lib/types-supplies';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const statusVariant = (s: OrderStatus) =>
   s === 'RECEIVED' || s === 'CLOSED' ? 'success' : s === 'CANCELLED' ? 'muted' : 'default';
 
 /** R-CMD-08: list with supplier, status and period filters, totals and Excel export. */
+const ORDER_SORT = {
+  number: (o: OrderRow) => o.number,
+  date: (o: OrderRow) => o.date,
+  supplier: (o: OrderRow) => o.supplierName,
+  status: (o: OrderRow) => o.status,
+  total: (o: OrderRow) => Number(o.totalIncl),
+};
+
 export function OrdersPage() {
   const navigate = useNavigate();
   const [supplierId, setSupplierId] = useState('');
@@ -63,6 +72,7 @@ export function OrdersPage() {
     .filter((o) => o.status !== 'CANCELLED')
     .reduce((s, o) => s + Math.round(Number(o.totalIncl) * 100), 0);
 
+  const sort = useSort(data, ORDER_SORT);
   return (
     <div className="grid gap-4">
       <Card>
@@ -146,15 +156,25 @@ export function OrdersPage() {
         <Table>
           <thead>
             <tr>
-              <th>N°</th>
-              <th>Date</th>
-              <th>Fournisseur</th>
-              <th>État</th>
-              <th className="text-right">Total TTC</th>
+              <SortTh state={sort} sortKey="number">
+                N°
+              </SortTh>
+              <SortTh state={sort} sortKey="date">
+                Date
+              </SortTh>
+              <SortTh state={sort} sortKey="supplier">
+                Fournisseur
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
+              <SortTh state={sort} sortKey="total" className="text-right">
+                Total TTC
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {(data ?? []).map((o) => (
+            {(sort.rows ?? []).map((o) => (
               <tr key={o.id}>
                 <td>
                   <Link

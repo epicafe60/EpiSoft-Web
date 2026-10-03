@@ -13,6 +13,7 @@ import { useMe } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Input, Label } from '@/components/ui/form';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 function RolesEditor({ user, onDone }: { user: UserSummary; onDone: () => void }) {
@@ -81,6 +82,12 @@ function PasswordLinkButton({ user }: { user: UserSummary }) {
   );
 }
 
+const USER_SORT = {
+  number: (u: UserSummary) => u.number,
+  name: (u: UserSummary) => `${u.lastName} ${u.firstName}`,
+  roles: (u: UserSummary) => u.roles.length,
+};
+
 export function UsersPage() {
   const [q, setQ] = useState('');
   const [onlyWithRoles, setOnlyWithRoles] = useState(true);
@@ -95,6 +102,7 @@ export function UsersPage() {
     placeholderData: (prev) => prev,
   });
 
+  const sort = useSort(data, USER_SORT);
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-4">
@@ -126,9 +134,15 @@ export function UsersPage() {
         <Table>
           <thead>
             <tr>
-              <th className="w-16">N°</th>
-              <th>Membre</th>
-              <th>Rôles</th>
+              <SortTh state={sort} sortKey="number" className="w-16">
+                N°
+              </SortTh>
+              <SortTh state={sort} sortKey="name">
+                Membre
+              </SortTh>
+              <SortTh state={sort} sortKey="roles">
+                Rôles
+              </SortTh>
               <th className="w-0" />
             </tr>
           </thead>
@@ -146,7 +160,7 @@ export function UsersPage() {
                 </td>
               </tr>
             ) : (
-              data?.map((u) => (
+              sort.rows?.map((u) => (
                 <tr key={u.id} className="align-top">
                   <td className="tabular-nums text-muted-foreground">{u.number}</td>
                   <td>

@@ -20,7 +20,16 @@ import { Checkbox, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import type { ProductListItem } from '@/lib/types';
 import { PageHeader } from '../shell';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
+
+const PRODUCT_SORT = {
+  code: (p: ProductListItem) => p.code,
+  name: (p: ProductListItem) => p.name,
+  category: (p: ProductListItem) => p.categoryName,
+  price: (p: ProductListItem) => Number(p.salePrice),
+  stock: (p: ProductListItem) => Number(p.stockQty),
+};
 
 export function ProductsPage() {
   const me = useMe();
@@ -41,6 +50,7 @@ export function ProductsPage() {
     },
     placeholderData: (prev) => prev,
   });
+  const sort = useSort(data, PRODUCT_SORT);
   const labelsDone = useMutation({
     mutationFn: (ids: string[]) => api.post('/products/labels/done', { ids }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
@@ -116,11 +126,21 @@ export function ProductsPage() {
         <Table>
           <thead>
             <tr>
-              <th className="w-20">Code</th>
-              <th>Produit</th>
-              <th className="hidden md:table-cell">Rayon</th>
-              <th className="text-right">Prix</th>
-              <th className="text-right">Stock</th>
+              <SortTh state={sort} sortKey="code" className="w-20">
+                Code
+              </SortTh>
+              <SortTh state={sort} sortKey="name">
+                Produit
+              </SortTh>
+              <SortTh state={sort} sortKey="category" className="hidden md:table-cell">
+                Rayon
+              </SortTh>
+              <SortTh state={sort} sortKey="price" className="text-right">
+                Prix
+              </SortTh>
+              <SortTh state={sort} sortKey="stock" className="text-right">
+                Stock
+              </SortTh>
             </tr>
           </thead>
           <tbody>
@@ -137,7 +157,7 @@ export function ProductsPage() {
                 </td>
               </tr>
             ) : (
-              data?.map((p) => {
+              sort.rows?.map((p) => {
                 const stock = parseQtyToMilli(p.stockQty) ?? 0;
                 const low = p.minStock !== null && stock < (parseQtyToMilli(p.minStock) ?? 0);
                 return (

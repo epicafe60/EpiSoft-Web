@@ -16,6 +16,7 @@ import { Badge, Card, CardContent, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 import { useAccounts, useFiscalYears, useJournals } from './queries';
 import type { EntryDetail, EntryRow, TemplateCategory, TemplateRow } from './types';
@@ -29,6 +30,15 @@ const SOURCE_LABELS: Record<string, string> = {
   closing_stock: 'Clôture',
   closing_result: 'Clôture',
   closing_ran: 'À-nouveaux',
+};
+
+const ENTRY_SORT = {
+  date: (r: EntryRow) => r.date,
+  number: (r: EntryRow) => r.displayNumber,
+  label: (r: EntryRow) => r.label,
+  piece: (r: EntryRow) => r.pieceRef,
+  total: (r: EntryRow) => Number(r.total),
+  status: (r: EntryRow) => r.status,
 };
 
 export function EntriesPage() {
@@ -50,6 +60,7 @@ export function EntriesPage() {
     queryFn: () => api.get<EntryRow[]>(`/entries?${params}`),
   });
   const rows = data ?? [];
+  const sort = useSort(rows, ENTRY_SORT);
   const drafts = rows.filter((r) => r.status === 'DRAFT');
   const validate = useMutation({
     mutationFn: (ids: string[]) => api.post<{ validated: number }>('/entries/validate', { ids }),
@@ -141,16 +152,28 @@ export function EntriesPage() {
           <thead>
             <tr>
               <th className="w-8" />
-              <th>Date</th>
-              <th>N°</th>
-              <th>Libellé</th>
-              <th>Pièce</th>
-              <th className="text-right">Montant</th>
-              <th>État</th>
+              <SortTh state={sort} sortKey="date">
+                Date
+              </SortTh>
+              <SortTh state={sort} sortKey="number">
+                N°
+              </SortTh>
+              <SortTh state={sort} sortKey="label">
+                Libellé
+              </SortTh>
+              <SortTh state={sort} sortKey="piece">
+                Pièce
+              </SortTh>
+              <SortTh state={sort} sortKey="total" className="text-right">
+                Montant
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {(sort.rows ?? []).map((r) => (
               <tr key={r.id}>
                 <td>
                   {r.status === 'DRAFT' ? (

@@ -17,7 +17,16 @@ import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select, Textarea } from '@/components/ui/inputs';
 import type { Commune } from '@/lib/types';
 import { ORDER_STATUS_LABELS, type SupplierDetail, type SupplierRow } from '@/lib/types-supplies';
+import { SortTh, useSort } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
+
+const SUPPLIER_SORT = {
+  code: (s: SupplierRow) => s.code,
+  name: (s: SupplierRow) => s.name,
+  contact: (s: SupplierRow) => s.contact,
+  products: (s: SupplierRow) => s.products,
+  toPay: (s: SupplierRow) => Number(s.toPay),
+};
 
 export function SuppliersPage() {
   const [q, setQ] = useState('');
@@ -30,6 +39,7 @@ export function SuppliersPage() {
       ),
     placeholderData: (prev) => prev,
   });
+  const sort = useSort(data, SUPPLIER_SORT);
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -63,15 +73,25 @@ export function SuppliersPage() {
         <Table>
           <thead>
             <tr>
-              <th className="w-20">Code</th>
-              <th>Fournisseur</th>
-              <th className="hidden md:table-cell">Contact</th>
-              <th className="text-right">Produits</th>
-              <th className="text-right">À régler</th>
+              <SortTh state={sort} sortKey="code" className="w-20">
+                Code
+              </SortTh>
+              <SortTh state={sort} sortKey="name">
+                Fournisseur
+              </SortTh>
+              <SortTh state={sort} sortKey="contact" className="hidden md:table-cell">
+                Contact
+              </SortTh>
+              <SortTh state={sort} sortKey="products" className="text-right">
+                Produits
+              </SortTh>
+              <SortTh state={sort} sortKey="toPay" className="text-right">
+                À régler
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {(data ?? []).map((s) => (
+            {(sort.rows ?? []).map((s) => (
               <tr key={s.id}>
                 <td className="tabular-nums text-muted-foreground">{s.code}</td>
                 <td>
