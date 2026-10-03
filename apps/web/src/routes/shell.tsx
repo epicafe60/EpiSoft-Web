@@ -12,6 +12,7 @@ import {
   ShoppingBasket,
   ShoppingCart,
   Truck,
+  UserCog,
   Users,
   X,
   Store,
@@ -23,6 +24,7 @@ import { useMe, writeCachedMe } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { ImpersonateDialog, stopImpersonation } from './admin/impersonate-dialog';
 
 export const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   caisse: ShoppingCart,
@@ -38,6 +40,7 @@ export const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
 /** Principle 1: one app, the menu shows only the user's modules (R-AUTH-05). */
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
   const me = useMe();
+  const [dialog, setDialog] = useState(false);
   const linkClass =
     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground [&.active]:bg-primary/10 [&.active]:text-primary [&_svg]:size-4';
   return (
@@ -56,6 +59,19 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
           </Link>
         );
       })}
+      {/* While acting as someone else `me` is that user: the entry stays to allow going back. */}
+      {me.roles.includes('ADMIN') || me.impersonator ? (
+        <>
+          <button
+            type="button"
+            className={cn(linkClass, 'text-left')}
+            onClick={() => setDialog(true)}
+          >
+            <UserCog /> {me.impersonator ? 'Usurpation en cours' : 'Usurper un utilisateur'}
+          </button>
+          <ImpersonateDialog open={dialog} onClose={() => setDialog(false)} />
+        </>
+      ) : null}
     </nav>
   );
 }
@@ -64,12 +80,7 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
 function ImpersonationBanner() {
   const me = useMe();
   if (!me.impersonator) return null;
-  const stop = async () => {
-    await api.post('/auth/impersonate/stop');
-    writeCachedMe(null);
-    // A full reload drops every cached screen of the impersonated user.
-    window.location.assign('/admin/utilisateurs');
-  };
+  const stop = stopImpersonation;
   return (
     <div
       role="status"

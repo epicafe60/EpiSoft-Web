@@ -1,6 +1,6 @@
 import { useDeferredValue, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Search, UserCog } from 'lucide-react';
+import { KeyRound, Search } from 'lucide-react';
 import {
   MEMBER_STATUS_LABELS,
   ROLE_CODES,
@@ -9,7 +9,7 @@ import {
   type UserSummary,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
-import { useMe, writeCachedMe } from '@/lib/auth';
+import { useMe } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Input, Label } from '@/components/ui/form';
@@ -59,34 +59,6 @@ function RolesEditor({ user, onDone }: { user: UserSummary; onDone: () => void }
         </Button>
       </div>
     </div>
-  );
-}
-
-function ImpersonateButton({ user }: { user: UserSummary }) {
-  const start = useMutation({
-    mutationFn: () => api.post(`/admin/users/${user.id}/impersonate`),
-    onSuccess: () => {
-      writeCachedMe(null);
-      window.location.assign('/');
-    },
-  });
-  if (!user.username || user.roles.includes('ADMIN')) return null;
-  return (
-    <>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={start.isPending}
-        onClick={() =>
-          window.confirm(
-            `Agir en tant que ${user.firstName} ${user.lastName} ? Vous aurez ses droits et ses écrans ; vos actions seront journalisées à votre nom.`,
-          ) && start.mutate()
-        }
-      >
-        <UserCog /> Usurper
-      </Button>
-      {start.error ? <Alert>{start.error.message}</Alert> : null}
-    </>
   );
 }
 
@@ -225,7 +197,7 @@ export function UsersPage() {
                           Modifier
                         </Button>
                       ) : null}
-                      <ImpersonateButton user={u} />
+
                       <PasswordLinkButton user={u} />
                     </div>
                   </td>
