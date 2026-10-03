@@ -3,7 +3,10 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import {
+  jsonSchemaTransform,
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
@@ -37,6 +40,15 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   });
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
+
+  // OpenAPI description generated from the Zod schemas (spec §8.1). Browsable outside production.
+  await app.register(swagger, {
+    openapi: { info: { title: 'EpiSoft API', version: '1' }, servers: [{ url: '/' }] },
+    transform: jsonSchemaTransform,
+  });
+  if (config.NODE_ENV !== 'production') {
+    await app.register(swaggerUi, { routePrefix: '/docs' });
+  }
   await app.register(auth, { db, config });
 
   await app.register(

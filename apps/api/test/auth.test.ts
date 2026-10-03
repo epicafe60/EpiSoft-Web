@@ -166,3 +166,11 @@ describe('R-AUTH-02 password reset', () => {
     expect(await t.db.select().from(emailOutbox)).toHaveLength(0);
   });
 });
+
+describe('OpenAPI (§8.1)', () => {
+  it('documents the routes outside production', async () => {
+    const res = await t.app.inject({ url: '/docs/json' });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json().paths)).toContain('/api/v1/auth/login');
+  });
+});
