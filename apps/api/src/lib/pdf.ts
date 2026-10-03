@@ -8,7 +8,7 @@ import { formatEuro, type Settings } from '@episoft/shared';
 export type Doc = PDFKit.PDFDocument;
 
 export function pdfText(s: string): string {
-  return s.replace(/[  ]/g, ' ');
+  return s.replace(/[\u202f\u00a0]/g, ' ');
 }
 
 export function eur(v: string | number): string {

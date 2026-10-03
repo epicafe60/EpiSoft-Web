@@ -12,7 +12,6 @@ import {
   sale,
   saleLine,
   salePayment,
-  stockMovement,
   syncReceipt,
   userRole,
   walletEntry,
