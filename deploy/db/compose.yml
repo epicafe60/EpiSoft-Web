@@ -1,0 +1,48 @@
+# EpiSoft-Web: PostgreSQL 17 instance for the v2 application.
+#
+# Runs on the MinisForum (Debian 13) NEXT TO the production MariaDB, fully isolated from it:
+#   - its own container and Docker network
+#   - its own data volume: episoft-web-pgdata (managed by Docker)
+#   - its own port (5432), published on the LAN address only (never forwarded by the router)
+# The production MariaDB (port 6382), its data and its configuration are not touched.
+
+name: episoft-web-db
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: episoft-web-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: Europe/Paris
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./backups:/backups
+    ports:
+      # LAN only. PG_BIND_ADDR is set in .env (default 127.0.0.1 = server-local only).
+      - "${PG_BIND_ADDR:-127.0.0.1}:${PG_PORT:-5432}:5432"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=50
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - timezone=Europe/Paris
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d episoft"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+    name: episoft-web-pgdata
