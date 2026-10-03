@@ -1,26 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useQuery } from '@tanstack/react-query';
-import { estimatedBalanceCents, decimalToCents, type TillSettings } from '@episoft/shared';
+import { estimatedBalanceCents, decimalToCents } from '@episoft/shared';
 import { api } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { getMeta, tillDb, type MetaValues } from './db';
 import { pendingWalletMoves } from './logic';
 import { SyncEngine, type SyncState } from './sync';
-
-interface TillContextValue {
-  engine: SyncEngine;
-  sync: SyncState;
-  meta: MetaValues;
-  settings: TillSettings | null;
-  pendingCount: number;
-  rejectedCount: number;
-  cashierId: string;
-  /** R-OFF-04: server balance at the last refresh, minus the local moves not yet in it. */
-  balanceCents: (householdId: string) => number | null;
-}
-
-const TillContext = createContext<TillContextValue | null>(null);
+import { TillContext, type TillContextValue } from './context-core';
 
 const META_KEYS: (keyof MetaValues)[] = [
   'device',
