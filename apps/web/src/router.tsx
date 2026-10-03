@@ -40,6 +40,7 @@ import { BankPage, StatementPage } from './routes/compta/bank';
 import { PlanPage } from './routes/compta/plan';
 import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
+import { StatsPage } from './routes/stats/stats-page';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
@@ -120,6 +121,7 @@ const BUILT = new Set([
   'appros',
   'compta',
   'precommandes',
+  'stats',
 ]);
 
 const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
@@ -142,6 +144,13 @@ const preordersRoute = createRoute({
   path: '/precommandes',
   beforeLoad: requireRoles(['COMMANDES_EN_LIGNE', 'COMMANDES_GESTION']),
   component: PreordersPage,
+});
+
+const statsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stats',
+  beforeLoad: requireRoles(['STATS']),
+  component: StatsPage,
 });
 
 // --- Members (§4.2, §4.3) ---
@@ -432,6 +441,7 @@ const routeTree = rootRoute.addChildren([
     ...moduleRoutes,
     shopRoute,
     preordersRoute,
+    statsRoute,
     membersRoute,
     newMemberRoute,
     memberRoute,
