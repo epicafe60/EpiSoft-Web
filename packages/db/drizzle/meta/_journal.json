@@ -29,6 +29,20 @@
       "when": 1791051969211,
       "tag": "0003_membership_reminder",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791052328576,
+      "tag": "0004_lot2_supplies_stock",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791052428163,
+      "tag": "0005_invoice_due_reminder",
+      "breakpoints": true
     }
   ]
 }

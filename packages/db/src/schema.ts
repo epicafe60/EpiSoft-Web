@@ -31,7 +31,7 @@ import {
   WALLET_ENTRY_KINDS,
 } from '@episoft/shared';
 
-// Target data model, spec §6. Tables of lots 0 and 1; later lots add theirs here.
+// Target data model, spec §6. Tables of lots 0 to 2; later lots add theirs here.
 
 export const app = pgSchema('app');
 
@@ -320,6 +320,10 @@ export const supplier = app.table('supplier', {
   sendsPo: boolean('sends_po').notNull().default(false),
   /** Supplier account (401…). Becomes a foreign key to `account` in lot 3. */
   accountNumber: text('account_number'),
+  minOrderAmount: money('min_order_amount'),
+  /** Days between the invoice date and its due date (R-FAC-01). */
+  paymentTermsDays: integer('payment_terms_days').notNull().default(30),
+  deliveryDay: text('delivery_day'),
   legacyFnrcode: text('legacy_fnrcode').unique(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -716,3 +720,207 @@ export const membershipReminder = app.table('membership_reminder', {
   sentAt: tz('sent_at').notNull().defaultNow(),
   to: text('to'),
 });
+
+// ===========================================================================
+// Lot 2: supplies, receipts, invoices, inventory
+// ===========================================================================
+
+export const supplierPaymentMethod = app.enum('supplier_payment_method', [
+  'CASH',
+  'CHEQUE',
+  'CARD',
+  'TRANSFER',
+  'DIRECT_DEBIT',
+]);
+export const purchaseOrderStatus = app.enum('purchase_order_status', [
+  'DRAFT',
+  'SENT',
+  'PARTIAL',
+  'RECEIVED',
+  'CLOSED',
+  'CANCELLED',
+]);
+export const supplierInvoiceStatus = app.enum('supplier_invoice_status', ['TO_PAY', 'PAID']);
+export const inventoryStatus = app.enum('inventory_status', ['OPEN', 'VALIDATED', 'CANCELLED']);
+
+/** R-CMD-*: supplier purchase order; totals are recomputed from the lines. */
+export const purchaseOrder = app.table(
+  'purchase_order',
+  {
+    id: id(),
+    number: text('number').notNull().unique(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id),
+    date: date('date').notNull(),
+    status: purchaseOrderStatus('status').notNull().default('DRAFT'),
+    comment: text('comment'),
+    totalExcl: money('total_excl').notNull().default('0'),
+    totalVat: money('total_vat').notNull().default('0'),
+    totalIncl: money('total_incl').notNull().default('0'),
+    sentAt: tz('sent_at'),
+    sentTo: text('sent_to'),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    legacyFnrcomid: integer('legacy_fnrcomid').unique(),
+  },
+  (t) => [
+    index('purchase_order_supplier_idx').on(t.supplierId, t.date),
+    index('purchase_order_status_idx').on(t.status),
+  ],
+);
+
+export const purchaseOrderLine = app.table(
+  'purchase_order_line',
+  {
+    id: id(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => purchaseOrder.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    qtyOrdered: qty('qty_ordered').notNull(),
+    unitPriceExcl: price4('unit_price_excl').notNull(),
+    vatRate: numeric('vat_rate', { precision: 5, scale: 2 }).notNull(),
+    /** Sum of the received quantities (R-CMD-06). */
+    qtyReceived: qty('qty_received').notNull().default('0'),
+  },
+  (t) => [
+    index('purchase_order_line_order_idx').on(t.orderId),
+    check('purchase_order_line_qty_positive', sql`${t.qtyOrdered} > 0`),
+  ],
+);
+
+/** R-CMD-05: a receipt, with or without an order; its lines create PURCHASE_IN movements. */
+export const goodsReceipt = app.table(
+  'goods_receipt',
+  {
+    id: id(),
+    number: text('number').notNull().unique(),
+    orderId: uuid('order_id').references(() => purchaseOrder.id),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id),
+    date: date('date').notNull(),
+    receivedBy: uuid('received_by').references(() => member.id, { onDelete: 'set null' }),
+    comment: text('comment'),
+    createdAt: createdAt(),
+    legacyFnrcomid: integer('legacy_fnrcomid').unique(),
+  },
+  (t) => [
+    index('goods_receipt_supplier_idx').on(t.supplierId, t.date),
+    index('goods_receipt_order_idx').on(t.orderId),
+  ],
+);
+
+export const goodsReceiptLine = app.table(
+  'goods_receipt_line',
+  {
+    id: id(),
+    receiptId: uuid('receipt_id')
+      .notNull()
+      .references(() => goodsReceipt.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    qty: qty('qty').notNull(),
+    unitPriceExcl: price4('unit_price_excl').notNull(),
+    vatRate: numeric('vat_rate', { precision: 5, scale: 2 }).notNull(),
+    orderLineId: uuid('order_line_id').references(() => purchaseOrderLine.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => [
+    index('goods_receipt_line_receipt_idx').on(t.receiptId),
+    check('goods_receipt_line_qty_positive', sql`${t.qty} > 0`),
+  ],
+);
+
+/** R-FAC-01: supplier invoice. The accounting entries (R-FAC-03/04) come with lot 3. */
+export const supplierInvoice = app.table(
+  'supplier_invoice',
+  {
+    id: id(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id),
+    pieceRef: text('piece_ref').notNull(),
+    date: date('date').notNull(),
+    dueDate: date('due_date').notNull(),
+    totalExcl: money('total_excl').notNull(),
+    totalVat: money('total_vat').notNull().default('0'),
+    totalIncl: money('total_incl').notNull(),
+    status: supplierInvoiceStatus('status').notNull().default('TO_PAY'),
+    paymentMethod: supplierPaymentMethod('payment_method'),
+    paidAt: date('paid_at'),
+    documentMediaId: uuid('document_media_id').references(() => media.id, { onDelete: 'set null' }),
+    /** R-FAC-05: the J−3 alert is sent once. */
+    dueReminderSentAt: tz('due_reminder_sent_at'),
+    comment: text('comment'),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    legacyFactid: integer('legacy_factid').unique(),
+  },
+  (t) => [
+    uniqueIndex('supplier_invoice_piece_uq').on(t.supplierId, t.pieceRef),
+    index('supplier_invoice_due_idx').on(t.status, t.dueDate),
+    check('supplier_invoice_due_after_date', sql`${t.dueDate} >= ${t.date}`),
+    check('supplier_invoice_totals', sql`${t.totalIncl} = ${t.totalExcl} + ${t.totalVat}`),
+  ],
+);
+
+/** R-FAC-02: an invoice covers one or several receipts. */
+export const invoiceReceipt = app.table(
+  'invoice_receipt',
+  {
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => supplierInvoice.id, { onDelete: 'cascade' }),
+    receiptId: uuid('receipt_id')
+      .notNull()
+      .references(() => goodsReceipt.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.invoiceId, t.receiptId] })],
+);
+
+/** R-STK-04: inventory session, total or partial; the theoretical stock is frozen at opening. */
+export const inventorySession = app.table('inventory_session', {
+  id: id(),
+  label: text('label').notNull(),
+  /** { supplierId?, categoryId?, productIds? } — empty means the whole catalogue. */
+  scope: jsonb('scope').notNull(),
+  status: inventoryStatus('status').notNull().default('OPEN'),
+  openedAt: tz('opened_at').notNull().defaultNow(),
+  openedBy: uuid('opened_by').references(() => member.id, { onDelete: 'set null' }),
+  validatedAt: tz('validated_at'),
+  validatedBy: uuid('validated_by').references(() => member.id, { onDelete: 'set null' }),
+  zeroUncounted: boolean('zero_uncounted').notNull().default(false),
+  legacyDate: date('legacy_date').unique(),
+});
+
+export const inventoryLine = app.table(
+  'inventory_line',
+  {
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => inventorySession.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    theoreticalQty: qty('theoretical_qty').notNull(),
+    /** Null until counted; counts add up (R-STK-04 "saisie cumulative"). */
+    countedQty: qty('counted_qty'),
+    countedAt: tz('counted_at'),
+    countedBy: uuid('counted_by').references(() => member.id, { onDelete: 'set null' }),
+    unitCostExcl: price4('unit_cost_excl'),
+    unitCostIncl: price4('unit_cost_incl'),
+    /** Movement applied at validation (counted − theoretical, corrected by sales meanwhile). */
+    adjustment: qty('adjustment'),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.productId] })],
+);
