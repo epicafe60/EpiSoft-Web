@@ -1,0 +1,8 @@
+# HTTPS in front of the API (spec §5.5, §7.3).
+# SITE_ADDRESS is a domain name (Let's Encrypt certificate, ports 80/443 reachable from the
+# Internet) or a LAN address such as https://192.168.1.10 (certificate from Caddy's local CA).
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy api:3000
+}

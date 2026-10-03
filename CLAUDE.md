@@ -17,6 +17,7 @@ Rewrite of **EpiSoft**, the management suite of the Epicafé de Montjavoult asso
   - non-functional requirements, including the offline till (§5);
   - the target data model and the mapping from old columns to new ones (§6);
   - the stack (§7), the API and sync protocol (§8), migration (§9), the roadmap (§10) and open questions (§11).
+- `README.md`: setup and everyday commands. `docs/adr/`: decisions taken while building (read ADR 0001 for the Lot 0 choices).
 - Domain vocabulary is French (adhérent, foyer, cagnotte, clôture, écriture…). Code identifiers are in English and the UI is in French.
 
 ## Stack (decided, see spec §7)
