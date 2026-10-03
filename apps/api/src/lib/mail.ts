@@ -7,15 +7,27 @@ import type { Config } from '../config';
 // E-mail outbox (§4.16): e-mails are written in the business transaction, then sent
 // by a background loop with retries. pg-boss (spec §7.2) can replace the loop in a later lot.
 
+export interface EmailAttachment {
+  filename: string;
+  contentType: string;
+  /** Base64, stored as is in the outbox. */
+  contentBase64: string;
+}
+
 export interface OutgoingEmail {
   to: string;
   subject: string;
   html: string;
   text: string;
+  attachments?: EmailAttachment[];
 }
 
 export async function queueEmail(db: DbOrTx, email: OutgoingEmail): Promise<void> {
-  await db.insert(emailOutbox).values(email);
+  await db.insert(emailOutbox).values({ ...email, attachments: email.attachments ?? null });
+}
+
+export function pdfAttachment(filename: string, pdf: Buffer): EmailAttachment {
+  return { filename, contentType: 'application/pdf', contentBase64: pdf.toString('base64') };
 }
 
 const MAX_ATTEMPTS = 5;
@@ -69,6 +81,11 @@ export function startMailer(db: Db, config: Config, log: FastifyBaseLogger): () 
               subject: mail.subject,
               html: mail.html,
               text: mail.text ?? undefined,
+              attachments: ((mail.attachments as EmailAttachment[] | null) ?? []).map((a) => ({
+                filename: a.filename,
+                contentType: a.contentType,
+                content: Buffer.from(a.contentBase64, 'base64'),
+              })),
             });
             await tx
               .update(emailOutbox)

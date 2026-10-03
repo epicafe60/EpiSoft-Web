@@ -59,6 +59,13 @@ export const settingSchemas = {
     enabled: z.boolean(),
     daysBefore: z.number().int().min(1).max(60),
   }),
+  /** R-PRD-03 (open question Q2): target markup rate on the selling price, and rounding. */
+  'catalog.pricing': z.object({
+    targetMarkupPct: z.number().min(0).max(95),
+    rounding: z.union([z.literal(1), z.literal(5), z.literal(10)]),
+  }),
+  /** R-PRD-06: A4 label sheets. */
+  'labels.layout': z.object({ perPage: z.union([z.literal(24), z.literal(40)]) }),
   /** R-SES-02 step 6: the closing report is sent to this address. */
   'pos.treasurerEmail': z.object({
     email: optionalText(200).refine(
@@ -95,6 +102,8 @@ export const SETTING_DEFAULTS: Settings = {
   },
   'pos.treasurerEmail': { email: null },
   'membership.reminder': { enabled: false, daysBefore: 15 },
+  'catalog.pricing': { targetMarkupPct: 25, rounding: 5 },
+  'labels.layout': { perPage: 24 },
   'pos.scaleBarcodes': { enabled: false, valueKind: 'PRICE' },
 };
 

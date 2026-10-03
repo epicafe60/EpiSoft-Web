@@ -39,6 +39,7 @@ import { toParisDate } from '../../lib/dates';
 import { queueEmail } from '../../lib/mail';
 import { saleReceiptEmail, topupReceiptEmail } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
+import { recordMovement } from '../stock/ledger';
 import { nextSaleNumber } from './numbers';
 import { currentMembershipEnd, lockedBalanceCents } from './wallet';
 
@@ -449,17 +450,14 @@ async function moveStock(
   at: Date,
 ) {
   for (const m of moves) {
-    const qty = milliToDecimal(m.qtyMilli);
-    await ctx.tx
-      .insert(stockMovement)
-      .values({ productId: m.productId, at, qty, kind, sourceType: 'sale', sourceId: saleId });
-    await ctx.tx
-      .update(product)
-      .set({
-        stockQty: sql`${product.stockQty} + ${qty}::numeric`,
-        updatedAt: sql`${product.updatedAt}`,
-      })
-      .where(eq(product.id, m.productId));
+    await recordMovement(ctx.tx, {
+      productId: m.productId,
+      qtyMilli: m.qtyMilli,
+      kind,
+      sourceType: 'sale',
+      sourceId: saleId,
+      at,
+    });
   }
 }
 

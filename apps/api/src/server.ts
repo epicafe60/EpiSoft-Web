@@ -3,6 +3,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { startMailer } from './lib/mail';
 import { startReminderJob } from './modules/members/reminders';
+import { startInvoiceAlertJob } from './modules/supplies/invoices';
 
 loadEnv();
 const config = loadConfig();
@@ -22,11 +23,13 @@ const app = await buildApp(db, config, {
 });
 const stopMailer = startMailer(db, config, app.log);
 const stopReminders = startReminderJob(db, app.log);
+const stopInvoiceAlerts = startInvoiceAlertJob(db, app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} reçu, arrêt.`);
   stopMailer();
   stopReminders();
+  stopInvoiceAlerts();
   await app.close();
   await pool.end();
   process.exit(0);

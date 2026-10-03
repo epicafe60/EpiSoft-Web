@@ -61,16 +61,14 @@ export function orderLineTotals(l: OrderLineInput): Totals {
 
 /** R-CMD-01: computed per line, then added up (coherent HT/TVA/TTC, R-CMD-03). */
 export function orderTotals(lines: readonly OrderLineInput[]): Totals {
-  return lines
-    .map(orderLineTotals)
-    .reduce(
-      (t, x) => ({
-        exclCents: t.exclCents + x.exclCents,
-        vatCents: t.vatCents + x.vatCents,
-        inclCents: t.inclCents + x.inclCents,
-      }),
-      { exclCents: 0, vatCents: 0, inclCents: 0 },
-    );
+  return lines.map(orderLineTotals).reduce(
+    (t, x) => ({
+      exclCents: t.exclCents + x.exclCents,
+      vatCents: t.vatCents + x.vatCents,
+      inclCents: t.inclCents + x.inclCents,
+    }),
+    { exclCents: 0, vatCents: 0, inclCents: 0 },
+  );
 }
 
 // --- Margin and selling price (R-PRD-03, open question Q2) ------------------------------

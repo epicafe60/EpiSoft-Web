@@ -9,5 +9,6 @@ export * from './roles';
 export * from './scale';
 export * from './settings';
 export * from './supplies';
+export * from './supplies-forms';
 export * from './sync';
 export * from './text';

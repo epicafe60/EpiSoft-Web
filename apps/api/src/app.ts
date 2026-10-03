@@ -21,6 +21,11 @@ import { posRoutes } from './modules/pos/routes';
 import { memberRoutes } from './modules/members/routes';
 import { catalogRoutes } from './modules/catalog/routes';
 import { walletRoutes } from './modules/members/wallet-routes';
+import { supplierRoutes } from './modules/supplies/suppliers';
+import { orderRoutes } from './modules/supplies/orders';
+import { invoiceRoutes } from './modules/supplies/invoices';
+import { stockRoutes } from './modules/stock/routes';
+import { catalogAdminRoutes } from './modules/catalog/admin';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -63,6 +68,11 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(memberRoutes, { db, config });
       await api.register(catalogRoutes, { db, config });
       await api.register(walletRoutes, { db, config });
+      await api.register(supplierRoutes, { db, config });
+      await api.register(orderRoutes, { db, config });
+      await api.register(invoiceRoutes, { db, config });
+      await api.register(stockRoutes, { db, config });
+      await api.register(catalogAdminRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

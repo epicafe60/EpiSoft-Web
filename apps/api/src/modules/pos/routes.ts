@@ -28,6 +28,8 @@ import { badRequest, conflict, notFound } from '../../lib/problem';
 import { euros, saleReceiptEmail } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
+import { closingPdf } from './closing-pdf';
+import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
 import { processOps, Rejected } from './sync-service';
 
@@ -256,10 +258,9 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
 
         const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
         const device = await tx.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
-        if (treasurer)
-          await queueEmail(
-            tx,
-            closingReportEmail(
+        if (treasurer) {
+          await queueEmail(tx, {
+            ...closingReportEmail(
               treasurer,
               device?.name ?? '',
               s.openedAt,
@@ -268,7 +269,9 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
               values,
               b.forced,
             ),
-          );
+            attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))],
+          });
+        }
         return { ...values, closedAt: closedAt.toISOString() };
       });
       return report;
@@ -304,6 +307,19 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         });
       });
       return { ok: true };
+    },
+  );
+
+  app.get(
+    '/pos/sessions/:id/report.pdf',
+    { ...cashierOrAdmin, schema: sessionParams },
+    async (req, reply) => {
+      const s = await db.query.cashSession.findFirst({ where: eq(cashSession.id, req.params.id) });
+      if (!s) throw notFound('Session inconnue.');
+      return reply
+        .header('content-disposition', 'inline; filename="cloture.pdf"')
+        .type('application/pdf')
+        .send(await closingPdf(db, s.id));
     },
   );
 
