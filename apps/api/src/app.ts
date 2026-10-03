@@ -30,6 +30,7 @@ import { accountingRoutes } from './modules/accounting/routes';
 import { bankRoutes } from './modules/accounting/bank';
 import { closingRoutes } from './modules/accounting/closing';
 import { reportRoutes } from './modules/accounting/reports';
+import { dashboardRoutes } from './modules/stats/dashboard';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -81,6 +82,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(bankRoutes, { db, config });
       await api.register(reportRoutes, { db, config });
       await api.register(closingRoutes, { db, config });
+      await api.register(dashboardRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

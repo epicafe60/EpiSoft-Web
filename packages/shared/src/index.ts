@@ -12,6 +12,7 @@ export * from './pos';
 export * from './roles';
 export * from './scale';
 export * from './settings';
+export * from './stats';
 export * from './supplies';
 export * from './supplies-forms';
 export * from './sync';

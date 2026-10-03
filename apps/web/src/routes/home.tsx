@@ -5,6 +5,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { Alert } from '@/components/ui/form';
 import { MODULE_ICONS, PageHeader } from './shell';
 import { MODULE_INFO } from './module-placeholder';
+import { Dashboard } from './dashboard';
 
 export function HomePage() {
   const me = useMe();
@@ -12,6 +13,7 @@ export function HomePage() {
   return (
     <>
       <PageHeader title={`Bonjour ${me.firstName}`} description="Choisissez un module." />
+      {modules.length > 0 ? <Dashboard /> : null}
       {modules.length === 0 ? (
         <Alert variant="info">
           Aucun rôle ne vous est attribué pour l’instant. Un administrateur peut vous en donner
