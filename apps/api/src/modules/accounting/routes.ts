@@ -533,18 +533,16 @@ export const accountingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
 
   const writeTemplate = async (tx: Tx, id: string, b: z.infer<typeof templateSchema>) => {
     await tx.delete(entryTemplateLine).where(eq(entryTemplateLine.templateId, id));
-    await tx
-      .insert(entryTemplateLine)
-      .values(
-        b.lines.map((l, i) => ({
-          templateId: id,
-          lineNo: i + 1,
-          accountId: l.accountId,
-          label: l.label,
-          debit: l.debit,
-          credit: l.credit,
-        })),
-      );
+    await tx.insert(entryTemplateLine).values(
+      b.lines.map((l, i) => ({
+        templateId: id,
+        lineNo: i + 1,
+        accountId: l.accountId,
+        label: l.label,
+        debit: l.debit,
+        credit: l.credit,
+      })),
+    );
   };
 
   app.post('/entry-templates', { ...compta, schema: { body: templateSchema } }, async (req) =>

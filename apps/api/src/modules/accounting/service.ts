@@ -201,18 +201,16 @@ export async function replaceDraftLines(
   for (const l of lines)
     if (!found.some((f) => f.id === l.accountId)) throw badRequest('Compte inconnu.');
   await tx.delete(entryLine).where(eq(entryLine.entryId, entryId));
-  await tx
-    .insert(entryLine)
-    .values(
-      lines.map((l, i) => ({
-        entryId,
-        lineNo: i + 1,
-        accountId: l.accountId,
-        label: l.label,
-        debit: centsToDecimal(l.debitCents),
-        credit: centsToDecimal(l.creditCents),
-      })),
-    );
+  await tx.insert(entryLine).values(
+    lines.map((l, i) => ({
+      entryId,
+      lineNo: i + 1,
+      accountId: l.accountId,
+      label: l.label,
+      debit: centsToDecimal(l.debitCents),
+      credit: centsToDecimal(l.creditCents),
+    })),
+  );
 }
 
 export async function entryBySource(tx: DbOrTx, type: string, id: string) {
@@ -341,18 +339,16 @@ export async function reverseEntry(
       createdBy: opts.userId,
     })
     .returning({ id: entry.id });
-  await tx
-    .insert(entryLine)
-    .values(
-      swapped.map((l, i) => ({
-        entryId: created!.id,
-        lineNo: i + 1,
-        accountId: l.accountId!,
-        label: l.label,
-        debit: centsToDecimal(l.debitCents),
-        credit: centsToDecimal(l.creditCents),
-      })),
-    );
+  await tx.insert(entryLine).values(
+    swapped.map((l, i) => ({
+      entryId: created!.id,
+      lineNo: i + 1,
+      accountId: l.accountId!,
+      label: l.label,
+      debit: centsToDecimal(l.debitCents),
+      credit: centsToDecimal(l.creditCents),
+    })),
+  );
   await validateEntries(tx, [created!.id], opts.userId);
   return created!.id;
 }
@@ -366,6 +362,8 @@ export interface BalanceFilter {
   accountTo?: string;
   /** VALIDATED keeps only validated entries; ALL includes drafts. */
   status?: 'ALL' | 'VALIDATED';
+  /** Leaves out the year-end result entry, so a closed year still shows its income statement. */
+  excludeClosingResult?: boolean;
 }
 
 export function entryFilters(f: BalanceFilter): SQL[] {
@@ -375,6 +373,8 @@ export function entryFilters(f: BalanceFilter): SQL[] {
   if (f.to) where.push(lte(entry.date, f.to));
   if (f.journalId) where.push(eq(entry.journalId, f.journalId));
   if (f.status === 'VALIDATED') where.push(eq(entry.status, 'VALIDATED'));
+  if (f.excludeClosingResult)
+    where.push(sql`${entry.sourceType} is distinct from 'closing_result'`);
   if (f.accountFrom) where.push(gte(account.number, f.accountFrom));
   if (f.accountTo) where.push(lte(account.number, f.accountTo));
   return where;
