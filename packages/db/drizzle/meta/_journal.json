@@ -22,6 +22,13 @@
       "when": 1791045774499,
       "tag": "0002_household_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791051969211,
+      "tag": "0003_membership_reminder",
+      "breakpoints": true
     }
   ]
 }

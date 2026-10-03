@@ -195,6 +195,9 @@ export interface TillSettings {
   allowTransfer: boolean;
   discountsEnabled: boolean;
   membershipExpiredBlocking: boolean;
+  /** R-VTE-04: null when scale labels are not decoded. */
+  scaleBarcodes: 'PRICE' | 'WEIGHT' | null;
+  associationName: string;
 }
 
 export interface Snapshot {

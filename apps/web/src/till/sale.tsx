@@ -1,12 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Ban, Pause, Play, ScanLine, Trash2, UserRound, UserX, Wallet } from 'lucide-react';
+import {
+  Ban,
+  Pause,
+  Play,
+  Printer,
+  ScanLine,
+  Trash2,
+  UserRound,
+  UserX,
+  Wallet,
+} from 'lucide-react';
 import {
   centsToDecimal,
   decimalToCents,
   formatEuro,
   formatQty,
+  decodeScaleBarcode,
   lookupProduct,
+  productForPlu,
+  scaleQuantityMilli,
   membershipState,
   normalizeSearch,
   parseAmountToCents,
@@ -17,6 +30,7 @@ import {
   UNIT_LABELS,
   type SnapshotMember,
   type SnapshotProduct,
+  type SyncOp,
 } from '@episoft/shared';
 import { todayIso, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -31,6 +45,7 @@ import { PaymentDialog, type PaymentResult } from './payment';
 import { enqueue } from './sync';
 import { TopupDialog } from './topup';
 import { CashierSwitch } from './cashier';
+import { Receipt } from './receipt';
 
 const eur = (c: number) => formatEuro(centsToDecimal(c));
 
@@ -85,6 +100,9 @@ export function SalePage() {
   const [paying, setPaying] = useState(false);
   const [topup, setTopup] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [lastSale, setLastSale] = useState<Extract<SyncOp, { kind: 'SALE' }>['payload'] | null>(
+    null,
+  );
 
   const sellable = useMemo(
     () => (products ?? []).filter((p) => p.status === 'ACTIVE' || p.status === 'ON_ORDER'),
@@ -105,9 +123,9 @@ export function SalePage() {
 
   const focusScan = () => setTimeout(() => scanRef.current?.focus(), 0);
 
-  const addLine = async (p: SnapshotProduct, qtyMilli = 1000) => {
+  const addLine = async (p: SnapshotProduct, qtyMilli = 1000, weighed = false) => {
     if (!draft) return;
-    if (p.saleMode !== 'UNIT' && qtyMilli === 1000 && !weighing) {
+    if (p.saleMode !== 'UNIT' && !weighed && !weighing) {
       setWeighing(p);
       return;
     }
@@ -144,6 +162,16 @@ export function SalePage() {
       const m = (members ?? []).find((x) => x.qrTokenHash === hash);
       if (m) return selectMember(m);
     }
+    if (settings?.scaleBarcodes) {
+      const label = decodeScaleBarcode(q, settings.scaleBarcodes);
+      if (label) {
+        const p = productForPlu(sellable, label.plu);
+        const qty = p ? scaleQuantityMilli(label, decimalToCents(p.salePrice), p.unit) : null;
+        if (p && qty) return addLine(p, qty, true);
+        setMessage({ kind: 'error', text: `Étiquette de balance : article ${label.plu} inconnu.` });
+        return;
+      }
+    }
     const r = lookupProduct(sellable, q);
     if (r.kind === 'found') return addLine(r.product);
     if (r.kind === 'choices') {
@@ -158,7 +186,7 @@ export function SalePage() {
     if (!draft || !meta.session || !meta.device) return;
     const opId = crypto.randomUUID();
     let number = '';
-    await enqueue(
+    const op = await enqueue(
       (deviceSeq) => {
         number = provisionalNumber(meta.device!.name, deviceSeq);
         return saleOp({
@@ -177,6 +205,7 @@ export function SalePage() {
       // Same transaction: the ticket leaves the screen only once it is in the outbox (R-OFF-06).
       () => tillDb.drafts.delete(draft.id).then(() => undefined),
     );
+    if (op.kind === 'SALE') setLastSale(op.payload);
     await newDraft();
     setPaying(false);
     const change = r.payments.reduce(
@@ -239,6 +268,10 @@ export function SalePage() {
   if (!draft || !products || !members || !tabs)
     return <p className="p-6 text-muted-foreground">Chargement…</p>;
 
+  const lastMember = lastSale?.memberId
+    ? members.find((x) => x.id === lastSale.memberId)
+    : undefined;
+  const lastMemberName = lastMember ? `${lastMember.firstName} ${lastMember.lastName}` : null;
   const activeTabs = tabs.filter((t) => t.active).sort((a, b) => a.sort - b.sort);
   const currentTab = tab ?? activeTabs[0]?.id ?? null;
   const tabProducts = sellable
@@ -271,8 +304,16 @@ export function SalePage() {
         </form>
 
         {message ? (
-          <Alert variant={message.kind} className="text-base">
-            {message.text}
+          <Alert
+            variant={message.kind}
+            className="flex flex-wrap items-center justify-between gap-2 text-base"
+          >
+            <span>{message.text}</span>
+            {message.kind === 'success' && lastSale ? (
+              <Button size="sm" variant="outline" onClick={() => window.print()}>
+                <Printer /> Imprimer le ticket
+              </Button>
+            ) : null}
           </Alert>
         ) : null}
 
@@ -632,6 +673,11 @@ export function SalePage() {
           member={member}
         />
       ) : null}
+      <Receipt
+        sale={lastSale}
+        associationName={settings?.associationName ?? 'Épicafé'}
+        memberName={lastMemberName}
+      />
       <CashierSwitch
         open={switching}
         onClose={() => {

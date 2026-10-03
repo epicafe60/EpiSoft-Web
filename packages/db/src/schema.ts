@@ -707,3 +707,12 @@ export const householdBalance = app
     lastEntryAt: tz('last_entry_at'),
   })
   .existing();
+
+/** R-ADH-04: one reminder per membership, so the daily job never sends it twice. */
+export const membershipReminder = app.table('membership_reminder', {
+  membershipId: uuid('membership_id')
+    .primaryKey()
+    .references(() => membership.id, { onDelete: 'cascade' }),
+  sentAt: tz('sent_at').notNull().defaultNow(),
+  to: text('to'),
+});

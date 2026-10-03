@@ -106,6 +106,7 @@ export interface HouseholdDetail {
     saleNumber: string | null;
     comment: string | null;
     forced: boolean;
+    cancellable: boolean;
     byName: string | null;
   }[];
   payments: {

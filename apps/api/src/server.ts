@@ -2,6 +2,7 @@ import { createDb, createPool, loadEnv, migrateAndSeed } from '@episoft/db';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { startMailer } from './lib/mail';
+import { startReminderJob } from './modules/members/reminders';
 
 loadEnv();
 const config = loadConfig();
@@ -20,10 +21,12 @@ const app = await buildApp(db, config, {
       : { level: config.LOG_LEVEL },
 });
 const stopMailer = startMailer(db, config, app.log);
+const stopReminders = startReminderJob(db, app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} reçu, arrêt.`);
   stopMailer();
+  stopReminders();
   await app.close();
   await pool.end();
   process.exit(0);

@@ -5,6 +5,7 @@ import { api, ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
+import { Select } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 
 const settingsQuery = { queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') };
@@ -185,6 +186,71 @@ export function SettingsPage() {
                   <Label htmlFor={`opt-${k}`}>{label}</Label>
                 </div>
               ))}
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="membership.reminder"
+          title="Relance d’adhésion"
+          description="Courriel au foyer avant la fin de son adhésion, une seule fois (R-ADH-04)."
+          initial={data['membership.reminder']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="reminder-on"
+                  checked={v.enabled}
+                  onChange={(e) => set({ ...v, enabled: e.target.checked })}
+                />
+                <Label htmlFor="reminder-on">Envoyer la relance</Label>
+              </div>
+              <Field label="Jours avant l’échéance" error={errors.daysBefore}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="numeric"
+                    className="max-w-24"
+                    value={String(v.daysBefore)}
+                    onChange={(e) =>
+                      set({ ...v, daysBefore: Number(e.target.value.replace(/\D/g, '')) || 0 })
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="pos.scaleBarcodes"
+          title="Étiquettes de balance"
+          description="Codes 20 à 29 : préfixe, code article (5 chiffres, fin du code produit), valeur (5 chiffres), clé (R-VTE-04)."
+          initial={data['pos.scaleBarcodes']}
+        >
+          {(v, set) => (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="scale-on"
+                  checked={v.enabled}
+                  onChange={(e) => set({ ...v, enabled: e.target.checked })}
+                />
+                <Label htmlFor="scale-on">Décoder les étiquettes de balance en caisse</Label>
+              </div>
+              <Field label="La valeur imprimée est">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={v.valueKind}
+                    onChange={(e) => set({ ...v, valueKind: e.target.value as 'PRICE' | 'WEIGHT' })}
+                  >
+                    <option value="PRICE">le prix (centimes)</option>
+                    <option value="WEIGHT">le poids (grammes)</option>
+                  </Select>
+                )}
+              </Field>
             </div>
           )}
         </SettingCard>

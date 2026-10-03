@@ -6,6 +6,7 @@ export * from './forms';
 export * from './money';
 export * from './pos';
 export * from './roles';
+export * from './scale';
 export * from './settings';
 export * from './sync';
 export * from './text';

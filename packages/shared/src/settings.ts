@@ -49,6 +49,16 @@ export const settingSchemas = {
     /** R-ADH-03: an expired membership blocks the sale instead of only warning. */
     membershipExpiredBlocking: z.boolean(),
   }),
+  /** R-VTE-04: in-store scale labels (prefix 20–29, 5-digit PLU, 5-digit value). */
+  'pos.scaleBarcodes': z.object({
+    enabled: z.boolean(),
+    valueKind: z.enum(['PRICE', 'WEIGHT']),
+  }),
+  /** R-ADH-04: e-mail reminder before a membership ends. */
+  'membership.reminder': z.object({
+    enabled: z.boolean(),
+    daysBefore: z.number().int().min(1).max(60),
+  }),
   /** R-SES-02 step 6: the closing report is sent to this address. */
   'pos.treasurerEmail': z.object({
     email: optionalText(200).refine(
@@ -84,6 +94,8 @@ export const SETTING_DEFAULTS: Settings = {
     membershipExpiredBlocking: false,
   },
   'pos.treasurerEmail': { email: null },
+  'membership.reminder': { enabled: false, daysBefore: 15 },
+  'pos.scaleBarcodes': { enabled: false, valueKind: 'PRICE' },
 };
 
 export function isSettingKey(key: string): key is SettingKey {

@@ -129,6 +129,10 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
       sellToNonMembers: settings['pos.sellToNonMembers'].enabled,
       defaultFloat: settings['pos.defaultFloat'].amount,
       ...settings['pos.options'],
+      scaleBarcodes: settings['pos.scaleBarcodes'].enabled
+        ? settings['pos.scaleBarcodes'].valueKind
+        : null,
+      associationName: settings['association.identity'].name,
     },
   };
 }

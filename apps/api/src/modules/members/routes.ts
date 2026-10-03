@@ -641,6 +641,10 @@ export async function householdDetail(db: Db | Tx, id: string) {
       saleNumber: sale.number,
       comment: walletEntry.comment,
       forced: sql<boolean>`${walletEntry.forcedBy} is not null`,
+      // R-CAG-08: back-office top-up of today, not from the till.
+      cancellable: sql<boolean>`${walletEntry.kind} = 'TOPUP' and ${walletEntry.saleId} is null and ${walletEntry.paymentId} is not null
+        and (${walletEntry.createdAt} at time zone 'Europe/Paris')::date = (now() at time zone 'Europe/Paris')::date
+        and not exists (select 1 from app.member_payment p where p.id = ${walletEntry.paymentId} and p.cash_session_id is not null)`,
       byName: sql<
         string | null
       >`(select first_name || ' ' || last_name from app.member x where x.id = ${walletEntry.createdBy})`,

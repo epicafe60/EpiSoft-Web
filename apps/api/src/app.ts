@@ -20,6 +20,7 @@ import { adminRoutes } from './modules/admin/routes';
 import { posRoutes } from './modules/pos/routes';
 import { memberRoutes } from './modules/members/routes';
 import { catalogRoutes } from './modules/catalog/routes';
+import { walletRoutes } from './modules/members/wallet-routes';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -61,6 +62,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(posRoutes, { db, config });
       await api.register(memberRoutes, { db, config });
       await api.register(catalogRoutes, { db, config });
+      await api.register(walletRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

@@ -108,3 +108,10 @@
     border: none;
   }
 }
+
+/* R-VTE-13: 80 mm thermal ticket (72 mm printable). */
+@media print {
+  .receipt {
+    width: 72mm;
+  }
+}

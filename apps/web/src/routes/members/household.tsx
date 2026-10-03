@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BadgePlus, Minus, Plus } from 'lucide-react';
+import { BadgePlus, FileSpreadsheet, Mail, Minus, Plus } from 'lucide-react';
 import {
   MEMBER_PAYMENT_METHODS,
   MEMBER_PAYMENT_PURPOSE_LABELS,
@@ -137,6 +137,11 @@ export function HouseholdPage() {
     setDialog(d);
   };
   const close = () => setDialog(null);
+  const sendHistory = useMutation({ mutationFn: () => api.post(`/households/${id}/wallet/email`) });
+  const cancelTopup = useMutation({
+    mutationFn: (entryId: string) => api.post(`/wallet-entries/${entryId}/cancel`),
+    onSuccess: refresh,
+  });
   const saveInfo = useMutation({
     mutationFn: () =>
       api.patch(`/households/${id}`, {
@@ -274,8 +279,30 @@ export function HouseholdPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="flex-row flex-wrap items-center justify-between">
             <CardTitle className="text-base">Opérations de cagnotte</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              {sendHistory.isSuccess ? (
+                <span className="text-sm text-success">Historique envoyé.</span>
+              ) : null}
+              {sendHistory.error ? (
+                <span className="text-sm text-destructive">{sendHistory.error.message}</span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => sendHistory.mutate()}
+                disabled={sendHistory.isPending}
+              >
+                <Mail /> Envoyer par courriel
+              </Button>
+              <a
+                className="inline-flex h-8 items-center gap-1 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+                href={`/api/v1/households/${id}/wallet.xlsx`}
+              >
+                <FileSpreadsheet className="size-4" /> Excel
+              </a>
+            </div>
           </CardHeader>
           <Table>
             <thead>
@@ -304,6 +331,20 @@ export function HouseholdPage() {
                           {' '}
                           · {PAYMENT_METHOD_LABELS[w.paymentMethod]}
                         </span>
+                      ) : null}
+                      {w.cancellable ? (
+                        <button
+                          type="button"
+                          className="ml-2 text-xs text-destructive hover:underline"
+                          onClick={() => {
+                            if (
+                              window.confirm('Annuler ce versement saisi aujourd’hui (R-CAG-08) ?')
+                            )
+                              cancelTopup.mutate(w.id);
+                          }}
+                        >
+                          annuler
+                        </button>
                       ) : null}
                       {w.forced ? (
                         <Badge variant="destructive" className="ml-2">

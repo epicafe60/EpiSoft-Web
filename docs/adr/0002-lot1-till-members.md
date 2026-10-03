@@ -39,15 +39,21 @@ Date: 2026-10-03. Status: proposed, to be confirmed.
   the sum of the payments; the "Cagnottes" sheet of the report is for the treasurer to
   decide corrections (§9.1).
 
-## Not done in lot 1
+## Done after the first version of lot 1
 
-| Item | Reason / plan |
+- Offline reload of the till proven on the production build (service worker), e2e test.
+- Scale labels (R-VTE-04): prefix 20–29, 5-digit PLU matched to the end of the product
+  code, 5-digit price or weight, set in the settings. The shop's scale format is still to
+  be confirmed.
+- 80 mm ticket printing from the browser (R-VTE-13, optional per Q3).
+- Cagnotte history: Excel export and e-mail (R-CAG-07); same-day cancellation of a
+  back-office top-up (R-CAG-08).
+- Membership reminder D−15, once per membership, hourly job (R-ADH-04).
+
+## Moved to later lots
+
+| Item | Lot |
 |---|---|
-| Accounting draft entry at closing (R-SES-02 step 5) | Needs the accounts and journals of lot 3 |
-| Bank deposits and cheque slips (R-SES-04) | Feeds accounting; with lot 3. The deposit amount is recorded in the closing |
-| Closing report as PDF | E-mailed as HTML and printable from the browser; PDF with the lot 2 PDF tooling |
-| 80 mm ticket printing (R-VTE-13, Q3) | Q3 default is e-mail; to do if the shop wants a printer |
-| Scale barcodes (R-VTE-04 [nouveau]) | Needs the label format of the scale |
-| Cagnotte history export Excel/PDF (R-CAG-07) | With the exports of lot 4 |
-| Membership reminder J−15 (R-ADH-04), top-up edit on the same day (R-CAG-08) | Optional; corrections cover R-CAG-08 |
-| Offline reload test | The e2e tests run on the Vite dev server, which has no service worker; reloading offline is to be checked on a production build |
+| Accounting draft entry at closing (R-SES-02 step 5) | 3 (needs accounts and journals) |
+| Bank deposits and cheque slips (R-SES-04); the deposited amount is already recorded at closing | 3 |
+| Closing report as PDF (today: HTML e-mail and browser print) | 2, with the PDF tooling |
