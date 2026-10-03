@@ -1,7 +1,8 @@
 /**
  * Legacy migration (spec §9.1). Lot 0: regions, communes, households, members, roles,
  * login log and the cash float setting. Lot 1 (lot1.ts): suppliers, catalogue, images,
- * opening stock, memberships, payments and cagnotte, tickets and sessions.
+ * opening stock, memberships, payments and cagnotte, tickets and sessions. Lot 2 (lot2.ts):
+ * purchase orders and receipts, supplier invoices, inventory history.
  *
  * - Reads the EpiSoft MariaDB with SELECT only (see source.ts); never writes to it.
  * - Idempotent: rows are matched on their legacy id and updated on each run.
@@ -35,6 +36,7 @@ import {
   type LegacyMemberRow,
 } from './transform';
 import { migrateLot1, type Report } from './lot1';
+import { migrateLot2 } from './lot2';
 
 interface Count {
   table: string;
@@ -75,6 +77,7 @@ try {
     await migrateLogins(legacy, tx);
     await migrateParams(legacy, tx);
     await migrateLot1(legacy, tx, { counts, issues, sheets });
+    await migrateLot2(legacy, tx, { counts, issues, sheets });
     if (args['dry-run']) throw new Rollback();
   });
   console.log('Migration validée.');
