@@ -15,7 +15,9 @@ export interface AuditInput {
  */
 export async function audit(db: DbOrTx, req: FastifyRequest, input: AuditInput): Promise<void> {
   await db.insert(auditLog).values({
-    actorId: req.user?.id ?? null,
+    // While an administrator impersonates someone, the real person is the actor.
+    actorId: req.user?.impersonator?.id ?? req.user?.id ?? null,
+    onBehalfOfId: req.user?.impersonator ? req.user.id : null,
     action: input.action,
     entity: input.entity,
     entityId: input.entityId ?? null,

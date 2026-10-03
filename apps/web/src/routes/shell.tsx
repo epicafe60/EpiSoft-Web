@@ -60,6 +60,35 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+/** Shown on every page while an administrator acts as another user. */
+function ImpersonationBanner() {
+  const me = useMe();
+  if (!me.impersonator) return null;
+  const stop = async () => {
+    await api.post('/auth/impersonate/stop');
+    writeCachedMe(null);
+    // A full reload drops every cached screen of the impersonated user.
+    window.location.assign('/admin/utilisateurs');
+  };
+  return (
+    <div
+      role="status"
+      className="sticky top-2 z-30 mb-4 flex flex-wrap items-center gap-3 rounded-md border border-amber-500 bg-amber-100 px-4 py-2 text-sm text-amber-950 shadow dark:bg-amber-950 dark:text-amber-100"
+    >
+      <span>
+        Vous agissez en tant que{' '}
+        <strong>
+          {me.firstName} {me.lastName}
+        </strong>{' '}
+        ({me.roles.join(', ') || 'aucun rôle'}). Vos actions sont journalisées à votre nom.
+      </span>
+      <Button size="sm" variant="outline" className="ml-auto" onClick={() => void stop()}>
+        Revenir à mon compte
+      </Button>
+    </div>
+  );
+}
+
 export function AppShell() {
   const me = useMe();
   const navigate = useNavigate();
@@ -161,6 +190,7 @@ export function AppShell() {
 
       <main id="contenu" className={cn('min-w-0 px-4 py-6 sm:px-6 lg:px-8')}>
         <div className="mx-auto max-w-6xl">
+          <ImpersonationBanner />
           <Outlet />
         </div>
       </main>

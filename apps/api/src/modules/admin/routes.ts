@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { auditLog, loginLog, member, setting, userRole, type Db } from '@episoft/db';
+import { auditLog, loginLog, member, session, setting, userRole, type Db } from '@episoft/db';
 import {
   auditQuerySchema,
   isSettingKey,
@@ -29,6 +29,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { canLogIn } from '../../plugins/auth';
 import { sendPasswordLink } from '../auth/routes';
 import { loadSettings } from './settings-store';
 
@@ -208,6 +209,52 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     },
   );
 
+  // --- Impersonation: an administrator acts as another user to test their screens ---------
+  //
+  // Every audited action done meanwhile records the real administrator as the actor and the
+  // impersonated member as "on behalf of". Administrators cannot be impersonated.
+
+  app.post(
+    '/admin/users/:id/impersonate',
+    { ...admin, schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (req) => {
+      const u = req.user!;
+      if (u.impersonator) throw conflict('Arrêtez d’abord l’usurpation en cours.');
+      if (req.params.id === u.id) throw badRequest('C’est déjà votre compte.');
+      return db.transaction(async (tx) => {
+        const target = await tx.query.member.findFirst({ where: eq(member.id, req.params.id) });
+        if (!target || !target.username || !canLogIn(target.status))
+          throw notFound('Ce membre n’a pas de compte actif.');
+        const roles = await tx.select().from(userRole).where(eq(userRole.memberId, target.id));
+        if (roles.some((r) => r.roleCode === 'ADMIN'))
+          throw badRequest('Un administrateur ne peut pas être usurpé.');
+        await tx.update(session).set({ actingAsId: target.id }).where(eq(session.id, u.sessionId));
+        await audit(tx, req, {
+          action: 'impersonate.start',
+          entity: 'member',
+          entityId: target.id,
+          after: { member: target.number, roles: roles.map((r) => r.roleCode) },
+        });
+        return { ok: true };
+      });
+    },
+  );
+
+  /** Back to the administrator's own identity. Open to the impersonated session only. */
+  app.post('/auth/impersonate/stop', async (req) => {
+    const u = req.user!;
+    if (!u.impersonator) throw conflict('Aucune usurpation en cours.');
+    await db.transaction(async (tx) => {
+      await audit(tx, req, {
+        action: 'impersonate.stop',
+        entity: 'member',
+        entityId: u.id,
+      });
+      await tx.update(session).set({ actingAsId: null }).where(eq(session.id, u.sessionId));
+    });
+    return { ok: true };
+  });
+
   // --- Audit log (R-ADM-02) and login log (R-AUTH-07) ---------------------
 
   app.get(
@@ -227,6 +274,9 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           at: auditLog.at,
           actorId: auditLog.actorId,
           actorName: sql<string | null>`${member.firstName} || ' ' || ${member.lastName}`,
+          onBehalfOfName: sql<
+            string | null
+          >`(select m2.first_name || ' ' || m2.last_name from app.member m2 where m2.id = ${auditLog.onBehalfOfId})`,
           action: auditLog.action,
           entity: auditLog.entity,
           entityId: auditLog.entityId,

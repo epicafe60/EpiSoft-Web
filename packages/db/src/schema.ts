@@ -167,6 +167,8 @@ export const session = app.table(
     lastSeenAt: tz('last_seen_at').notNull().defaultNow(),
     ip: text('ip'),
     userAgent: text('user_agent'),
+    /** Admin impersonation: the member the administrator is acting as (audited). */
+    actingAsId: uuid('acting_as_id').references(() => member.id, { onDelete: 'set null' }),
     loginLogId: uuid('login_log_id'),
   },
   (t) => [index('session_member_idx').on(t.memberId)],
@@ -218,6 +220,8 @@ export const auditLog = app.table(
     id: id(),
     at: tz('at').notNull().defaultNow(),
     actorId: uuid('actor_id').references(() => member.id, { onDelete: 'set null' }),
+    /** Set while an administrator is impersonating this member: actorId stays the real person. */
+    onBehalfOfId: uuid('on_behalf_of_id').references(() => member.id, { onDelete: 'set null' }),
     action: text('action').notNull(),
     entity: text('entity').notNull(),
     entityId: text('entity_id'),

@@ -2,6 +2,7 @@ import { useDeferredValue, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Minus, Plus, ShoppingBasket, Trash2 } from 'lucide-react';
 import {
+  hasAnyRole,
   PREORDER_STATUS_LABELS,
   UNIT_LABELS,
   cartTotalCents,
@@ -13,6 +14,8 @@ import {
   type Unit,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { useMe } from '@/lib/auth';
+import type { MemberListItem } from '@/lib/types';
 import { euro, formatDate, todayIso } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -179,6 +182,18 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
 
 function CartPanel() {
   const cart = useCart();
+  const me = useMe();
+  const canOrderFor =
+    hasAnyRole(me.roles, ['ADHERENTS']) &&
+    hasAnyRole(me.roles, ['COMMANDES_EN_LIGNE', 'COMMANDES_GESTION']);
+  const [forMember, setForMember] = useState<{ id: string; label: string } | null>(null);
+  const [memberQ, setMemberQ] = useState('');
+  const search = useQuery({
+    queryKey: ['shop-member-search', memberQ],
+    queryFn: () =>
+      api.get<MemberListItem[]>(`/members?${new URLSearchParams({ q: memberQ, limit: '6' })}`),
+    enabled: canOrderFor && memberQ.trim().length >= 2,
+  });
   const queryClient = useQueryClient();
   const [pickupDate, setPickupDate] = useState(() => addDays(todayIso(), 3));
   const [comment, setComment] = useState('');
@@ -188,12 +203,15 @@ function CartPanel() {
     mutationFn: () =>
       api.post<{ id: string; number: string }>('/preorders', {
         pickupDate,
+        memberId: forMember?.id,
         comment: comment || undefined,
         lines: cart.lines.map((l) => ({ productId: l.productId, qty: l.qty })),
       }),
     onSuccess: async (r) => {
       setDone(r.number);
       cart.clear();
+      setForMember(null);
+      setMemberQ('');
       setComment('');
       await queryClient.invalidateQueries({ queryKey: ['my-orders'] });
     },
@@ -230,6 +248,49 @@ function CartPanel() {
             <p className="text-xs text-muted-foreground">
               Prix indicatifs : le montant final est celui du jour, en caisse.
             </p>
+            {canOrderFor ? (
+              <div className="grid gap-1">
+                <Field label="Commande pour un adhérent (facultatif)">
+                  {(p) => (
+                    <Input
+                      {...p}
+                      type="search"
+                      placeholder="Nom ou n° d’adhérent…"
+                      value={forMember ? forMember.label : memberQ}
+                      onChange={(e) => {
+                        setForMember(null);
+                        setMemberQ(e.target.value);
+                      }}
+                    />
+                  )}
+                </Field>
+                {!forMember && search.data?.length ? (
+                  <ul className="rounded-md border text-sm">
+                    {search.data.map((m) => (
+                      <li key={m.id}>
+                        <button
+                          type="button"
+                          className="w-full px-3 py-1.5 text-left hover:bg-accent"
+                          onClick={() =>
+                            setForMember({
+                              id: m.id,
+                              label: `${m.lastName} ${m.firstName} (n° ${m.number})`,
+                            })
+                          }
+                        >
+                          {m.lastName} {m.firstName} · n° {m.number}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {forMember ? (
+                  <p className="text-xs text-muted-foreground">
+                    La commande sera au nom de cet adhérent.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <Field label="Date de retrait souhaitée">
               {(p) => (
                 <Input

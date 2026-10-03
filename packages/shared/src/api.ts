@@ -25,6 +25,8 @@ export interface Me {
   lastName: string;
   username: string;
   roles: RoleCode[];
+  /** Set while an administrator acts as this user (impersonation). */
+  impersonator?: { id: string; firstName: string; lastName: string } | null;
 }
 
 export const roleCodeSchema = z.enum(ROLE_CODES);
@@ -49,6 +51,8 @@ export interface AuditEntry {
   at: string;
   actorId: string | null;
   actorName: string | null;
+  /** Set when an administrator was impersonating this member. */
+  onBehalfOfName?: string | null;
   action: string;
   entity: string;
   entityId: string | null;

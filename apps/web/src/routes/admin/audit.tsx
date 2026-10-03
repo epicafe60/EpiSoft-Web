@@ -15,6 +15,8 @@ const ACTION_LABELS: Record<string, string> = {
   'member.roles': 'Rôles modifiés',
   'password.reset': 'Mot de passe défini',
   'password.link': 'Lien de mot de passe envoyé',
+  'impersonate.start': 'Usurpation démarrée',
+  'impersonate.stop': 'Usurpation terminée',
 };
 
 function Diff({ before, after }: { before: unknown; after: unknown }) {
@@ -100,7 +102,14 @@ export function AuditPage() {
             {rows.map((r) => (
               <tr key={r.id} className="align-top">
                 <td className="whitespace-nowrap tabular-nums">{formatDateTime(r.at)}</td>
-                <td>{r.actorName ?? <span className="text-muted-foreground">système</span>}</td>
+                <td>
+                  {r.actorName ?? <span className="text-muted-foreground">système</span>}
+                  {r.onBehalfOfName ? (
+                    <span className="block text-xs text-amber-700">
+                      en tant que {r.onBehalfOfName}
+                    </span>
+                  ) : null}
+                </td>
                 <td>{ACTION_LABELS[r.action] ?? r.action}</td>
                 <td className="text-xs">
                   {r.entity}

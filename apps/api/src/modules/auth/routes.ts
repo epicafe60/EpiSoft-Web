@@ -89,6 +89,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       lastName: u.lastName,
       username: u.username,
       roles: u.roles,
+      impersonator: u.impersonator,
     };
   });
 

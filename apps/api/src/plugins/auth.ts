@@ -23,6 +23,8 @@ export interface AuthUser {
   username: string;
   roles: RoleCode[];
   sessionId: string;
+  /** Set while an administrator acts as this user (impersonation): the real person. */
+  impersonator: { id: string; firstName: string; lastName: string } | null;
 }
 
 declare module 'fastify' {
@@ -107,6 +109,28 @@ export default fp<{ db: Db; config: Config }>(async (app, { db, config }) => {
 });
 
 async function loadUser(db: Db, sessionId: string): Promise<AuthUser | null> {
+  const [s] = await db
+    .select({ memberId: session.memberId, actingAsId: session.actingAsId })
+    .from(session)
+    .where(and(eq(session.id, sessionId), gt(session.expiresAt, new Date())));
+  if (!s) return null;
+  const real = await loadMember(db, s.memberId);
+  if (!real) return null;
+  if (!s.actingAsId) return { ...real, sessionId, impersonator: null };
+  // Impersonation holds only while the real person is still an administrator.
+  const target = real.roles.includes('ADMIN') ? await loadMember(db, s.actingAsId) : null;
+  if (!target) return { ...real, sessionId, impersonator: null };
+  return {
+    ...target,
+    sessionId,
+    impersonator: { id: real.id, firstName: real.firstName, lastName: real.lastName },
+  };
+}
+
+async function loadMember(
+  db: Db,
+  memberId: string,
+): Promise<Omit<AuthUser, 'sessionId' | 'impersonator'> | null> {
   const rows = await db
     .select({
       id: member.id,
@@ -117,10 +141,9 @@ async function loadUser(db: Db, sessionId: string): Promise<AuthUser | null> {
       status: member.status,
       role: userRole.roleCode,
     })
-    .from(session)
-    .innerJoin(member, eq(member.id, session.memberId))
+    .from(member)
     .leftJoin(userRole, eq(userRole.memberId, member.id))
-    .where(and(eq(session.id, sessionId), gt(session.expiresAt, new Date())));
+    .where(eq(member.id, memberId));
   const first = rows[0];
   // A member deactivated after logging in loses access immediately.
   if (!first || !first.username || !canLogIn(first.status)) return null;
@@ -131,7 +154,6 @@ async function loadUser(db: Db, sessionId: string): Promise<AuthUser | null> {
     lastName: first.lastName,
     username: first.username,
     roles: ROLE_CODES.filter((code) => rows.some((r) => r.role === code)),
-    sessionId,
   };
 }
 
