@@ -4,6 +4,8 @@ import { PageHeader } from '../shell';
 const TABS = [
   { to: '/admin/parametres', label: 'Paramètres' },
   { to: '/admin/utilisateurs', label: 'Utilisateurs et rôles' },
+  { to: '/admin/adhesions', label: 'Adhésions' },
+  { to: '/admin/caisse', label: 'Caisse' },
   { to: '/admin/journal', label: 'Journal d’audit' },
   { to: '/admin/connexions', label: 'Connexions' },
 ] as const;

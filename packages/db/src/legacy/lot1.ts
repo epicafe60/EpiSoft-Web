@@ -290,15 +290,13 @@ async function migrateCatalog(src: LegacySource, tx: Tx, r: Report) {
       .where(eq(s.priceHistory.productId, productId))
       .limit(1);
     if (!hasHistory) {
-      await tx
-        .insert(s.priceHistory)
-        .values({
-          productId,
-          purchasePriceExcl: d.purchasePriceExcl,
-          purchasePriceIncl: d.purchasePriceIncl,
-          salePrice: d.salePrice,
-          source: 'MIGRATION',
-        });
+      await tx.insert(s.priceHistory).values({
+        productId,
+        purchasePriceExcl: d.purchasePriceExcl,
+        purchasePriceIncl: d.purchasePriceIncl,
+        salePrice: d.salePrice,
+        source: 'MIGRATION',
+      });
     }
 
     // §9.1: one INITIAL movement per product, equal to PRODSTOCK at the migration date.
@@ -313,16 +311,14 @@ async function migrateCatalog(src: LegacySource, tx: Tx, r: Report) {
       );
     if (d.kind === 'GOODS' && d.stock !== '0.000') {
       withStock++;
-      await tx
-        .insert(s.stockMovement)
-        .values({
-          productId,
-          qty: d.stock,
-          kind: 'INITIAL',
-          sourceType: 'legacy',
-          sourceId: d.code,
-          comment: 'Stock EpiSoft à la reprise',
-        });
+      await tx.insert(s.stockMovement).values({
+        productId,
+        qty: d.stock,
+        kind: 'INITIAL',
+        sourceType: 'legacy',
+        sourceId: d.code,
+        comment: 'Stock EpiSoft à la reprise',
+      });
     }
     // The cached stock is the sum of the ledger (principle 6).
     await tx

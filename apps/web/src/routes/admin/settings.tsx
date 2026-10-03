@@ -160,6 +160,56 @@ export function SettingsPage() {
         </SettingCard>
 
         <SettingCard
+          settingKey="pos.options"
+          title="Options de caisse"
+          initial={data['pos.options']}
+        >
+          {(v, set) => (
+            <div className="grid gap-2">
+              {(
+                [
+                  ['allowTransfer', 'Accepter le virement comme règlement en caisse'],
+                  ['discountsEnabled', 'Autoriser les remises sur une ligne (R-VTE-07)'],
+                  [
+                    'membershipExpiredBlocking',
+                    'Bloquer la vente si l’adhésion est expirée (R-ADH-03)',
+                  ],
+                ] as const
+              ).map(([k, label]) => (
+                <div key={k} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`opt-${k}`}
+                    checked={v[k]}
+                    onChange={(e) => set({ ...v, [k]: e.target.checked })}
+                  />
+                  <Label htmlFor={`opt-${k}`}>{label}</Label>
+                </div>
+              ))}
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="pos.treasurerEmail"
+          title="Courriel du trésorier"
+          description="Reçoit le rapport de chaque clôture de caisse (R-SES-02)."
+          initial={data['pos.treasurerEmail']}
+        >
+          {(v, set, errors) => (
+            <Field label="Courriel" error={errors.email}>
+              {(p) => (
+                <Input
+                  {...p}
+                  type="email"
+                  value={v.email ?? ''}
+                  onChange={(e) => set({ email: e.target.value })}
+                />
+              )}
+            </Field>
+          )}
+        </SettingCard>
+
+        <SettingCard
           settingKey="pos.sellToNonMembers"
           title="Vente aux non-adhérents"
           initial={data['pos.sellToNonMembers']}

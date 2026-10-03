@@ -11,6 +11,7 @@ import {
   memberPayment,
   membership,
   membershipType,
+  product,
   sale,
   session,
   userRole,
@@ -95,6 +96,13 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .set(req.body)
           .where(eq(membershipType.id, req.params.id))
           .returning();
+        // The till sells the membership through its service product: same price (R-ADH-05).
+        if (after!.productId) {
+          await tx
+            .update(product)
+            .set({ salePrice: after!.price, name: `Adhésion ${after!.label.toLowerCase()}` })
+            .where(eq(product.id, after!.productId));
+        }
         await audit(tx, req, {
           action: 'membership_type.update',
           entity: 'membership_type',

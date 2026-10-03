@@ -201,6 +201,35 @@ describe('cagnotte and memberships at the back office (R-CAG-01, R-CAG-08, R-ADH
   });
 });
 
+describe('membership types (R-ADH-01, R-ADH-05)', () => {
+  it('an ADMIN changes the price, and the till product follows', async () => {
+    const admin = await createUser(t.db, { roles: ['ADMIN'] });
+    const ah = await login(t.app, admin.username!);
+    const annual = (await get('/api/v1/membership-types'))
+      .json()
+      .find((x: { code: string }) => x.code === 'ANNUAL');
+    expect(
+      (
+        await t.app.inject({
+          method: 'PUT',
+          url: `/api/v1/membership-types/${annual.id}`,
+          headers,
+          payload: { label: 'Annuelle', price: '15', durationMonths: 12, active: true },
+        })
+      ).statusCode,
+    ).toBe(403);
+    const res = await t.app.inject({
+      method: 'PUT',
+      url: `/api/v1/membership-types/${annual.id}`,
+      headers: ah,
+      payload: { label: 'Annuelle', price: '15', durationMonths: 12, active: true },
+    });
+    expect(res.json()).toMatchObject({ price: '15.00' });
+    const [p] = await t.db.select().from(product).where(eq(product.id, annual.productId));
+    expect(p!.salePrice).toBe('15.00');
+  });
+});
+
 describe('catalogue (R-PRD-01, R-PRD-05, R-PRD-06)', () => {
   async function shelf() {
     const [u] = await t.db
