@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
+import { Lock, RotateCcw } from 'lucide-react';
 import {
   formatEuro,
   PAYMENT_METHOD_LABELS,
@@ -85,6 +85,14 @@ export function TillAdminPage() {
     queryFn: () => api.get<SessionReport>(`/pos/sessions/${reportId}/report`),
     enabled: !!reportId,
   });
+  const forceClose = useMutation({
+    mutationFn: (v: { id: string; comment: string }) =>
+      api.post(`/pos/sessions/${v.id}/force-close`, { comment: v.comment }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      await queryClient.invalidateQueries({ queryKey: ['devices'] });
+    },
+  });
   const reopen = useMutation({
     mutationFn: (id: string) => api.post(`/pos/sessions/${id}/reopen`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
@@ -136,6 +144,7 @@ export function TillAdminPage() {
           <CardTitle className="text-base">Sessions de caisse</CardTitle>
         </CardHeader>
         {reopen.error ? <Alert className="mx-5">{reopen.error.message}</Alert> : null}
+        {forceClose.error ? <Alert className="mx-5">{forceClose.error.message}</Alert> : null}
         <Table>
           <thead>
             <tr>
@@ -173,6 +182,21 @@ export function TillAdminPage() {
                   {s.difference !== null ? euro(s.difference) : '—'}
                 </td>
                 <td className="text-right">
+                  {s.status === 'OPEN' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        const comment = window.prompt(
+                          'Clôturer cette session sans comptage (le fond de caisse attendu est retenu). Motif :',
+                        );
+                        if (comment && comment.trim().length >= 3)
+                          forceClose.mutate({ id: s.id, comment: comment.trim() });
+                      }}
+                    >
+                      <Lock /> Clôturer
+                    </Button>
+                  ) : null}
                   {s.status === 'CLOSED' && s.difference !== null ? (
                     <Button
                       size="sm"
@@ -198,6 +222,7 @@ export function TillAdminPage() {
 
       <Dialog
         open={!!reportId}
+
         onClose={() => setReportId(null)}
         title="Rapport de session"
         className="max-w-xl"

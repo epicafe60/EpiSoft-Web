@@ -196,6 +196,19 @@ function OrderDialog({ id, onClose }: { id: string | null; onClose: () => void }
                   Remettre à préparer
                 </Button>
               ) : null}
+              {hasAnyRole(me.roles, ['ADMIN']) &&
+              (data.status === 'SUBMITTED' || data.status === 'READY') ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    window.confirm(
+                      'Clôturer cette commande comme retirée, sans passer par la caisse ?',
+                    ) && change.mutate('PICKED_UP')
+                  }
+                >
+                  Clôturer (retirée)
+                </Button>
+              ) : null}
               {canTransition(data.status, 'CANCELLED') ? (
                 <Button
                   variant="destructive"

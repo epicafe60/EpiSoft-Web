@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -206,91 +207,130 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     forced: z.boolean().default(false),
   });
 
-  /** R-SES-02 / R-SES-03: closes once, records the count and sends the report. */
+  type CloseBody = z.infer<typeof closeSchema>;
+
+  /**
+   * Closes a session once: records the count, the accounting draft and sends the report.
+   * `administrative` (ADMIN) closes without a count: the cash is taken as the expected amount.
+   */
+  const closeSession = async (
+    req: FastifyRequest,
+    id: string,
+    b: CloseBody,
+    administrative = false,
+  ) => {
+    const report = await db.transaction(async (tx) => {
+      const [s] = await tx.select().from(cashSession).where(eq(cashSession.id, id)).for('update');
+      if (!s) throw notFound('Session inconnue.');
+      if (s.status === 'CLOSED') throw conflict('Cette session est déjà clôturée.');
+      const summary = await sessionSummary(tx, s.id);
+      const expected =
+        decimalToCents(s.openingFloat) +
+        decimalToCents(summary.cashSales) +
+        decimalToCents(summary.cashOther);
+      const counted = administrative ? expected : countedCashCents(b.denominations);
+      const result = closing({
+        openingFloatCents: decimalToCents(s.openingFloat),
+        cashSalesCents: decimalToCents(summary.cashSales),
+        cashOtherCents: decimalToCents(summary.cashOther),
+        countedCashCents: counted,
+        bankDepositCents: decimalToCents(b.bankDeposit),
+      });
+      if (result.nextFloatCents < 0)
+        throw badRequest('Le dépôt en banque dépasse les espèces comptées.');
+      const values = {
+        sessionId: s.id,
+        denominations: b.denominations,
+        countedCash: centsToDecimal(counted),
+        expectedCash: centsToDecimal(result.expectedCashCents),
+        difference: centsToDecimal(result.differenceCents),
+        bankDeposit: b.bankDeposit,
+        nextFloat: centsToDecimal(result.nextFloatCents),
+        chequesCount: b.chequesCount,
+        chequesTotal: b.chequesTotal,
+        cardTotalDeclared: b.cardTotalDeclared,
+        summary,
+        comment: b.comment ?? null,
+      };
+      await tx.insert(cashCount).values(values);
+      const closedAt = new Date();
+      await tx
+        .update(cashSession)
+        .set({ status: 'CLOSED', closedAt, closedBy: req.user!.id })
+        .where(eq(cashSession.id, s.id));
+      await audit(tx, req, {
+        action: 'session.close',
+        entity: 'cash_session',
+        entityId: s.id,
+        after: { ...values, summary: undefined, forced: b.forced },
+      });
+
+      // R-CPT-08: the VTE draft. In a savepoint: an accounting problem never blocks the cash closing.
+      try {
+        await tx.transaction((sp) => generateSessionEntry(sp, s.id, req.user!.id));
+      } catch (e) {
+        req.log.error({ err: e, session: s.id }, 'écriture de caisse non générée');
+        await audit(tx, req, {
+          action: 'session.entry_failed',
+          entity: 'cash_session',
+          entityId: s.id,
+          after: { error: String(e) },
+        });
+      }
+
+      const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
+      const device = await tx.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
+      if (treasurer) {
+        await queueEmail(tx, {
+          ...closingReportEmail(
+            treasurer,
+            device?.name ?? '',
+            s.openedAt,
+            closedAt,
+            summary,
+            values,
+            b.forced,
+          ),
+          attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))],
+        });
+      }
+      return { ...values, closedAt: closedAt.toISOString() };
+    });
+    return report;
+  };
+
+  /** R-SES-02 / R-SES-03: the till closes its own session. */
   app.post(
     '/pos/sessions/:id/close',
     { ...cashier, schema: { ...sessionParams, body: closeSchema } },
-    async (req) => {
-      const b = req.body;
-      const report = await db.transaction(async (tx) => {
-        const [s] = await tx
-          .select()
-          .from(cashSession)
-          .where(eq(cashSession.id, req.params.id))
-          .for('update');
-        if (!s) throw notFound('Session inconnue.');
-        if (s.status === 'CLOSED') throw conflict('Cette session est déjà clôturée.');
-        const summary = await sessionSummary(tx, s.id);
-        const counted = countedCashCents(b.denominations);
-        const result = closing({
-          openingFloatCents: decimalToCents(s.openingFloat),
-          cashSalesCents: decimalToCents(summary.cashSales),
-          cashOtherCents: decimalToCents(summary.cashOther),
-          countedCashCents: counted,
-          bankDepositCents: decimalToCents(b.bankDeposit),
-        });
-        if (result.nextFloatCents < 0)
-          throw badRequest('Le dépôt en banque dépasse les espèces comptées.');
-        const values = {
-          sessionId: s.id,
-          denominations: b.denominations,
-          countedCash: centsToDecimal(counted),
-          expectedCash: centsToDecimal(result.expectedCashCents),
-          difference: centsToDecimal(result.differenceCents),
-          bankDeposit: b.bankDeposit,
-          nextFloat: centsToDecimal(result.nextFloatCents),
-          chequesCount: b.chequesCount,
-          chequesTotal: b.chequesTotal,
-          cardTotalDeclared: b.cardTotalDeclared,
-          summary,
-          comment: b.comment ?? null,
-        };
-        await tx.insert(cashCount).values(values);
-        const closedAt = new Date();
-        await tx
-          .update(cashSession)
-          .set({ status: 'CLOSED', closedAt, closedBy: req.user!.id })
-          .where(eq(cashSession.id, s.id));
-        await audit(tx, req, {
-          action: 'session.close',
-          entity: 'cash_session',
-          entityId: s.id,
-          after: { ...values, summary: undefined, forced: b.forced },
-        });
+    async (req) => closeSession(req, req.params.id, req.body),
+  );
 
-        // R-CPT-08: the VTE draft. In a savepoint: an accounting problem never blocks the cash closing.
-        try {
-          await tx.transaction((sp) => generateSessionEntry(sp, s.id, req.user!.id));
-        } catch (e) {
-          req.log.error({ err: e, session: s.id }, 'écriture de caisse non générée');
-          await audit(tx, req, {
-            action: 'session.entry_failed',
-            entity: 'cash_session',
-            entityId: s.id,
-            after: { error: String(e) },
-          });
-        }
-
-        const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
-        const device = await tx.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
-        if (treasurer) {
-          await queueEmail(tx, {
-            ...closingReportEmail(
-              treasurer,
-              device?.name ?? '',
-              s.openedAt,
-              closedAt,
-              summary,
-              values,
-              b.forced,
-            ),
-            attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))],
-          });
-        }
-        return { ...values, closedAt: closedAt.toISOString() };
-      });
-      return report;
+  /**
+   * An ADMIN closes any session left open (forgotten, device lost), with no count: the cash is
+   * taken as the expected amount, nothing is deposited, and the comment says why. Audited.
+   */
+  app.post(
+    '/pos/sessions/:id/force-close',
+    {
+      preHandler: app.requireRoles('ADMIN'),
+      schema: { ...sessionParams, body: z.object({ comment: z.string().trim().min(3).max(500) }) },
     },
+    async (req) =>
+      closeSession(
+        req,
+        req.params.id,
+        {
+          denominations: {},
+          bankDeposit: '0.00',
+          chequesCount: 0,
+          chequesTotal: '0.00',
+          cardTotalDeclared: '0.00',
+          comment: `Clôture administrative : ${req.body.comment}`,
+          forced: true,
+        },
+        true,
+      ),
   );
 
   app.post(

@@ -285,10 +285,14 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         const isManager = hasAnyRole(user.roles, ['COMMANDES_GESTION']);
         const ownCancel = o.memberId === user.id && to === 'CANCELLED' && memberCanCancel(o.status);
         if (!isManager && !ownCancel) throw forbidden();
-        // The pick-up goes through the till (R-PRE-03), never by hand.
-        if (to === 'PICKED_UP') throw badRequest('Une précommande est retirée depuis la caisse.');
-        if (!canTransition(o.status, to))
-          throw conflict('Ce changement d’état n’est pas possible.');
+        // The pick-up goes through the till (R-PRE-03); only an ADMIN closes an order by hand.
+        const adminClose = to === 'PICKED_UP' && hasAnyRole(user.roles, ['ADMIN']);
+        if (to === 'PICKED_UP' && !adminClose)
+          throw badRequest('Une précommande est retirée depuis la caisse.');
+        const allowed = adminClose
+          ? (OPEN_PREORDER_STATUSES as readonly string[]).includes(o.status)
+          : canTransition(o.status, to);
+        if (!allowed) throw conflict('Ce changement d’état n’est pas possible.');
         await tx
           .update(preorder)
           .set({ status: to, updatedAt: new Date() })
