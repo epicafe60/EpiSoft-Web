@@ -1,6 +1,7 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
+import { eq } from 'drizzle-orm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROLE_CODES, ROLE_LABELS } from '@episoft/shared';
@@ -34,6 +35,52 @@ export async function migrateAndSeed(db: Db, migrationsFolder = MIGRATIONS_FOLDE
     migrationsTable: '__drizzle_migrations',
   });
   await seedRoles(db);
+  await seedMembershipTypes(db);
+}
+
+/**
+ * R-ADH-01 initial values, with the service products sold at the till (R-ADH-05, R-PRD-02).
+ * Codes follow EpiSoft (01001, 01002, 01004) so the legacy migration updates the same rows.
+ * Existing rows are left untouched: they are edited in the application.
+ */
+export async function seedMembershipTypes(db: DbOrTx): Promise<void> {
+  const services = [
+    {
+      code: '01001',
+      name: 'Adhésion de passage',
+      salePrice: '2.00',
+      type: { code: 'PASSING', label: 'De passage', durationMonths: 0, sort: 2 },
+    },
+    {
+      code: '01002',
+      name: 'Adhésion annuelle',
+      salePrice: '12.00',
+      type: { code: 'ANNUAL', label: 'Annuelle', durationMonths: 12, sort: 1 },
+    },
+    { code: '01004', name: 'Don', salePrice: '0.00', type: null },
+  ];
+  for (const s of services) {
+    await db
+      .insert(schema.product)
+      .values({
+        code: s.code,
+        name: s.name,
+        kind: 'SERVICE',
+        saleCondition: 'BOTH',
+        salePrice: s.salePrice,
+        status: 'ACTIVE',
+      })
+      .onConflictDoNothing({ target: schema.product.code });
+    if (!s.type) continue;
+    const [p] = await db
+      .select({ id: schema.product.id })
+      .from(schema.product)
+      .where(eq(schema.product.code, s.code));
+    await db
+      .insert(schema.membershipType)
+      .values({ ...s.type, price: s.salePrice, productId: p!.id })
+      .onConflictDoNothing({ target: schema.membershipType.code });
+  }
 }
 
 export async function seedRoles(db: DbOrTx): Promise<void> {

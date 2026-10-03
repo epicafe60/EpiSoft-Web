@@ -41,6 +41,21 @@ export const settingSchemas = {
     amount: amount.refine((s) => !s.startsWith('-'), 'Le découvert est un montant positif.'),
   }),
   'pos.sellToNonMembers': z.object({ enabled: z.boolean() }),
+  'pos.options': z.object({
+    /** R-VTE-09: transfer accepted as a payment method at the till. */
+    allowTransfer: z.boolean(),
+    /** R-VTE-07: line discounts allowed at the till. */
+    discountsEnabled: z.boolean(),
+    /** R-ADH-03: an expired membership blocks the sale instead of only warning. */
+    membershipExpiredBlocking: z.boolean(),
+  }),
+  /** R-SES-02 step 6: the closing report is sent to this address. */
+  'pos.treasurerEmail': z.object({
+    email: optionalText(200).refine(
+      (s) => s === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s),
+      'Courriel invalide.',
+    ),
+  }),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -63,6 +78,12 @@ export const SETTING_DEFAULTS: Settings = {
   'pos.defaultFloat': { amount: '0.00' },
   'wallet.overdraftLimit': { amount: '0.00' },
   'pos.sellToNonMembers': { enabled: true },
+  'pos.options': {
+    allowTransfer: false,
+    discountsEnabled: false,
+    membershipExpiredBlocking: false,
+  },
+  'pos.treasurerEmail': { email: null },
 };
 
 export function isSettingKey(key: string): key is SettingKey {

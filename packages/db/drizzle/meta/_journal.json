@@ -8,6 +8,20 @@
       "when": 1791042977705,
       "tag": "0000_lot0_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791045757978,
+      "tag": "0001_lot1_till_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791045774499,
+      "tag": "0002_household_balance",
+      "breakpoints": true
     }
   ]
 }
