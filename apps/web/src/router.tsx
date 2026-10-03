@@ -21,6 +21,11 @@ import { UsersPage } from './routes/admin/users';
 import { AuditPage } from './routes/admin/audit';
 import { LoginsPage } from './routes/admin/logins';
 import { NotFound, RouteError } from './routes/errors';
+import { MembersPage } from './routes/members/list';
+import { EditMemberPage, NewMemberPage } from './routes/members/member-form';
+import { HouseholdPage } from './routes/members/household';
+import { ProductsPage } from './routes/catalog/list';
+import { EditProductPage, NewProductPage } from './routes/catalog/product-form';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -85,7 +90,10 @@ function requireRoles(roles: readonly RoleCode[]) {
   };
 }
 
-const moduleRoutes = MODULES.filter((m) => m.key !== 'admin').map((m) =>
+/** Modules built so far; the others show what is coming (spec §10). */
+const BUILT = new Set(['admin', 'membres', 'catalogue']);
+
+const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
   createRoute({
     getParentRoute: () => appRoute,
     path: m.path,
@@ -93,6 +101,54 @@ const moduleRoutes = MODULES.filter((m) => m.key !== 'admin').map((m) =>
     component: () => <ModulePlaceholder moduleKey={m.key} />,
   }),
 );
+
+// --- Members (§4.2, §4.3) ---
+const adherents = requireRoles(['ADHERENTS']);
+const membersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/membres',
+  beforeLoad: adherents,
+  component: MembersPage,
+});
+const newMemberRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/membres/nouveau',
+  beforeLoad: adherents,
+  component: NewMemberPage,
+});
+const memberRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/membres/$id',
+  beforeLoad: adherents,
+  component: EditMemberPage,
+});
+const householdRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/foyers/$id',
+  beforeLoad: adherents,
+  component: HouseholdPage,
+});
+
+// --- Catalogue (§4.6) ---
+const catalogReaders = requireRoles(['PRODUITS', 'APPROS']);
+const productsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue',
+  beforeLoad: catalogReaders,
+  component: ProductsPage,
+});
+const newProductRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/nouveau',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: NewProductPage,
+});
+const productRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/$id',
+  beforeLoad: catalogReaders,
+  component: EditProductPage,
+});
 
 const adminRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -135,6 +191,13 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     ...moduleRoutes,
+    membersRoute,
+    newMemberRoute,
+    memberRoute,
+    householdRoute,
+    productsRoute,
+    newProductRoute,
+    productRoute,
     adminRoute.addChildren([
       adminIndexRoute,
       adminSettingsRoute,

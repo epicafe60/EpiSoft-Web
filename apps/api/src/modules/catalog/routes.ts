@@ -176,16 +176,14 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         .returning();
       if (eans.length)
         await tx.insert(productBarcode).values(eans.map((ean) => ({ ean, productId: p!.id })));
-      await tx
-        .insert(priceHistory)
-        .values({
-          productId: p!.id,
-          purchasePriceExcl: p!.purchasePriceExcl,
-          purchasePriceIncl: p!.purchasePriceIncl,
-          salePrice: p!.salePrice,
-          source: 'FORM',
-          by: req.user!.id,
-        });
+      await tx.insert(priceHistory).values({
+        productId: p!.id,
+        purchasePriceExcl: p!.purchasePriceExcl,
+        purchasePriceIncl: p!.purchasePriceIncl,
+        salePrice: p!.salePrice,
+        source: 'FORM',
+        by: req.user!.id,
+      });
       await audit(tx, req, {
         action: 'product.create',
         entity: 'product',
@@ -252,16 +250,14 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         }
         if (priceChanged) {
           // R-PRD-05: every price change is dated, with its author and origin.
-          await tx
-            .insert(priceHistory)
-            .values({
-              productId: before.id,
-              purchasePriceExcl: after!.purchasePriceExcl,
-              purchasePriceIncl: after!.purchasePriceIncl,
-              salePrice: after!.salePrice,
-              source: 'FORM',
-              by: req.user!.id,
-            });
+          await tx.insert(priceHistory).values({
+            productId: before.id,
+            purchasePriceExcl: after!.purchasePriceExcl,
+            purchasePriceIncl: after!.purchasePriceIncl,
+            salePrice: after!.salePrice,
+            source: 'FORM',
+            by: req.user!.id,
+          });
         }
         const changed = [...Object.keys(set), ...(eans ? ['eans'] : [])] as string[];
         await audit(tx, req, {

@@ -47,8 +47,26 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+async function upload<T>(path: string, file: Blob): Promise<T> {
+  const res = await fetch(`/api/v1${path}`, {
+    method: 'PUT',
+    headers: { [CSRF_HEADER]: '1', 'content-type': file.type },
+    credentials: 'same-origin',
+    body: file,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok)
+    throw new ApiError(
+      (data as Problem) ?? { type: 'about:blank', title: 'Erreur', status: res.status },
+    );
+  return data as T;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T = void>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   put: <T = void>(path: string, body: unknown) => request<T>('PUT', path, body),
+  patch: <T = void>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  /** Raw body upload (images). */
+  upload: <T = void>(path: string, file: Blob) => upload<T>(path, file),
 };
