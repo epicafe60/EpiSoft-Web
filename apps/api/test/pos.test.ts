@@ -302,7 +302,7 @@ describe('sales (R-VTE-10, R-SYNC-02)', () => {
       .from(membershipType)
       .where(eq(membershipType.code, 'ANNUAL'));
     const { household: h, members } = await addHousehold(1);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
     await push([
       saleOp(
         [{ productId: annual!.productId!, unitPrice: '12.00' }],
