@@ -32,7 +32,7 @@ export class BankParseError extends Error {}
 
 /** "1 234,56", "-12.5", "12,50 €" → cents; null when it is not a number. */
 export function parseBankAmount(input: string): number | null {
-  const s = input.replace(/[\s  €]/g, '');
+  const s = input.replace(/[\s\u00a0\u202f€]/g, '');
   const m = /^([+-])?(\d+)(?:[.,](\d{1,2})\d*)?$/.exec(s);
   if (!m) return null;
   const cents = Number(m[2]) * 100 + Number((m[3] ?? '').padEnd(2, '0'));
@@ -157,7 +157,7 @@ const HEADERS = {
 
 /** CSV with a header line: date, label and either one signed amount or debit/credit columns. */
 export function parseCsv(text: string): ParsedStatement {
-  const clean = text.replace(/^﻿/, '');
+  const clean = text.replace(/^\uFEFF/, '');
   const first = clean.split(/\r?\n/, 1)[0] ?? '';
   const delimiter = [';', '\t', ','].sort(
     (a, b) => first.split(b).length - first.split(a).length,
