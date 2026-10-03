@@ -26,6 +26,11 @@ import { EditMemberPage, NewMemberPage } from './routes/members/member-form';
 import { HouseholdPage } from './routes/members/household';
 import { ProductsPage } from './routes/catalog/list';
 import { EditProductPage, NewProductPage } from './routes/catalog/product-form';
+import { TillLayout } from './till/layout';
+import { TillGate } from './till/gate';
+import { SalePage } from './till/sale';
+import { TicketsPage } from './till/tickets';
+import { ClosingPage } from './till/closing';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -91,7 +96,7 @@ function requireRoles(roles: readonly RoleCode[]) {
 }
 
 /** Modules built so far; the others show what is coming (spec §10). */
-const BUILT = new Set(['admin', 'membres', 'catalogue']);
+const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse']);
 
 const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
   createRoute({
@@ -150,6 +155,47 @@ const productRoute = createRoute({
   component: EditProductPage,
 });
 
+// --- Till (§4.4, §4.5, §5.3): full screen, usable offline ---
+const tillRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/caisse',
+  beforeLoad: async ({ context, location }) => {
+    const me = await context.queryClient.ensureQueryData(meQuery);
+    if (!me) throw redirect({ to: '/connexion', search: { redirect: location.href } });
+    if (!hasAnyRole(me.roles, ['CAISSE'])) throw redirect({ to: '/' });
+    return { me };
+  },
+  component: TillLayout,
+});
+const saleRoute = createRoute({
+  getParentRoute: () => tillRoute,
+  path: '/',
+  component: () => (
+    <TillGate>
+      <SalePage />
+    </TillGate>
+  ),
+});
+const ticketsRoute = createRoute({
+  getParentRoute: () => tillRoute,
+  path: '/tickets',
+  component: () => (
+    <TillGate>
+      <TicketsPage />
+    </TillGate>
+  ),
+});
+const closingRoute = createRoute({
+  getParentRoute: () => tillRoute,
+  path: '/cloture',
+  component: () => (
+    // The page stays mounted after closing to show the report.
+    <TillGate needSession={false}>
+      <ClosingPage />
+    </TillGate>
+  ),
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/admin',
@@ -188,6 +234,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   forgotRoute,
   setPasswordRoute,
+  tillRoute.addChildren([saleRoute, ticketsRoute, closingRoute]),
   appRoute.addChildren([
     homeRoute,
     ...moduleRoutes,

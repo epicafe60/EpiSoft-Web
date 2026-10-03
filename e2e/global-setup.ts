@@ -65,6 +65,8 @@ export default async function globalSetup() {
   }
   await seedLot1(db);
   await pool.end();
+  // Read by the tests to check the database (workers inherit the environment).
+  process.env.E2E_DATABASE_URL = url;
 
   const api = start('api', join(REPO_ROOT, 'apps/api'), ['exec', 'tsx', 'src/server.ts'], {
     NODE_ENV: 'test',

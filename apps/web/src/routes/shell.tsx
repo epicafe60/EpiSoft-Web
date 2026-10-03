@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { visibleModules, type ModuleKey } from '@episoft/shared';
 import { api } from '@/lib/api';
-import { useMe } from '@/lib/auth';
+import { useMe, writeCachedMe } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -64,6 +64,7 @@ export function AppShell() {
 
   const logout = async () => {
     await api.post('/auth/logout').catch(() => undefined);
+    writeCachedMe(null);
     queryClient.clear();
     await navigate({ to: '/connexion', search: {} });
   };
