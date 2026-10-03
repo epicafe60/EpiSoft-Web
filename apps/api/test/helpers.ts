@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { inject } from 'vitest';
-import { createDb, createPool, member, userRole, type Db } from '@episoft/db';
+import { createDb, createPool, member, seedMembershipTypes, userRole, type Db } from '@episoft/db';
 import { CSRF_HEADER, type RoleCode } from '@episoft/shared';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
@@ -26,6 +26,8 @@ export async function setupTestApp() {
       // audit_log is append-only (trigger), so TRUNCATE is the only way to clear it.
       await db.execute(sql`truncate app.audit_log, app.login_log, app.session, app.password_reset_token,
         app.email_outbox, app.setting, app.user_role, app.member, app.household cascade`);
+      // CASCADE reaches the catalogue (member → supplier → product): restore the seeds.
+      await seedMembershipTypes(db);
     },
     async close() {
       await app.close();

@@ -32,6 +32,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { sendPasswordLink } from '../auth/routes';
+import { loadSettings } from './settings-store';
 
 export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
   app,
@@ -41,18 +42,7 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
 
   // --- Settings (R-ADM-01) -------------------------------------------------
 
-  app.get('/settings', admin, async (): Promise<Settings> => {
-    const rows = await db.select().from(setting).where(inArray(setting.key, SETTING_KEYS));
-    const result: Record<string, unknown> = { ...SETTING_DEFAULTS };
-    for (const r of rows) {
-      const key = r.key;
-      if (!isSettingKey(key)) continue;
-      // A stored value that no longer matches its schema falls back to the default.
-      const parsed = settingSchemas[key].safeParse(r.value);
-      if (parsed.success) result[key] = parsed.data;
-    }
-    return result as Settings;
-  });
+  app.get('/settings', admin, async (): Promise<Settings> => loadSettings(db));
 
   app.put(
     '/settings/:key',
@@ -187,6 +177,8 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         await tx.delete(userRole).where(eq(userRole.memberId, id));
         if (next.length)
           await tx.insert(userRole).values(next.map((roleCode) => ({ memberId: id, roleCode })));
+        // The till refreshes members by updated_at: a new cashier must reach it (R-OFF-02).
+        await tx.update(member).set({ updatedAt: new Date() }).where(eq(member.id, id));
         await audit(tx, req, {
           action: 'member.roles',
           entity: 'member',

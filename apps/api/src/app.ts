@@ -17,6 +17,7 @@ import auth from './plugins/auth';
 import errors from './plugins/errors';
 import { authRoutes } from './modules/auth/routes';
 import { adminRoutes } from './modules/admin/routes';
+import { posRoutes } from './modules/pos/routes';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -55,6 +56,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
     async (api) => {
       await api.register(authRoutes, { db, config });
       await api.register(adminRoutes, { db, config });
+      await api.register(posRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

@@ -14,7 +14,6 @@ import { PAYMENT_METHODS } from './pos';
 
 /** Decimal string with up to 2 decimals, e.g. "12.50" or "-3.00". */
 const amount = z.string().regex(/^-?\d+(\.\d{1,2})?$/, 'Montant invalide.');
-const unitPrice = z.string().regex(/^-?\d+(\.\d{1,4})?$/, 'Prix invalide.');
 const quantity = z.string().regex(/^-?\d+(\.\d{1,3})?$/, 'Quantité invalide.');
 const isoDateTime = z.string().datetime({ offset: true });
 
@@ -27,8 +26,9 @@ export const saleLineSchema = z.object({
   productId: z.string().uuid(),
   label: z.string().min(1).max(200),
   qty: quantity,
-  unitPrice,
-  catalogPrice: unitPrice.nullable(),
+  /** Prices at the till have 2 decimals, like the catalogue. */
+  unitPrice: amount,
+  catalogPrice: amount.nullable(),
   discount: amount,
 });
 export type SaleLinePayload = z.infer<typeof saleLineSchema>;
