@@ -366,19 +366,17 @@ async function recordSale(
           createdBy: p.cashierId,
         })
         .returning({ id: memberPayment.id });
-      await tx
-        .insert(walletEntry)
-        .values({
-          householdId,
-          at: soldAt,
-          amount: centsToDecimal(changeCents),
-          kind: 'TOPUP',
-          paymentMethod: 'CASH',
-          saleId,
-          paymentId: pay!.id,
-          comment: `Monnaie du ticket ${number}`,
-          createdBy: p.cashierId,
-        });
+      await tx.insert(walletEntry).values({
+        householdId,
+        at: soldAt,
+        amount: centsToDecimal(changeCents),
+        kind: 'TOPUP',
+        paymentMethod: 'CASH',
+        saleId,
+        paymentId: pay!.id,
+        comment: `Monnaie du ticket ${number}`,
+        createdBy: p.cashierId,
+      });
     }
   }
 
@@ -400,17 +398,15 @@ async function recordSale(
       type.durationMonths,
       await currentMembershipEnd(tx, householdId),
     );
-    await tx
-      .insert(membership)
-      .values({
-        householdId,
-        typeId: type.id,
-        startDate: period.start,
-        endDate: period.end,
-        amount: centsToDecimal(x.totalCents),
-        saleId,
-        createdBy: p.cashierId,
-      });
+    await tx.insert(membership).values({
+      householdId,
+      typeId: type.id,
+      startDate: period.start,
+      endDate: period.end,
+      amount: centsToDecimal(x.totalCents),
+      saleId,
+      createdBy: p.cashierId,
+    });
   }
 
   // R-VTE-11: the receipt is queued only now that the sale is recorded.
@@ -521,22 +517,20 @@ async function cancelSale(
     cancelsSaleId: original.id,
     hasServices: original.hasServices,
   });
-  await tx
-    .insert(saleLine)
-    .values(
-      lines.map((l) => ({
-        saleId: p.cancelSaleId,
-        lineNo: l.lineNo,
-        productId: l.productId,
-        label: l.label,
-        qty: negQty(l.qty),
-        unitPrice: l.unitPrice,
-        catalogPrice: l.catalogPrice,
-        discount: neg(l.discount),
-        lineTotal: neg(l.lineTotal),
-        vatRate: l.vatRate,
-      })),
-    );
+  await tx.insert(saleLine).values(
+    lines.map((l) => ({
+      saleId: p.cancelSaleId,
+      lineNo: l.lineNo,
+      productId: l.productId,
+      label: l.label,
+      qty: negQty(l.qty),
+      unitPrice: l.unitPrice,
+      catalogPrice: l.catalogPrice,
+      discount: neg(l.discount),
+      lineTotal: neg(l.lineTotal),
+      vatRate: l.vatRate,
+    })),
+  );
   // Each payment is given back by the same method (cash out of the drawer, cagnotte refunded…).
   await tx
     .insert(salePayment)
@@ -555,17 +549,15 @@ async function cancelSale(
     .reduce((s, x) => s + decimalToCents(x.amount), 0);
   if (walletCents > 0 && original.householdId) {
     await lockedBalanceCents(tx, original.householdId);
-    await tx
-      .insert(walletEntry)
-      .values({
-        householdId: original.householdId,
-        at,
-        amount: centsToDecimal(walletCents),
-        kind: 'REFUND',
-        saleId: p.cancelSaleId,
-        comment: `Annulation du ticket ${original.number}`,
-        createdBy: p.cashierId,
-      });
+    await tx.insert(walletEntry).values({
+      householdId: original.householdId,
+      at,
+      amount: centsToDecimal(walletCents),
+      kind: 'REFUND',
+      saleId: p.cancelSaleId,
+      comment: `Annulation du ticket ${original.number}`,
+      createdBy: p.cashierId,
+    });
   }
   await tx.update(membership).set({ cancelledAt: at }).where(eq(membership.saleId, original.id));
   await tx.update(sale).set({ status: 'CANCELLED' }).where(eq(sale.id, original.id));
@@ -602,17 +594,15 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
       createdBy: p.cashierId,
     })
     .returning({ id: memberPayment.id });
-  await tx
-    .insert(walletEntry)
-    .values({
-      householdId: h.id,
-      at,
-      amount: p.amount,
-      kind: 'TOPUP',
-      paymentMethod: p.method,
-      paymentId: pay!.id,
-      createdBy: p.cashierId,
-    });
+  await tx.insert(walletEntry).values({
+    householdId: h.id,
+    at,
+    amount: p.amount,
+    kind: 'TOPUP',
+    paymentMethod: p.method,
+    paymentId: pay!.id,
+    createdBy: p.cashierId,
+  });
   if (p.emailReceipt)
     await sendTopupReceipt(tx, h.id, h.referentMemberId, {
       at,

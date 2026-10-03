@@ -2,6 +2,7 @@ export * from './api';
 export * from './auth';
 export * from './catalog';
 export * from './crypto';
+export * from './forms';
 export * from './money';
 export * from './pos';
 export * from './roles';
