@@ -18,8 +18,6 @@ import {
   auditQuerySchema,
   isSettingKey,
   normalizeSearch,
-  SETTING_DEFAULTS,
-  SETTING_KEYS,
   settingSchemas,
   setUserRolesSchema,
   type AuditEntry,
