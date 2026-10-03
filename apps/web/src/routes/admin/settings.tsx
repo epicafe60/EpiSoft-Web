@@ -10,6 +10,24 @@ import { QueryError } from '../errors';
 
 const settingsQuery = { queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') };
 
+const ACCOUNT_FIELDS = [
+  ['sales', 'Ventes'],
+  ['purchases', 'Achats'],
+  ['cash', 'Caisse espèces'],
+  ['cheques', 'Chèques à encaisser'],
+  ['cards', 'Cartes à encaisser'],
+  ['bank', 'Banque'],
+  ['wallet', 'Cagnottes (dette envers les adhérents)'],
+  ['memberships', 'Adhésions'],
+  ['donations', 'Dons'],
+  ['otherIncome', 'Autres produits'],
+  ['cashShort', 'Écarts de caisse (charge)'],
+  ['stock', 'Stock'],
+  ['stockVariation', 'Variation de stock'],
+  ['surplus', 'Résultat : excédent'],
+  ['deficit', 'Résultat : déficit'],
+] as const;
+
 /** One card per setting key, saved independently (R-ADM-01). */
 function SettingCard<K extends SettingKey>({
   settingKey,
@@ -330,6 +348,31 @@ export function SettingsPage() {
                 />
               )}
             </Field>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="accounting.accounts"
+          title="Comptes des écritures automatiques"
+          description="Comptes utilisés pour les écritures générées par les ventes, factures et clôtures (R-CPT-08..11)."
+          initial={data['accounting.accounts']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {ACCOUNT_FIELDS.map(([key, label]) => (
+                <Field key={key} label={label} error={errors[key]}>
+                  {(p) => (
+                    <Input
+                      {...p}
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={v[key]}
+                      onChange={(e) => set({ ...v, [key]: e.target.value })}
+                    />
+                  )}
+                </Field>
+              ))}
+            </div>
           )}
         </SettingCard>
 

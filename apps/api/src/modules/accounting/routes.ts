@@ -262,6 +262,8 @@ export const accountingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
     status: z.enum(['DRAFT', 'VALIDATED']).optional(),
     accountId: z.string().uuid().optional(),
     q: z.string().max(100).optional(),
+    sourceType: z.string().max(30).optional(),
+    sourceId: z.string().uuid().optional(),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
     limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -274,6 +276,8 @@ export const accountingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
     if (q.fiscalYearId) f.push(eq(entry.fiscalYearId, q.fiscalYearId));
     if (q.journalId) f.push(eq(entry.journalId, q.journalId));
     if (q.status) f.push(eq(entry.status, q.status));
+    if (q.sourceType) f.push(eq(entry.sourceType, q.sourceType));
+    if (q.sourceId) f.push(eq(entry.sourceId, q.sourceId));
     if (q.from) f.push(sql`${entry.date} >= ${q.from}`);
     if (q.to) f.push(sql`${entry.date} <= ${q.to}`);
     if (q.accountId)
