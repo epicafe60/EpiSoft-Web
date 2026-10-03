@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 export const WEB_PORT = 5174;
 export const API_PORT = 3100;
+/** Production build with the service worker (offline reload test). */
+export const PREVIEW_PORT = 5175;
 
 // The whole stack (PostgreSQL, API, web app) is started by global-setup.ts.
 export default defineConfig({

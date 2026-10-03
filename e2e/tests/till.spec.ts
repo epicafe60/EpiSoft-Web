@@ -31,6 +31,8 @@ async function payAll(page: Page, method: 'Espèces' | 'Cagnotte' | 'Carte') {
 }
 
 test('CA §4.4: the till sells offline and sends every ticket once when the network is back', async ({ page, context }) => {
+  // Other tests may have sold before: compare with the state at the start.
+  const stockBefore = Number((await query<{ s: string }>(`select stock_qty as s from app.product where code = '111001'`))[0]!.s);
   await login(page, USERS.cashier);
   await page.goto('/caisse');
 
@@ -74,18 +76,20 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
   await context.setOffline(false);
   await expect(page.getByText('Tout est envoyé')).toBeVisible({ timeout: 30_000 });
 
-  const sales = await query<{ n: number }>(`select count(*)::int as n from app.sale`);
+  const sales = await query<{ n: number }>(
+    `select count(*)::int as n from app.sale s join app.pos_device d on d.id = s.device_id where d.name = 'E2E'`,
+  );
   expect(sales[0]!.n).toBe(3);
   const balance = await query<{ balance: string }>(
     `select b.balance from app.household_balance b join app.member m on m.household_id = b.household_id where m.last_name = 'DUPONT'`,
   );
   expect(balance[0]!.balance).toBe('17.50');
   const stock = await query<{ stock_qty: string }>(`select stock_qty from app.product where code = '111001'`);
-  expect(stock[0]!.stock_qty).toBe('7.000');
+  expect(Number(stock[0]!.stock_qty)).toBe(stockBefore - 3);
 
   // Tickets of the day carry their final numbers (R-SYNC-05).
   await page.getByRole('link', { name: 'Tickets du jour' }).click();
-  await expect(page.getByText(/T-\d{4}-000003/)).toBeVisible();
+  await expect(page.getByText(/T-\d{4}-\d{6}/).first()).toBeVisible();
 
   // Closing (R-SES-02): 100 float + 5 cash = 105 expected.
   await page.getByRole('link', { name: 'Clôture' }).click();
@@ -94,6 +98,8 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
   await expect(page.getByText('Écart')).toBeVisible();
   await page.getByRole('button', { name: 'Clôturer la session' }).click();
   await expect(page.getByText('Session clôturée.', { exact: false })).toBeVisible();
-  const count = await query<{ expected_cash: string; difference: string }>(`select expected_cash, difference from app.cash_count`);
+  const count = await query<{ expected_cash: string; difference: string }>(
+    `select c.expected_cash, c.difference from app.cash_count c join app.cash_session s on s.id = c.session_id join app.pos_device d on d.id = s.device_id where d.name = 'E2E'`,
+  );
   expect(count[0]).toEqual({ expected_cash: '105.00', difference: '0.00' });
 });

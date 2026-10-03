@@ -1,9 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { hash } from '@node-rs/argon2';
 import { createDb, createPool, member, migrateAndSeed, REPO_ROOT, userRole } from '@episoft/db';
-import { API_PORT, WEB_PORT } from './playwright.config';
+import { API_PORT, PREVIEW_PORT, WEB_PORT } from './playwright.config';
 import { USERS } from './fixtures';
 import { seedLot1 } from './seed';
 
@@ -79,10 +79,20 @@ export default async function globalSetup() {
     WEB_PORT: String(WEB_PORT),
     API_PROXY_TARGET: `http://127.0.0.1:${API_PORT}`,
   });
+  // Production build served by `vite preview`: the only one with the service worker (R-OFF-01).
+  const webEnv = { ...process.env, WEB_PORT: String(WEB_PORT), API_PROXY_TARGET: `http://127.0.0.1:${API_PORT}` };
+  const build = spawnSync('pnpm', ['exec', 'vite', 'build'], { cwd: join(REPO_ROOT, 'apps/web'), env: webEnv, shell: true, stdio: 'pipe' });
+  if (build.status !== 0) throw new Error(`vite build failed: ${build.stderr?.toString()}`);
+  const preview = start('preview', join(REPO_ROOT, 'apps/web'), ['exec', 'vite', 'preview', '--port', String(PREVIEW_PORT), '--strictPort'], {
+    API_PROXY_TARGET: `http://127.0.0.1:${API_PORT}`,
+  });
+
   await waitFor(`http://127.0.0.1:${API_PORT}/api/v1/health`);
   await waitFor(`http://localhost:${WEB_PORT}/`);
+  await waitFor(`http://localhost:${PREVIEW_PORT}/`);
 
   return async () => {
+    kill(preview);
     kill(web);
     kill(api);
     await container.stop();
