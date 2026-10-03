@@ -6,6 +6,7 @@ import { createUser, login, setupTestApp } from './helpers';
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 beforeAll(async () => {
   t = await setupTestApp();
+  await t.reset();
 });
 afterAll(() => t.close());
 
