@@ -34,6 +34,12 @@ import { InvoicePage, InvoicesPage, NewInvoicePage } from './routes/supplies/inv
 import { StockPage } from './routes/supplies/stock';
 import { InventoriesPage, InventoryPage } from './routes/supplies/inventories';
 import { BulkPricesPage, LabelsPage, ShelvesPage } from './routes/catalog/tools';
+import { AccountingLayout } from './routes/compta/layout';
+import { EditEntryPage, EntriesPage, NewEntryPage } from './routes/compta/entries';
+import { BankPage, StatementPage } from './routes/compta/bank';
+import { PlanPage } from './routes/compta/plan';
+import { ReportsPage } from './routes/compta/reports';
+import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
 import { TillGate } from './till/gate';
 import { SalePage } from './till/sale';
@@ -104,7 +110,7 @@ function requireRoles(roles: readonly RoleCode[]) {
 }
 
 /** Modules built so far; the others show what is coming (spec §10). */
-const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse', 'appros']);
+const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse', 'appros', 'compta']);
 
 const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
   createRoute({
@@ -252,6 +258,61 @@ const inventoryRoute = createRoute({
   component: InventoryPage,
 });
 
+// --- Accounting (§4.11) ---
+const accountingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/compta',
+  beforeLoad: requireRoles(['COMPTA']),
+  component: AccountingLayout,
+});
+const accountingIndexRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/compta/ecritures' });
+  },
+});
+const entriesRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/ecritures',
+  component: EntriesPage,
+});
+const newEntryRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/ecritures/nouvelle',
+  component: NewEntryPage,
+});
+const entryRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/ecritures/$id',
+  component: EditEntryPage,
+});
+const bankRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/banque',
+  component: BankPage,
+});
+const statementRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/banque/$id',
+  component: StatementPage,
+});
+const reportsRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/editions',
+  component: ReportsPage,
+});
+const planRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/plan',
+  component: PlanPage,
+});
+const yearClosingRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/cloture',
+  component: YearClosingPage,
+});
+
 // --- Till (§4.4, §4.5, §5.3): full screen, usable offline ---
 const tillRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -369,6 +430,17 @@ const routeTree = rootRoute.addChildren([
       stockRoute,
       inventoriesRoute,
       inventoryRoute,
+    ]),
+    accountingRoute.addChildren([
+      accountingIndexRoute,
+      entriesRoute,
+      newEntryRoute,
+      entryRoute,
+      bankRoute,
+      statementRoute,
+      reportsRoute,
+      planRoute,
+      yearClosingRoute,
     ]),
     adminRoute.addChildren([
       adminIndexRoute,
