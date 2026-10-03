@@ -191,6 +191,64 @@ export function SettingsPage() {
         </SettingCard>
 
         <SettingCard
+          settingKey="catalog.pricing"
+          title="Marge cible et arrondi"
+          description="Taux de marque sur le prix de vente TTC, proposé à la réception (R-PRD-03, question Q2)."
+          initial={data['catalog.pricing']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Taux de marque cible (%)" error={errors.targetMarkupPct}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="decimal"
+                    value={String(v.targetMarkupPct)}
+                    onChange={(e) =>
+                      set({ ...v, targetMarkupPct: Number(e.target.value.replace(',', '.')) || 0 })
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Arrondi du prix">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={String(v.rounding)}
+                    onChange={(e) => set({ ...v, rounding: Number(e.target.value) as 1 | 5 | 10 })}
+                  >
+                    <option value="1">au centime</option>
+                    <option value="5">à 0,05 €</option>
+                    <option value="10">à 0,10 €</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="labels.layout"
+          title="Planches d’étiquettes"
+          initial={data['labels.layout']}
+        >
+          {(v, set) => (
+            <Field label="Format A4">
+              {(p) => (
+                <Select
+                  {...p}
+                  value={String(v.perPage)}
+                  onChange={(e) => set({ perPage: Number(e.target.value) as 24 | 40 })}
+                >
+                  <option value="24">24 étiquettes (3 × 8)</option>
+                  <option value="40">40 étiquettes (4 × 10)</option>
+                </Select>
+              )}
+            </Field>
+          )}
+        </SettingCard>
+
+        <SettingCard
           settingKey="membership.reminder"
           title="Relance d’adhésion"
           description="Courriel au foyer avant la fin de son adhésion, une seule fois (R-ADH-04)."

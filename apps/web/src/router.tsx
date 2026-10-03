@@ -27,6 +27,13 @@ import { EditMemberPage, NewMemberPage } from './routes/members/member-form';
 import { HouseholdPage } from './routes/members/household';
 import { ProductsPage } from './routes/catalog/list';
 import { EditProductPage, NewProductPage } from './routes/catalog/product-form';
+import { SuppliesLayout } from './routes/supplies/layout';
+import { OrderPage, OrdersPage } from './routes/supplies/orders';
+import { NewSupplierPage, SupplierPage, SuppliersPage } from './routes/supplies/suppliers';
+import { InvoicePage, InvoicesPage, NewInvoicePage } from './routes/supplies/invoices';
+import { StockPage } from './routes/supplies/stock';
+import { InventoriesPage, InventoryPage } from './routes/supplies/inventories';
+import { BulkPricesPage, LabelsPage, ShelvesPage } from './routes/catalog/tools';
 import { TillLayout } from './till/layout';
 import { TillGate } from './till/gate';
 import { SalePage } from './till/sale';
@@ -97,7 +104,7 @@ function requireRoles(roles: readonly RoleCode[]) {
 }
 
 /** Modules built so far; the others show what is coming (spec §10). */
-const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse']);
+const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse', 'appros']);
 
 const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
   createRoute({
@@ -154,6 +161,95 @@ const productRoute = createRoute({
   path: '/catalogue/$id',
   beforeLoad: catalogReaders,
   component: EditProductPage,
+});
+
+const productsLabelsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/etiquettes',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: LabelsPage,
+});
+const productsPricesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/prix',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: BulkPricesPage,
+});
+const productsShelvesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/rayons',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: ShelvesPage,
+});
+
+// --- Supplies (§4.7–§4.10) ---
+const suppliesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/appros',
+  beforeLoad: requireRoles(['APPROS']),
+  component: SuppliesLayout,
+});
+const suppliesIndexRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/appros/commandes' });
+  },
+});
+const ordersRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/commandes',
+  component: OrdersPage,
+});
+const orderRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/commandes/$id',
+  component: OrderPage,
+});
+const suppliersRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/fournisseurs',
+  component: SuppliersPage,
+});
+const newSupplierRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/fournisseurs/nouveau',
+  component: NewSupplierPage,
+});
+const supplierRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/fournisseurs/$id',
+  component: SupplierPage,
+});
+const invoicesRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/factures',
+  component: InvoicesPage,
+});
+const newInvoiceRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/factures/nouvelle',
+  component: NewInvoicePage,
+});
+const invoiceRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/factures/$id',
+  component: InvoicePage,
+});
+const stockRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/stock',
+  component: StockPage,
+});
+const inventoriesRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/inventaires',
+  component: InventoriesPage,
+});
+const inventoryRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/inventaires/$id',
+  component: InventoryPage,
 });
 
 // --- Till (§4.4, §4.5, §5.3): full screen, usable offline ---
@@ -257,6 +353,23 @@ const routeTree = rootRoute.addChildren([
     productsRoute,
     newProductRoute,
     productRoute,
+    productsLabelsRoute,
+    productsPricesRoute,
+    productsShelvesRoute,
+    suppliesRoute.addChildren([
+      suppliesIndexRoute,
+      ordersRoute,
+      orderRoute,
+      suppliersRoute,
+      newSupplierRoute,
+      supplierRoute,
+      invoicesRoute,
+      newInvoiceRoute,
+      invoiceRoute,
+      stockRoute,
+      inventoriesRoute,
+      inventoryRoute,
+    ]),
     adminRoute.addChildren([
       adminIndexRoute,
       adminSettingsRoute,

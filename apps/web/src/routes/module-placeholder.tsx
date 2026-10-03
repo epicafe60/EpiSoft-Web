@@ -7,7 +7,10 @@ export const MODULE_INFO: Record<ModuleKey, { summary: string; lot: number }> = 
   caisse: { summary: 'Vente, cagnotte, sessions et clôture de caisse.', lot: 1 },
   membres: { summary: 'Membres, foyers, adhésions et cagnottes.', lot: 1 },
   catalogue: { summary: 'Produits, prix, étiquettes et images.', lot: 2 },
-  appros: { summary: 'Fournisseurs, commandes, réceptions, factures et inventaire.', lot: 2 },
+  appros: {
+    summary: 'Fournisseurs, commandes, réceptions, factures, stock et inventaire.',
+    lot: 2,
+  },
   precommandes: { summary: 'Précommandes des clients.', lot: 4 },
   compta: { summary: 'Écritures, banque, éditions et clôture.', lot: 3 },
   stats: { summary: 'Tableaux de bord, statistiques et exports.', lot: 4 },

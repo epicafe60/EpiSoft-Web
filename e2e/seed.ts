@@ -3,6 +3,7 @@ import {
   member,
   membership,
   membershipType,
+  supplier,
   posTab,
   product,
   productBarcode,
@@ -15,6 +16,7 @@ export const SEED = {
   chips: { name: 'Chips nature', ean: '3168930167983', price: '2.50' },
   bananas: { name: 'Bananes bio', price: '3.20' },
   buyer: { firstName: 'Marie', lastName: 'DUPONT', balance: '20.00' },
+  honey: { code: '211001', name: 'Miel du Vexin', supplier: 'Ferme du Vexin' },
 };
 
 /** Lot 1 test data: a small catalogue with a till tab, and a household with a cagnotte. */
@@ -34,6 +36,10 @@ export async function seedLot1(db: Db): Promise<void> {
     stockQty: '5',
     posTabId: tab!.id,
   });
+
+  // Lot 2 cycle: a supplier product under its minimum stock.
+  const [farm] = await db.insert(supplier).values({ code: '0701', name: SEED.honey.supplier, email: 'ferme@example.org' }).returning();
+  await db.insert(product).values({ code: SEED.honey.code, name: SEED.honey.name, supplierId: farm!.id, salePrice: '8.00', purchasePriceExcl: '5.0000', vatRate: '5.50', minStock: '6' });
 
   const [h] = await db.insert(household).values({}).returning();
   const [m] = await db

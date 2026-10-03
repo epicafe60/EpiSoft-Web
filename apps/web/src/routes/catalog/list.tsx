@@ -52,9 +52,20 @@ export function ProductsPage() {
         description="Produits, prix et boutons de caisse."
         actions={
           canEdit ? (
-            <Link to="/catalogue/nouveau" className={buttonVariants()}>
-              <Plus /> Nouveau produit
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link to="/catalogue/etiquettes" className={buttonVariants({ variant: 'outline' })}>
+                Étiquettes
+              </Link>
+              <Link to="/catalogue/prix" className={buttonVariants({ variant: 'outline' })}>
+                Prix en masse
+              </Link>
+              <Link to="/catalogue/rayons" className={buttonVariants({ variant: 'outline' })}>
+                Rayons
+              </Link>
+              <Link to="/catalogue/nouveau" className={buttonVariants()}>
+                <Plus /> Nouveau produit
+              </Link>
+            </div>
           ) : undefined
         }
       />

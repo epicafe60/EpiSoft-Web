@@ -267,17 +267,15 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         .insert(inventorySession)
         .values({ label: req.body.label, scope, openedBy: req.user!.id })
         .returning();
-      await tx
-        .insert(inventoryLine)
-        .values(
-          prods.map((p) => ({
-            sessionId: s!.id,
-            productId: p.id,
-            theoreticalQty: p.stockQty,
-            unitCostExcl: p.purchasePriceExcl,
-            unitCostIncl: p.purchasePriceIncl,
-          })),
-        );
+      await tx.insert(inventoryLine).values(
+        prods.map((p) => ({
+          sessionId: s!.id,
+          productId: p.id,
+          theoreticalQty: p.stockQty,
+          unitCostExcl: p.purchasePriceExcl,
+          unitCostIncl: p.purchasePriceIncl,
+        })),
+      );
       await audit(tx, req, {
         action: 'inventory.open',
         entity: 'inventory_session',

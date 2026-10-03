@@ -42,6 +42,7 @@ import { Select, Textarea } from '@/components/ui/inputs';
 import type { CatalogRefs, ProductDetail } from '@/lib/types';
 import { PageHeader } from '../shell';
 import { QueryError } from '../errors';
+import { StockHistoryCard } from './tools';
 
 interface FormState {
   code: string;
@@ -504,6 +505,9 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
                 {upload.error ? <Alert>{upload.error.message}</Alert> : null}
               </CardContent>
             </Card>
+            {product.kind === 'GOODS' ? (
+              <StockHistoryCard productId={product.id} canCorrect={!readOnly} />
+            ) : null}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Historique des prix</CardTitle>

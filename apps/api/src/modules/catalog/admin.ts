@@ -188,16 +188,14 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             })
             .where(eq(product.id, p.id));
           if (priceChanged) {
-            await tx
-              .insert(priceHistory)
-              .values({
-                productId: p.id,
-                purchasePriceExcl: r.purchasePriceExcl,
-                purchasePriceIncl: incl,
-                salePrice: r.salePrice,
-                source: 'BULK',
-                by: req.user!.id,
-              });
+            await tx.insert(priceHistory).values({
+              productId: p.id,
+              purchasePriceExcl: r.purchasePriceExcl,
+              purchasePriceIncl: incl,
+              salePrice: r.salePrice,
+              source: 'BULK',
+              by: req.user!.id,
+            });
           }
           changed++;
         }

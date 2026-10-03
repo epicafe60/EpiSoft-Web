@@ -279,17 +279,15 @@ export async function recordReceipt(
         .set({ qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${l.qty}::numeric` })
         .where(eq(purchaseOrderLine.id, l.orderLineId));
     }
-    await tx
-      .insert(goodsReceiptLine)
-      .values({
-        receiptId: r!.id,
-        lineNo: i + 1,
-        productId: p.id,
-        qty: l.qty,
-        unitPriceExcl: l.unitPriceExcl,
-        vatRate: p.vatRate,
-        orderLineId: l.orderLineId,
-      });
+    await tx.insert(goodsReceiptLine).values({
+      receiptId: r!.id,
+      lineNo: i + 1,
+      productId: p.id,
+      qty: l.qty,
+      unitPriceExcl: l.unitPriceExcl,
+      vatRate: p.vatRate,
+      orderLineId: l.orderLineId,
+    });
     if (p.kind === 'GOODS') {
       await recordMovement(tx, {
         productId: p.id,
@@ -317,16 +315,14 @@ export async function recordReceipt(
         })
         .where(eq(product.id, p.id))
         .returning();
-      await tx
-        .insert(priceHistory)
-        .values({
-          productId: p.id,
-          purchasePriceExcl: after!.purchasePriceExcl,
-          purchasePriceIncl: after!.purchasePriceIncl,
-          salePrice: after!.salePrice,
-          source: 'RECEIPT',
-          by,
-        });
+      await tx.insert(priceHistory).values({
+        productId: p.id,
+        purchasePriceExcl: after!.purchasePriceExcl,
+        purchasePriceIncl: after!.purchasePriceIncl,
+        salePrice: after!.salePrice,
+        source: 'RECEIPT',
+        by,
+      });
     }
   }
   if (input.orderId) {

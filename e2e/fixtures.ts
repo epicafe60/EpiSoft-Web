@@ -15,7 +15,7 @@ export const USERS = {
     password: 'mot de passe admin',
     firstName: 'Alice',
     lastName: 'ADMIN',
-    roles: ['ADMIN', 'CAISSE', 'ADHERENTS', 'PRODUITS'],
+    roles: ['ADMIN', 'CAISSE', 'ADHERENTS', 'PRODUITS', 'APPROS'],
   },
   cashier: {
     username: 'Carl_CAISSE',
