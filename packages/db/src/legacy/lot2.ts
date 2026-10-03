@@ -138,16 +138,14 @@ async function migrateOrders(
         action: 'reprise vide',
       });
     } else {
-      await tx
-        .insert(s.purchaseOrderLine)
-        .values(
-          lines.map((l, i) => ({
-            orderId: po!.id,
-            lineNo: i + 1,
-            ...l,
-            qtyReceived: status === 'RECEIVED' ? l.qtyOrdered : '0',
-          })),
-        );
+      await tx.insert(s.purchaseOrderLine).values(
+        lines.map((l, i) => ({
+          orderId: po!.id,
+          lineNo: i + 1,
+          ...l,
+          qtyReceived: status === 'RECEIVED' ? l.qtyOrdered : '0',
+        })),
+      );
     }
     const t = orderTotals(
       lines.map((l) => ({
@@ -181,18 +179,16 @@ async function migrateOrders(
         .onConflictDoUpdate({ target: s.goodsReceipt.legacyFnrcomid, set: rv })
         .returning({ id: s.goodsReceipt.id });
       await tx.delete(s.goodsReceiptLine).where(eq(s.goodsReceiptLine.receiptId, gr!.id));
-      await tx
-        .insert(s.goodsReceiptLine)
-        .values(
-          lines.map((l, i) => ({
-            receiptId: gr!.id,
-            lineNo: i + 1,
-            productId: l.productId,
-            qty: l.qtyOrdered,
-            unitPriceExcl: l.unitPriceExcl,
-            vatRate: l.vatRate,
-          })),
-        );
+      await tx.insert(s.goodsReceiptLine).values(
+        lines.map((l, i) => ({
+          receiptId: gr!.id,
+          lineNo: i + 1,
+          productId: l.productId,
+          qty: l.qtyOrdered,
+          unitPriceExcl: l.unitPriceExcl,
+          vatRate: l.vatRate,
+        })),
+      );
       receipts++;
     }
     migrated++;
