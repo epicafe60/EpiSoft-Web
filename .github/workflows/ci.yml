@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      # API integration tests start PostgreSQL 17 with Testcontainers (Docker is available on the runner).
+      - run: pnpm test
+      - run: pnpm build
+      - name: Dependency audit (§5.5)
+        run: pnpm audit --prod --audit-level high
+
+  image:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the application image
+        run: docker build -f docker/Dockerfile -t episoft-web:${{ github.sha }} .

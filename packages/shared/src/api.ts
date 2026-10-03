@@ -62,7 +62,8 @@ export const auditQuerySchema = z.object({
   entity: z.string().max(50).optional(),
   from: z.string().date().optional(),
   to: z.string().date().optional(),
-  before: z.string().datetime({ offset: true }).optional(),
+  /** Id of the last entry already shown (UUID v7 ids are time-ordered). */
+  cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type AuditQuery = z.infer<typeof auditQuerySchema>;

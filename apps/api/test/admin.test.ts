@@ -127,6 +127,9 @@ describe('users and roles', () => {
 });
 
 describe('audit log is append-only (principle 8)', () => {
+  // Drizzle wraps the PostgreSQL error raised by the trigger.
+  const appendOnly = { cause: { message: expect.stringMatching(/append-only/) } };
+
   it('refuses updates and deletes', async () => {
     const { headers } = await adminHeaders();
     await t.app.inject({
@@ -135,10 +138,10 @@ describe('audit log is append-only (principle 8)', () => {
       headers,
       payload: { enabled: false },
     });
-    await expect(t.db.execute(sql`update app.audit_log set action = 'x'`)).rejects.toThrow(
-      /append-only/,
+    await expect(t.db.execute(sql`update app.audit_log set action = 'x'`)).rejects.toMatchObject(
+      appendOnly,
     );
-    await expect(t.db.execute(sql`delete from app.audit_log`)).rejects.toThrow(/append-only/);
+    await expect(t.db.execute(sql`delete from app.audit_log`)).rejects.toMatchObject(appendOnly);
     const res = await t.app.inject({ url: '/api/v1/audit?entity=setting', headers });
     expect(res.json()).toHaveLength(1);
   });

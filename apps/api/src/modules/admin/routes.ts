@@ -230,7 +230,7 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       if (q.entity) filters.push(eq(auditLog.entity, q.entity));
       if (q.from) filters.push(gte(auditLog.at, sql`${q.from}::date`));
       if (q.to) filters.push(lt(auditLog.at, sql`${q.to}::date + 1`));
-      if (q.before) filters.push(lt(auditLog.at, new Date(q.before)));
+      if (q.cursor) filters.push(lt(auditLog.id, q.cursor));
       const rows = await db
         .select({
           id: auditLog.id,
@@ -247,7 +247,7 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         .from(auditLog)
         .leftJoin(member, eq(member.id, auditLog.actorId))
         .where(and(...filters))
-        .orderBy(desc(auditLog.at), desc(auditLog.id))
+        .orderBy(desc(auditLog.id))
         .limit(q.limit);
       return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
     },

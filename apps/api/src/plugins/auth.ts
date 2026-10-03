@@ -2,7 +2,13 @@ import fp from 'fastify-plugin';
 import { and, eq, gt } from 'drizzle-orm';
 import type { FastifyReply, preHandlerHookHandler } from 'fastify';
 import { member, session, userRole, type Db } from '@episoft/db';
-import { CSRF_HEADER, hasAnyRole, SESSION_TTL_HOURS, type RoleCode } from '@episoft/shared';
+import {
+  CSRF_HEADER,
+  hasAnyRole,
+  ROLE_CODES,
+  SESSION_TTL_HOURS,
+  type RoleCode,
+} from '@episoft/shared';
 import type { Config } from '../config';
 import { forbidden, unauthorized } from '../lib/problem';
 import { hashToken, newToken } from '../lib/tokens';
@@ -124,7 +130,7 @@ async function loadUser(db: Db, sessionId: string): Promise<AuthUser | null> {
     firstName: first.firstName,
     lastName: first.lastName,
     username: first.username,
-    roles: rows.flatMap((r) => (r.role ? [r.role as RoleCode] : [])),
+    roles: ROLE_CODES.filter((code) => rows.some((r) => r.role === code)),
     sessionId,
   };
 }
