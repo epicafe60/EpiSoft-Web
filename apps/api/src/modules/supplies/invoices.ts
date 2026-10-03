@@ -28,6 +28,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
+import { payInvoice, syncInvoiceEntry } from '../accounting/auto';
 import { eur } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -232,6 +233,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   app.post('/supplier-invoices', { ...editors, schema: { body: invoiceSchema } }, async (req) =>
     db.transaction(async (tx) => {
       const inv = await save(tx, null, req.body, req.user!.id);
+      await syncInvoiceEntry(tx, inv.id, req.user!.id);
       await audit(tx, req, {
         action: 'invoice.create',
         entity: 'supplier_invoice',
@@ -255,6 +257,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         if (!before) throw notFound('Facture introuvable.');
         if (before.status === 'PAID') throw conflict('Une facture réglée n’est plus modifiable.');
         const inv = await save(tx, before.id, req.body, req.user!.id);
+        await syncInvoiceEntry(tx, inv.id, req.user!.id);
         await audit(tx, req, {
           action: 'invoice.update',
           entity: 'supplier_invoice',
@@ -294,30 +297,25 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     });
   });
 
-  /** R-FAC-04: payment. The accounting entry and the lettering come with lot 3. */
+  /** R-FAC-04: payment, with its accounting entry lettered with the invoice entry. */
   app.post(
     '/supplier-invoices/:id/pay',
     { ...editors, schema: { ...idParams, body: invoicePaySchema } },
     async (req) =>
       db.transaction(async (tx) => {
-        const [inv] = await tx
-          .select()
-          .from(supplierInvoice)
-          .where(eq(supplierInvoice.id, req.params.id))
-          .for('update');
-        if (!inv) throw notFound('Facture introuvable.');
-        if (inv.status === 'PAID') throw conflict('Cette facture est déjà réglée.');
-        await tx
-          .update(supplierInvoice)
-          .set({ status: 'PAID', paidAt: req.body.date, paymentMethod: req.body.method })
-          .where(eq(supplierInvoice.id, inv.id));
+        const r = await payInvoice(tx, {
+          invoiceId: req.params.id,
+          date: req.body.date,
+          method: req.body.method,
+          userId: req.user!.id,
+        });
         await audit(tx, req, {
           action: 'invoice.pay',
           entity: 'supplier_invoice',
-          entityId: inv.id,
-          after: req.body,
+          entityId: req.params.id,
+          after: { ...req.body, entry: r.entryId },
         });
-        return { ok: true };
+        return { ok: true, entryId: r.entryId };
       }),
   );
 };

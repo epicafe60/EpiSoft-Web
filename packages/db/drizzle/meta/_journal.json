@@ -43,6 +43,20 @@
       "when": 1791052428163,
       "tag": "0005_invoice_due_reminder",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791057228056,
+      "tag": "0006_lot3_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791057230204,
+      "tag": "0007_accounting_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -31,7 +31,7 @@ import {
   WALLET_ENTRY_KINDS,
 } from '@episoft/shared';
 
-// Target data model, spec §6. Tables of lots 0 to 2; later lots add theirs here.
+// Target data model, spec §6. Tables of lots 0 to 3; later lots add theirs here.
 
 export const app = pgSchema('app');
 
@@ -294,6 +294,8 @@ export const category = app.table(
     code: text('code').notNull(),
     name: text('name').notNull(),
     sort: integer('sort').notNull().default(0),
+    /** Q6: revenue account of the shelf; null means the default sales account. */
+    salesAccountNumber: text('sales_account_number'),
   },
   (t) => [uniqueIndex('category_universe_code_uq').on(t.universeId, t.code)],
 );
@@ -480,6 +482,10 @@ export const memberPayment = app.table(
     method: paymentMethod('method'),
     cashSessionId: uuid('cash_session_id').references((): AnyPgColumn => cashSession.id),
     saleId: uuid('sale_id').references((): AnyPgColumn => sale.id),
+    /** Transfer received on the bank account (R-CPT-09). */
+    bankLineId: uuid('bank_line_id').references((): AnyPgColumn => bankLine.id, {
+      onDelete: 'set null',
+    }),
     comment: text('comment'),
     createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
@@ -578,6 +584,8 @@ export const cashSession = app.table(
     closedBy: uuid('closed_by').references(() => member.id),
     closedAt: tz('closed_at'),
     status: cashSessionStatus('status').notNull().default('OPEN'),
+    /** R-CPT-08: the draft VTE entry generated at closing. */
+    entryId: uuid('entry_id').references((): AnyPgColumn => entry.id, { onDelete: 'set null' }),
     /** Legacy day reconstructed by the migration (§9.1). */
     legacyDate: date('legacy_date').unique(),
   },
@@ -860,6 +868,13 @@ export const supplierInvoice = app.table(
     documentMediaId: uuid('document_media_id').references(() => media.id, { onDelete: 'set null' }),
     /** R-FAC-05: the J−3 alert is sent once. */
     dueReminderSentAt: tz('due_reminder_sent_at'),
+    /** R-FAC-03/04: the purchase entry and the payment entry. */
+    entryId: uuid('entry_id').references((): AnyPgColumn => entry.id, { onDelete: 'set null' }),
+    paymentEntryId: uuid('payment_entry_id').references((): AnyPgColumn => entry.id, {
+      onDelete: 'set null',
+    }),
+    /** Overrides the default purchase account (R-FAC-03). */
+    expenseAccountNumber: text('expense_account_number'),
     comment: text('comment'),
     createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
@@ -924,3 +939,296 @@ export const inventoryLine = app.table(
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.productId] })],
 );
+
+// ===========================================================================
+// Lot 3: accounting
+// ===========================================================================
+
+export const fiscalYearStatus = app.enum('fiscal_year_status', ['OPEN', 'CLOSED']);
+export const entryStatus = app.enum('entry_status', ['DRAFT', 'VALIDATED']);
+export const normalSide = app.enum('normal_side', ['D', 'C', 'M']);
+/** Payment mode of an entry (legacy MVTRGLT 0–5). */
+export const entryMode = app.enum('entry_mode', [
+  'CASH',
+  'CHEQUE',
+  'CARD',
+  'TRANSFER',
+  'DIRECT_DEBIT',
+  'OTHER',
+]);
+export const bankRuleMatch = app.enum('bank_rule_match', ['CONTAINS', 'STARTS', 'REGEX']);
+export const bankRuleDirection = app.enum('bank_rule_direction', ['IN', 'OUT', 'ANY']);
+export const bankLineStatus = app.enum('bank_line_status', ['NEW', 'MATCHED']);
+export const statementStatus = app.enum('statement_status', ['OPEN', 'CLOSED']);
+export const depositKind = app.enum('deposit_kind', ['CASH', 'CHEQUES']);
+
+/** R-CPT-03: fiscal years are objects; overlapping dates are refused by an exclusion constraint. */
+export const fiscalYear = app.table(
+  'fiscal_year',
+  {
+    id: id(),
+    label: text('label').notNull(),
+    startDate: date('start_date').notNull(),
+    endDate: date('end_date').notNull(),
+    status: fiscalYearStatus('status').notNull().default('OPEN'),
+    closedAt: tz('closed_at'),
+    closedBy: uuid('closed_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [check('fiscal_year_dates', sql`${t.endDate} >= ${t.startDate}`)],
+);
+
+export const account = app.table(
+  'account',
+  {
+    id: id(),
+    number: text('number').notNull().unique(),
+    label: text('label').notNull(),
+    normalSide: normalSide('normal_side').notNull().default('D'),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [check('account_number_six_digits', sql`${t.number} ~ '^[0-9]{6}$'`)],
+);
+
+export const journal = app.table('journal', {
+  id: id(),
+  code: text('code').notNull().unique(),
+  label: text('label').notNull(),
+  sort: integer('sort').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+});
+
+/** R-CPT-04/05: an entry is a draft until validated; the number is given at validation. */
+export const entry = app.table(
+  'entry',
+  {
+    id: id(),
+    journalId: uuid('journal_id')
+      .notNull()
+      .references(() => journal.id),
+    fiscalYearId: uuid('fiscal_year_id')
+      .notNull()
+      .references(() => fiscalYear.id),
+    /** Per journal and fiscal year; null while a draft. */
+    number: integer('number'),
+    date: date('date').notNull(),
+    pieceRef: text('piece_ref'),
+    label: text('label').notNull(),
+    mode: entryMode('mode'),
+    status: entryStatus('status').notNull().default('DRAFT'),
+    /** Origin of an automatic entry (session, invoice, invoice_payment, bank_line, deposit, closing_*). */
+    sourceType: text('source_type'),
+    sourceId: text('source_id'),
+    reversesEntryId: uuid('reverses_entry_id').references((): AnyPgColumn => entry.id),
+    validatedAt: tz('validated_at'),
+    validatedBy: uuid('validated_by').references(() => member.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    legacyMvtnum: integer('legacy_mvtnum').unique(),
+  },
+  (t) => [
+    uniqueIndex('entry_number_uq')
+      .on(t.journalId, t.fiscalYearId, t.number)
+      .where(sql`${t.number} is not null`),
+    uniqueIndex('entry_source_uq')
+      .on(t.sourceType, t.sourceId)
+      .where(sql`${t.sourceType} is not null and ${t.sourceId} is not null`),
+    index('entry_date_idx').on(t.date),
+    index('entry_year_journal_idx').on(t.fiscalYearId, t.journalId),
+    check('entry_validated_has_number', sql`${t.status} = 'DRAFT' or ${t.number} is not null`),
+  ],
+);
+
+/** R-CPT-14: one record per bank statement being reconciled (or per legacy month). */
+export const reconciliation = app.table('reconciliation', {
+  id: id(),
+  /** Set after the statement table below; null for the migrated monthly "pointage". */
+  statementId: uuid('statement_id'),
+  label: text('label').notNull(),
+  doneAt: tz('done_at').notNull().defaultNow(),
+  doneBy: uuid('done_by').references(() => member.id, { onDelete: 'set null' }),
+});
+
+export const entryLine = app.table(
+  'entry_line',
+  {
+    id: id(),
+    entryId: uuid('entry_id')
+      .notNull()
+      .references(() => entry.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => account.id),
+    label: text('label').notNull(),
+    debit: money('debit').notNull().default('0'),
+    credit: money('credit').notNull().default('0'),
+    reconciliationId: uuid('reconciliation_id').references(() => reconciliation.id, {
+      onDelete: 'set null',
+    }),
+    /** R-FAC-04: links an invoice line and its payment line. */
+    letteringCode: text('lettering_code'),
+    letteredOn: date('lettered_on'),
+  },
+  (t) => [
+    index('entry_line_entry_idx').on(t.entryId),
+    index('entry_line_account_idx').on(t.accountId),
+    index('entry_line_lettering_idx').on(t.letteringCode),
+    check(
+      'entry_line_amounts',
+      sql`${t.debit} >= 0 and ${t.credit} >= 0 and (${t.debit} = 0 or ${t.credit} = 0)`,
+    ),
+  ],
+);
+
+// --- Templates ("guides", R-CPT-06) ---------------------------------------------------
+
+export const entryTemplateCategory = app.table('entry_template_category', {
+  code: text('code').primaryKey(),
+  label: text('label').notNull(),
+  sort: integer('sort').notNull().default(0),
+});
+
+export const entryTemplate = app.table('entry_template', {
+  id: id(),
+  categoryCode: text('category_code').references(() => entryTemplateCategory.code),
+  journalId: uuid('journal_id')
+    .notNull()
+    .references(() => journal.id),
+  label: text('label').notNull(),
+  mode: entryMode('mode'),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+  legacyGuinum: integer('legacy_guinum').unique(),
+});
+
+export const entryTemplateLine = app.table(
+  'entry_template_line',
+  {
+    id: id(),
+    templateId: uuid('template_id')
+      .notNull()
+      .references(() => entryTemplate.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => account.id),
+    label: text('label').notNull(),
+    /** Fixed amounts; both null means "to enter". */
+    debit: money('debit'),
+    credit: money('credit'),
+  },
+  (t) => [index('entry_template_line_idx').on(t.templateId)],
+);
+
+// --- Bank (R-CPT-12..15) -------------------------------------------------------------------
+
+export const bankAccount = app.table('bank_account', {
+  id: id(),
+  label: text('label').notNull(),
+  iban: text('iban'),
+  /** The 512… account of the books. */
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => account.id),
+  active: boolean('active').notNull().default(true),
+});
+
+export const bankStatement = app.table(
+  'bank_statement',
+  {
+    id: id(),
+    bankAccountId: uuid('bank_account_id')
+      .notNull()
+      .references(() => bankAccount.id),
+    fileName: text('file_name').notNull(),
+    fileHash: text('file_hash').notNull(),
+    format: text('format').notNull(),
+    periodStart: date('period_start'),
+    periodEnd: date('period_end'),
+    openingBalance: money('opening_balance').notNull(),
+    closingBalance: money('closing_balance').notNull(),
+    importedAt: tz('imported_at').notNull().defaultNow(),
+    importedBy: uuid('imported_by').references(() => member.id, { onDelete: 'set null' }),
+    status: statementStatus('status').notNull().default('OPEN'),
+    closedAt: tz('closed_at'),
+    closedBy: uuid('closed_by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [uniqueIndex('bank_statement_file_uq').on(t.bankAccountId, t.fileHash)],
+);
+
+export const bankRule = app.table(
+  'bank_rule',
+  {
+    id: id(),
+    priority: integer('priority').notNull().default(100),
+    label: text('label').notNull(),
+    pattern: text('pattern').notNull(),
+    matchType: bankRuleMatch('match_type').notNull().default('CONTAINS'),
+    direction: bankRuleDirection('direction').notNull().default('ANY'),
+    minAmount: money('min_amount'),
+    maxAmount: money('max_amount'),
+    counterAccountId: uuid('counter_account_id').references(() => account.id),
+    journalId: uuid('journal_id').references(() => journal.id),
+    mode: entryMode('mode'),
+    labelTemplate: text('label_template'),
+    /** R-CPT-09: money in from a household transfer: top-up of the cagnotte. */
+    householdMatch: boolean('household_match').notNull().default(false),
+    supplierId: uuid('supplier_id').references(() => supplier.id, { onDelete: 'set null' }),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index('bank_rule_priority_idx').on(t.priority)],
+);
+
+export const bankLine = app.table(
+  'bank_line',
+  {
+    id: id(),
+    statementId: uuid('statement_id')
+      .notNull()
+      .references(() => bankStatement.id, { onDelete: 'cascade' }),
+    bankAccountId: uuid('bank_account_id')
+      .notNull()
+      .references(() => bankAccount.id),
+    fitid: text('fitid'),
+    fingerprint: text('fingerprint').notNull(),
+    date: date('date').notNull(),
+    /** Signed: positive is money in. */
+    amount: money('amount').notNull(),
+    label: text('label').notNull(),
+    memo: text('memo'),
+    status: bankLineStatus('status').notNull().default('NEW'),
+    /** The 512 entry line this bank line is reconciled with. */
+    entryLineId: uuid('entry_line_id').references(() => entryLine.id, { onDelete: 'set null' }),
+    ruleId: uuid('rule_id').references(() => bankRule.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    uniqueIndex('bank_line_fitid_uq')
+      .on(t.bankAccountId, t.fitid)
+      .where(sql`${t.fitid} is not null`),
+    uniqueIndex('bank_line_fingerprint_uq').on(t.bankAccountId, t.fingerprint),
+    index('bank_line_statement_idx').on(t.statementId),
+  ],
+);
+
+/** R-SES-04: deposits at the bank (cash or cheques), replacing `remcheques`. */
+export const cashDeposit = app.table('cash_deposit', {
+  id: id(),
+  date: date('date').notNull(),
+  kind: depositKind('kind').notNull(),
+  amount: money('amount').notNull(),
+  bankAccountId: uuid('bank_account_id')
+    .notNull()
+    .references(() => bankAccount.id),
+  /** Cheques of the slip: [{ drawer, bank, amount }]. */
+  chequeList: jsonb('cheque_list'),
+  comment: text('comment'),
+  entryId: uuid('entry_id').references(() => entry.id, { onDelete: 'set null' }),
+  createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  legacyRef: text('legacy_ref').unique(),
+});

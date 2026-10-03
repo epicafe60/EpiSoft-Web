@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   cashCount,
   cashSession,
+  entry,
   member,
   posDevice,
   sale,
@@ -29,6 +30,7 @@ import { euros, saleReceiptEmail } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
 import { closingPdf } from './closing-pdf';
+import { generateSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
 import { processOps, Rejected } from './sync-service';
@@ -256,6 +258,19 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           after: { ...values, summary: undefined, forced: b.forced },
         });
 
+        // R-CPT-08: the VTE draft. In a savepoint: an accounting problem never blocks the cash closing.
+        try {
+          await tx.transaction((sp) => generateSessionEntry(sp, s.id, req.user!.id));
+        } catch (e) {
+          req.log.error({ err: e, session: s.id }, 'écriture de caisse non générée');
+          await audit(tx, req, {
+            action: 'session.entry_failed',
+            entity: 'cash_session',
+            entityId: s.id,
+            after: { error: String(e) },
+          });
+        }
+
         const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
         const device = await tx.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
         if (treasurer) {
@@ -294,6 +309,16 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           where: and(eq(cashSession.deviceId, s.deviceId), eq(cashSession.status, 'OPEN')),
         });
         if (other) throw conflict('Une autre session est ouverte sur ce poste.');
+        // A validated accounting entry has to be reversed first; a draft is dropped and regenerated at the next closing.
+        if (s.entryId) {
+          const [e] = await tx.select().from(entry).where(eq(entry.id, s.entryId));
+          if (e?.status === 'VALIDATED')
+            throw conflict(
+              'L’écriture comptable de cette session est validée : contre-passez-la d’abord.',
+            );
+          await tx.update(cashSession).set({ entryId: null }).where(eq(cashSession.id, s.id));
+          if (e) await tx.delete(entry).where(eq(entry.id, e.id));
+        }
         const [count] = await tx.delete(cashCount).where(eq(cashCount.sessionId, s.id)).returning();
         await tx
           .update(cashSession)

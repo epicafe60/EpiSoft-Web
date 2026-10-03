@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseAmountToCents, centsToDecimal } from './money';
+import { DEFAULT_ACCOUNTS } from './accounting';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
 // Lot 0 covers the general settings; later lots add their keys here.
@@ -9,6 +10,11 @@ const amount = z
   .trim()
   .refine((s) => parseAmountToCents(s) !== null, 'Montant invalide.')
   .transform((s) => centsToDecimal(parseAmountToCents(s)!));
+
+const account = z
+  .string()
+  .trim()
+  .regex(/^d{6}$/, 'Compte à 6 chiffres.');
 
 const optionalText = (max: number) =>
   z
@@ -66,6 +72,24 @@ export const settingSchemas = {
   }),
   /** R-PRD-06: A4 label sheets. */
   'labels.layout': z.object({ perPage: z.union([z.literal(24), z.literal(40)]) }),
+  /** R-ADM-01: the accounts used by the automatic entries (R-CPT-08..11). */
+  'accounting.accounts': z.object({
+    sales: account,
+    purchases: account,
+    cash: account,
+    cheques: account,
+    cards: account,
+    bank: account,
+    wallet: account,
+    memberships: account,
+    donations: account,
+    otherIncome: account,
+    cashShort: account,
+    stock: account,
+    stockVariation: account,
+    surplus: account,
+    deficit: account,
+  }),
   /** R-SES-02 step 6: the closing report is sent to this address. */
   'pos.treasurerEmail': z.object({
     email: optionalText(200).refine(
@@ -102,6 +126,7 @@ export const SETTING_DEFAULTS: Settings = {
   },
   'pos.treasurerEmail': { email: null },
   'membership.reminder': { enabled: false, daysBefore: 15 },
+  'accounting.accounts': { ...DEFAULT_ACCOUNTS },
   'catalog.pricing': { targetMarkupPct: 25, rounding: 5 },
   'labels.layout': { perPage: 24 },
   'pos.scaleBarcodes': { enabled: false, valueKind: 'PRICE' },

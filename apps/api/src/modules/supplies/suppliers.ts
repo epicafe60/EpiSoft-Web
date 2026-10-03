@@ -13,20 +13,9 @@ import { nextSupplierCode, supplierSchema } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { ensureAccount, nextSupplierAccountNumber } from '../accounting/service';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
-
-/** First free 401 account after the existing ones (R-FNR-01: created with the supplier). */
-async function nextSupplierAccount(
-  db: Db | Parameters<Parameters<Db['transaction']>[0]>[0],
-): Promise<string> {
-  const [row] = await db
-    .select({ max: sql<string | null>`max(${supplier.accountNumber})` })
-    .from(supplier)
-    .where(sql`${supplier.accountNumber} ~ '^401[0-9]{3}$'`);
-  const next = row?.max ? Number(row.max) + 1 : 401001;
-  return String(next);
-}
 
 export const supplierRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
   app,
@@ -157,9 +146,13 @@ export const supplierRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         .values({
           ...fields,
           code: finalCode,
-          accountNumber: fields.accountNumber ?? (await nextSupplierAccount(tx)),
+          accountNumber: fields.accountNumber ?? (await nextSupplierAccountNumber(tx)),
         })
         .returning();
+      // R-FNR-01: the 401 account is created with the supplier.
+      if (s!.accountNumber && /^[0-9]{6}$/.test(s!.accountNumber)) {
+        await ensureAccount(tx, s!.accountNumber, s!.name);
+      }
       await audit(tx, req, {
         action: 'supplier.create',
         entity: 'supplier',

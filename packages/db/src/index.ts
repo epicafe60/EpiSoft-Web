@@ -36,6 +36,7 @@ export async function migrateAndSeed(db: Db, migrationsFolder = MIGRATIONS_FOLDE
   });
   await seedRoles(db);
   await seedMembershipTypes(db);
+  await seedAccounting(db);
 }
 
 /**
@@ -80,6 +81,70 @@ export async function seedMembershipTypes(db: DbOrTx): Promise<void> {
       .insert(schema.membershipType)
       .values({ ...s.type, price: s.salePrice, productId: p!.id })
       .onConflictDoNothing({ target: schema.membershipType.code });
+  }
+}
+
+/** Journals, template categories and the accounts every install needs (spec §2.4.7, §4.11). */
+export async function seedAccounting(db: DbOrTx): Promise<void> {
+  const journals = [
+    ['ACH', 'ACHATS'],
+    ['BNQ', 'BANQUE'],
+    ['CAI', 'CAISSE'],
+    ['VTE', 'VENTES'],
+    ['OD', 'OPÉRATIONS DIVERSES'],
+    ['RAN', 'REPORTS À NOUVEAU'],
+  ] as const;
+  for (const [i, [code, label]] of journals.entries()) {
+    await db
+      .insert(schema.journal)
+      .values({ code, label, sort: i })
+      .onConflictDoNothing({ target: schema.journal.code });
+  }
+  const accounts: [string, string, 'D' | 'C' | 'M'][] = [
+    ['101000', 'Capital associatif', 'C'],
+    ['110000', 'Report à nouveau créditeur', 'C'],
+    ['119000', 'Report à nouveau débiteur', 'D'],
+    ['120000', 'Résultat de l’exercice (excédent)', 'C'],
+    ['129000', 'Résultat de l’exercice (perte)', 'D'],
+    ['370000', 'Stock de marchandises', 'D'],
+    ['401000', 'Fournisseurs divers', 'M'],
+    ['411000', 'Cagnottes des adhérents', 'M'],
+    ['511200', 'Chèques à encaisser', 'D'],
+    ['511300', 'Cartes à encaisser', 'D'],
+    ['512001', 'Banque', 'D'],
+    ['531000', 'Caisse', 'D'],
+    ['603700', 'Variation de stock de marchandises', 'D'],
+    ['607000', 'Achats de marchandises', 'D'],
+    ['627100', 'Frais sur titres et services bancaires', 'D'],
+    ['627800', 'Autres frais bancaires', 'D'],
+    ['658000', 'Charges de gestion courante (écarts de caisse)', 'D'],
+    ['707000', 'Ventes de marchandises', 'C'],
+    ['754000', 'Dons', 'C'],
+    ['756000', 'Cotisations', 'C'],
+    ['758000', 'Produits de gestion courante (écarts de caisse)', 'C'],
+    ['890000', 'Bilan d’ouverture', 'M'],
+  ];
+  for (const [number, label, normalSide] of accounts) {
+    await db
+      .insert(schema.account)
+      .values({ number, label, normalSide })
+      .onConflictDoNothing({ target: schema.account.number });
+  }
+  const categories = [
+    ['ACH', 'Achats de marchandises'],
+    ['FRA', 'Autres achats'],
+    ['CHF', 'Charges fixes (loyers, abonnements…)'],
+    ['BNQ', 'Frais bancaires'],
+    ['AUT', 'Autres'],
+    ['ADH', 'Comptes adhérents'],
+    ['REC', 'Produits'],
+    ['RAN', 'Reports à nouveau'],
+  ] as const;
+  for (const [i, [code, label]] of categories.entries()) {
+    await db
+      .insert(schema.entryTemplateCategory)
+      .values({ code, label, sort: i + 1 })
+      .onConflictDoNothing({ target: schema.entryTemplateCategory.code });
   }
 }
 

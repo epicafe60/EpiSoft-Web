@@ -26,6 +26,7 @@ import { orderRoutes } from './modules/supplies/orders';
 import { invoiceRoutes } from './modules/supplies/invoices';
 import { stockRoutes } from './modules/stock/routes';
 import { catalogAdminRoutes } from './modules/catalog/admin';
+import { accountingRoutes } from './modules/accounting/routes';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -73,6 +74,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(invoiceRoutes, { db, config });
       await api.register(stockRoutes, { db, config });
       await api.register(catalogAdminRoutes, { db, config });
+      await api.register(accountingRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );
