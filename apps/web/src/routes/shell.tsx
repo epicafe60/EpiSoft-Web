@@ -14,6 +14,7 @@ import {
   Truck,
   Users,
   X,
+  Store,
   type LucideIcon,
 } from 'lucide-react';
 import { visibleModules, type ModuleKey } from '@episoft/shared';
@@ -43,6 +44,9 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
     <nav aria-label="Menu principal" className="grid gap-1">
       <Link to="/" className={linkClass} activeOptions={{ exact: true }} onClick={onNavigate}>
         <Home /> Accueil
+      </Link>
+      <Link to="/boutique" className={linkClass} onClick={onNavigate}>
+        <Store /> Boutique
       </Link>
       {visibleModules(me.roles).map((m) => {
         const Icon = MODULE_ICONS[m.key];

@@ -32,6 +32,7 @@ describe('orders (R-CMD-01, R-CMD-03)', () => {
     expect(suggestedOrderQtyMilli(5000, 8000)).toBe(0);
     expect(suggestedOrderQtyMilli(5000, 2000, 1000)).toBe(4000);
     expect(suggestedOrderQtyMilli(null, -3000)).toBe(0);
+    expect(suggestedOrderQtyMilli(null, 1000, 3000)).toBe(2000);
   });
 
   it('computes HT, VAT and TTC per line then adds them up', () => {

@@ -43,6 +43,8 @@ export interface DraftLine {
 export interface Draft {
   id: string;
   memberId: string | null;
+  /** R-PRE-03: pre-order being collected with this ticket. */
+  preorderId?: string | null;
   lines: DraftLine[];
   parked: boolean;
   createdAt: string;

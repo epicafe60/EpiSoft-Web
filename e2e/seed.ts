@@ -39,7 +39,7 @@ export async function seedLot1(db: Db): Promise<void> {
 
   // Lot 2 cycle: a supplier product under its minimum stock.
   const [farm] = await db.insert(supplier).values({ code: '0701', name: SEED.honey.supplier, email: 'ferme@example.org' }).returning();
-  await db.insert(product).values({ code: SEED.honey.code, name: SEED.honey.name, supplierId: farm!.id, salePrice: '8.00', purchasePriceExcl: '5.0000', vatRate: '5.50', minStock: '6' });
+  await db.insert(product).values({ code: SEED.honey.code, name: SEED.honey.name, supplierId: farm!.id, salePrice: '8.00', purchasePriceExcl: '5.0000', vatRate: '5.50', minStock: '6', saleCondition: 'BOTH' });
 
   const [h] = await db.insert(household).values({}).returning();
   const [m] = await db

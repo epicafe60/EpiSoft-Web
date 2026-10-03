@@ -24,6 +24,13 @@ export const USERS = {
     lastName: 'CAISSE',
     roles: ['CAISSE'],
   },
+  customer: {
+    username: 'Dora_CLIENTE',
+    password: 'mot de passe cliente',
+    firstName: 'Dora',
+    lastName: 'CLIENTE',
+    roles: [],
+  },
 } satisfies Record<string, TestUser>;
 
 export async function login(page: Page, user: TestUser) {

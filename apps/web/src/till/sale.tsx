@@ -5,6 +5,7 @@ import {
   Pause,
   Play,
   Printer,
+  ShoppingBasket,
   ScanLine,
   Trash2,
   UserRound,
@@ -41,6 +42,7 @@ import { getMeta, tillDb, type Draft, type DraftLine } from './db';
 import { useTill } from './context';
 import { activeDraft, newDraft, parkDraft, resumeDraft, updateDraft } from './drafts';
 import { addProduct, draftTotalCents, lineCents, saleOp } from './logic';
+import { PreorderPickupDialog, type PickupOrder } from './preorders';
 import { PaymentDialog, type PaymentResult } from './payment';
 import { enqueue } from './sync';
 import { TopupDialog } from './topup';
@@ -100,6 +102,7 @@ export function SalePage() {
   const [paying, setPaying] = useState(false);
   const [topup, setTopup] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [lastSale, setLastSale] = useState<Extract<SyncOp, { kind: 'SALE' }>['payload'] | null>(
     null,
   );
@@ -242,6 +245,25 @@ export function SalePage() {
       return;
     }
     setPaying(true);
+  };
+
+  /** R-PRE-03: puts a pre-order into the current ticket; the sale then closes the order. */
+  const collectPreorder = (order: PickupOrder) => {
+    if (!draft) return;
+    const missing: string[] = [];
+    let lines = draft.lines;
+    for (const l of order.lines) {
+      const p = sellable.find((x) => x.id === l.productId);
+      const qty = parseQtyToMilli(l.qty);
+      if (p && qty) lines = addProduct(lines, p, qty);
+      else missing.push(l.label);
+    }
+    void updateDraft(draft.id, () => ({ lines, memberId: order.memberId, preorderId: order.id }));
+    setMessage(
+      missing.length
+        ? { kind: 'error', text: `Produits introuvables en caisse : ${missing.join(', ')}.` }
+        : { kind: 'info', text: `Précommande ${order.number} ajoutée au ticket.` },
+    );
   };
 
   // R-VTE-15 keyboard shortcuts.
@@ -603,7 +625,7 @@ export function SalePage() {
             size="lg"
             onClick={() => {
               if (window.confirm('Annuler ce ticket ?'))
-                void updateDraft(draft.id, () => ({ lines: [], memberId: null }));
+                void updateDraft(draft.id, () => ({ lines: [], memberId: null, preorderId: null }));
             }}
             disabled={!draft.lines.length && !draft.memberId}
           >
@@ -614,6 +636,14 @@ export function SalePage() {
           </Button>
         </div>
         <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPicking(true)}
+          className="justify-self-start"
+        >
+          <ShoppingBasket /> Précommandes
+        </Button>
+        <Button
           variant="ghost"
           size="sm"
           onClick={() => setSwitching(true)}
@@ -623,6 +653,11 @@ export function SalePage() {
         </Button>
       </section>
 
+      <PreorderPickupDialog
+        open={picking}
+        onClose={() => setPicking(false)}
+        onPick={collectPreorder}
+      />
       <WeightDialog
         product={weighing}
         onClose={() => {

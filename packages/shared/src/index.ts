@@ -9,6 +9,7 @@ export * from './crypto';
 export * from './forms';
 export * from './money';
 export * from './pos';
+export * from './preorders';
 export * from './roles';
 export * from './scale';
 export * from './settings';

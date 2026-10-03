@@ -39,6 +39,7 @@ import { eur, keyValues, letterhead, pdfText, render, table } from '../../lib/pd
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
 import { nextNumber } from '../pos/numbers';
+import { reservedByProduct } from '../preorders/routes';
 import { recordMovement } from '../stock/ledger';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
@@ -448,6 +449,11 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             ),
           )
           .orderBy(asc(product.name));
+        // R-PRE-02: what customers have pre-ordered is added to the suggestion.
+        const reserved = await reservedByProduct(
+          tx,
+          prods.map((p) => p.id),
+        );
         lines = prods
           .map((p) => ({
             productId: p.id,
@@ -455,6 +461,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
               suggestedOrderQtyMilli(
                 p.minStock === null ? null : parseQtyToMilli(p.minStock),
                 parseQtyToMilli(p.stockQty)!,
+                reserved.get(p.id) ?? 0,
               ),
             ),
             unitPriceExcl: p.purchasePriceExcl ?? '0',

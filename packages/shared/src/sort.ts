@@ -15,11 +15,7 @@ export function compareValues(a: SortValue, b: SortValue, dir: SortDir): number 
   return dir === 'asc' ? r : -r;
 }
 
-export function sortRows<T>(
-  rows: readonly T[],
-  value: (row: T) => SortValue,
-  dir: SortDir,
-): T[] {
+export function sortRows<T>(rows: readonly T[], value: (row: T) => SortValue, dir: SortDir): T[] {
   return rows
     .map((row, i) => ({ row, i, v: value(row) }))
     .sort((x, y) => compareValues(x.v, y.v, dir) || x.i - y.i)

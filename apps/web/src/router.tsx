@@ -38,6 +38,8 @@ import { AccountingLayout } from './routes/compta/layout';
 import { EditEntryPage, EntriesPage, NewEntryPage } from './routes/compta/entries';
 import { BankPage, StatementPage } from './routes/compta/bank';
 import { PlanPage } from './routes/compta/plan';
+import { ShopPage } from './routes/shop/shop';
+import { PreordersPage } from './routes/shop/staff';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
@@ -110,7 +112,15 @@ function requireRoles(roles: readonly RoleCode[]) {
 }
 
 /** Modules built so far; the others show what is coming (spec §10). */
-const BUILT = new Set(['admin', 'membres', 'catalogue', 'caisse', 'appros', 'compta']);
+const BUILT = new Set([
+  'admin',
+  'membres',
+  'catalogue',
+  'caisse',
+  'appros',
+  'compta',
+  'precommandes',
+]);
 
 const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
   createRoute({
@@ -120,6 +130,19 @@ const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
     component: () => <ModulePlaceholder moduleKey={m.key} />,
   }),
 );
+
+// --- Shop and pre-orders (§4.14): the shop is open to every signed-in member ---
+const shopRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/boutique',
+  component: ShopPage,
+});
+const preordersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/precommandes',
+  beforeLoad: requireRoles(['COMMANDES_EN_LIGNE', 'COMMANDES_GESTION']),
+  component: PreordersPage,
+});
 
 // --- Members (§4.2, §4.3) ---
 const adherents = requireRoles(['ADHERENTS']);
@@ -407,6 +430,8 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     ...moduleRoutes,
+    shopRoute,
+    preordersRoute,
     membersRoute,
     newMemberRoute,
     memberRoute,

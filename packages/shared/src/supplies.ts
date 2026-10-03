@@ -36,7 +36,8 @@ export function suggestedOrderQtyMilli(
   stockMilli: number,
   reservedMilli = 0,
 ): number {
-  if (minStockMilli === null) return 0;
+  // No minimum: only what customers have asked for (R-PRE-02), net of the stock on hand.
+  if (minStockMilli === null) return Math.max(0, reservedMilli - Math.max(stockMilli, 0));
   return Math.max(0, minStockMilli - stockMilli + reservedMilli);
 }
 
@@ -185,6 +186,6 @@ export function stockValueCents(qtyMilli: number, price4: number | null): number
 }
 
 /** Readable numbers: CF-2026-0001 (orders), RC-2026-0001 (receipts). */
-export function formatDocNumber(prefix: 'CF' | 'RC', year: number, n: number): string {
+export function formatDocNumber(prefix: 'CF' | 'RC' | 'PC', year: number, n: number): string {
   return `${prefix}-${year}-${String(n).padStart(4, '0')}`;
 }

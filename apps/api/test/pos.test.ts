@@ -31,7 +31,7 @@ let sessionId: string;
 let seq = 0;
 
 async function resetPos(db: Db) {
-  await db.execute(sql`truncate app.sync_receipt, app.sale_payment, app.sale_line, app.membership, app.wallet_entry,
+  await db.execute(sql`truncate app.preorder_line, app.preorder, app.sync_receipt, app.sale_payment, app.sale_line, app.membership, app.wallet_entry,
     app.member_payment, app.sale, app.cash_count, app.cash_session, app.pos_device, app.stock_movement,
     app.product_barcode, app.number_counter cascade`);
   await db.execute(sql`delete from app.product where code not in ('01001', '01002', '01004')`);
@@ -527,5 +527,98 @@ describe('snapshot (R-OFF-02, R-SYNC-06)', () => {
     const u = await createUser(t.db, { roles: ['COMPTA'] });
     const h = await login(t.app, u.username!);
     expect((await t.app.inject({ url: '/api/v1/sync/snapshot', headers: h })).statusCode).toBe(403);
+  });
+});
+
+describe('pre-orders (R-PRE-01..03)', () => {
+  const tomorrow = () => {
+    const d = new Date(Date.now() + 86_400_000);
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(d);
+  };
+
+  it('a member orders, the shop sees it, the till collects it, the suggestion counts it', async () => {
+    const jam = await addProduct({
+      name: 'Confiture',
+      salePrice: '4.00',
+      saleCondition: 'ON_ORDER',
+    });
+    const shelf = await addProduct({ name: 'Chips', saleCondition: 'ON_SITE' });
+    const customer = await createUser(t.db, { roles: [] });
+    const ch = await login(t.app, customer.username!);
+    const call = (method: 'GET' | 'POST', url: string, h: Headers, payload?: object) =>
+      t.app.inject({ method, url: `/api/v1${url}`, headers: h, payload });
+
+    // Only products sold on order are in the shop window.
+    const shop = (await call('GET', '/shop/products', ch)).json() as { id: string }[];
+    expect(shop.map((p) => p.id)).toContain(jam.id);
+    expect(shop.map((p) => p.id)).not.toContain(shelf.id);
+
+    // R-PRE-01: a product not sold on order, or a past date, is refused.
+    const body = { pickupDate: tomorrow(), lines: [{ productId: jam.id, qty: '2' }] };
+    expect(
+      (
+        await call('POST', '/preorders', ch, {
+          ...body,
+          lines: [{ productId: shelf.id, qty: '1' }],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (await call('POST', '/preorders', ch, { ...body, pickupDate: '2020-01-01' })).statusCode,
+    ).toBe(400);
+    const created = await call('POST', '/preorders', ch, body);
+    expect(created.statusCode).toBe(200);
+    const { id, number } = created.json();
+    expect(number).toMatch(/^PC-\d{4}-0001$/);
+
+    // The member sees their order only; another member does not.
+    const mine = (await call('GET', '/preorders/mine', ch)).json();
+    expect(mine).toHaveLength(1);
+    expect(mine[0].totalCents).toBe(800);
+    const stranger = await login(t.app, (await createUser(t.db, { roles: [] })).username!);
+    expect((await call('GET', `/preorders/${id}`, stranger)).statusCode).toBe(404);
+    expect((await call('GET', '/preorders', ch)).statusCode).toBe(403);
+
+    // R-PRE-02: the quantity is added to the supplier suggestion, even with no minimum stock.
+    const { reservedByProduct } = await import('../src/modules/preorders/routes');
+    expect((await reservedByProduct(t.db, [jam.id])).get(jam.id)).toBe(2000);
+
+    // The till lists it and collects it: the ticket closes the order (R-PRE-03).
+    const open = (await call('GET', '/preorders?open=true', headers)).json();
+    expect(open.map((o: { id: string }) => o.id)).toContain(id);
+    const op = saleOp(
+      [{ productId: jam.id, qty: '2', unitPrice: '4.00' }],
+      [{ method: 'CASH', amount: '8.00' }],
+    );
+    (op as { payload: { preorderId?: string } }).payload.preorderId = id;
+    expect((await push([op]))[0]!.status).toBe('OK');
+    const after = (await call('GET', `/preorders/${id}`, ch)).json();
+    expect(after.status).toBe('PICKED_UP');
+    expect(after.saleId).toBeTruthy();
+    expect((await reservedByProduct(t.db, [jam.id])).size).toBe(0);
+    // A collected order cannot be cancelled.
+    expect(
+      (await call('POST', `/preorders/${id}/status`, ch, { status: 'CANCELLED' })).statusCode,
+    ).toBe(403);
+  });
+
+  it('a member may cancel their own order while it is only received', async () => {
+    const jam = await addProduct({ saleCondition: 'BOTH' });
+    const customer = await createUser(t.db, { roles: [] });
+    const ch = await login(t.app, customer.username!);
+    const res = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/preorders',
+      headers: ch,
+      payload: { pickupDate: tomorrow(), lines: [{ productId: jam.id, qty: '1' }] },
+    });
+    const { id } = res.json();
+    const cancel = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/preorders/${id}/status`,
+      headers: ch,
+      payload: { status: 'CANCELLED' },
+    });
+    expect(cancel.statusCode).toBe(200);
   });
 });

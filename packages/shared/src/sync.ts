@@ -57,6 +57,8 @@ export const saleOpSchema = z.object({
     emailReceipt: z.boolean().default(false),
     /** R-CAG-04: ADHERENTS user who authorised an overdraft beyond the limit. */
     walletOverdraftForcedBy: z.string().uuid().nullable().optional(),
+    /** R-PRE-03: pre-order collected with this ticket. */
+    preorderId: z.string().uuid().nullable().optional(),
   }),
 });
 

@@ -8,6 +8,7 @@ import {
   membership,
   membershipType,
   posDevice,
+  preorder,
   product,
   sale,
   saleLine,
@@ -435,6 +436,20 @@ async function recordSale(
       }),
     );
     await tx.update(sale).set({ emailSentAt: new Date() }).where(eq(sale.id, saleId));
+  }
+  // R-PRE-03: the pre-order collected at the till is closed and linked to its ticket.
+  if (p.preorderId) {
+    const done = await tx
+      .update(preorder)
+      .set({ status: 'PICKED_UP', saleId, updatedAt: new Date() })
+      .where(and(eq(preorder.id, p.preorderId), inArray(preorder.status, ['SUBMITTED', 'READY'])))
+      .returning({ id: preorder.id });
+    if (done.length === 0)
+      warn(
+        ctx,
+        'PREORDER_NOT_OPEN',
+        'La précommande liée n’était plus ouverte (déjà retirée ou annulée).',
+      );
   }
   if (ctx.warnings.length)
     await tx.update(sale).set({ warnings: ctx.warnings }).where(eq(sale.id, saleId));

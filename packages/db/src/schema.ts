@@ -22,6 +22,7 @@ import {
   MEMBER_STATUSES,
   PAYMENT_METHODS,
   PRICE_SOURCES,
+  PREORDER_STATUSES,
   PRODUCT_KINDS,
   PRODUCT_STATUSES,
   SALE_CONDITIONS,
@@ -1232,3 +1233,57 @@ export const cashDeposit = app.table('cash_deposit', {
   createdAt: createdAt(),
   legacyRef: text('legacy_ref').unique(),
 });
+
+// --- Pre-orders (R-PRE-01..03) -------------------------------------------------------------
+
+export const preorderStatus = app.enum('preorder_status', PREORDER_STATUSES);
+
+/** A customer's order, placed from the online cart and collected (and paid) at the till. */
+export const preorder = app.table(
+  'preorder',
+  {
+    id: id(),
+    number: text('number').notNull().unique(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id),
+    householdId: uuid('household_id').references(() => household.id),
+    status: preorderStatus('status').notNull().default('SUBMITTED'),
+    /** Desired pick-up date (R-PRE-01). */
+    pickupDate: date('pickup_date').notNull(),
+    comment: text('comment'),
+    /** Set when the order is turned into a till ticket (R-PRE-03). */
+    saleId: uuid('sale_id').references(() => sale.id, { onDelete: 'set null' }),
+    /** The member, or the volunteer who keyed it in for them. */
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('preorder_member_idx').on(t.memberId, t.createdAt),
+    index('preorder_status_idx').on(t.status, t.pickupDate),
+  ],
+);
+
+export const preorderLine = app.table(
+  'preorder_line',
+  {
+    id: id(),
+    preorderId: uuid('preorder_id')
+      .notNull()
+      .references(() => preorder.id, { onDelete: 'cascade' }),
+    lineNo: integer('line_no').notNull(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    label: text('label').notNull(),
+    qty: qty('qty').notNull(),
+    /** Catalogue price when ordered, for information: the till charges the price of the day. */
+    unitPrice: money('unit_price').notNull(),
+  },
+  (t) => [
+    index('preorder_line_order_idx').on(t.preorderId),
+    index('preorder_line_product_idx').on(t.productId),
+    check('preorder_line_qty_positive', sql`${t.qty} > 0`),
+  ],
+);

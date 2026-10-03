@@ -72,6 +72,7 @@ export function saleOp(args: {
       sessionId: args.sessionId,
       cashierId: args.cashierId,
       memberId: draft.memberId,
+      preorderId: draft.preorderId ?? null,
       soldAt: args.now.toISOString(),
       provisionalNumber: args.provisionalNumber,
       lines: draft.lines.map((l) => ({

@@ -61,7 +61,7 @@ export default async function globalSetup() {
         passwordHash: await hash(u.password),
       })
       .returning();
-    await db.insert(userRole).values(u.roles.map((roleCode) => ({ memberId: m!.id, roleCode })));
+    if (u.roles.length) await db.insert(userRole).values(u.roles.map((roleCode) => ({ memberId: m!.id, roleCode })));
   }
   await seedLot1(db);
   await pool.end();
