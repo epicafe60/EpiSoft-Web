@@ -1,6 +1,7 @@
 /**
- * Legacy migration, Lot 0 part (spec §9.1 steps 1–2): regions, communes, households,
- * members, roles, login log and the cash float setting.
+ * Legacy migration (spec §9.1). Lot 0: regions, communes, households, members, roles,
+ * login log and the cash float setting. Lot 1 (lot1.ts): suppliers, catalogue, images,
+ * opening stock, memberships, payments and cagnotte, tickets and sessions.
  *
  * - Reads the EpiSoft MariaDB with SELECT only (see source.ts); never writes to it.
  * - Idempotent: rows are matched on their legacy id and updated on each run.
@@ -33,6 +34,7 @@ import {
   type LegacyCommune,
   type LegacyMemberRow,
 } from './transform';
+import { migrateLot1, type Report } from './lot1';
 
 interface Count {
   table: string;
@@ -64,6 +66,7 @@ const pool = createPool(requireEnv('DATABASE_URL'), 1);
 const db = createDb(pool);
 const counts: Count[] = [];
 const issues: Issue[] = [];
+const sheets: Report['sheets'] = [];
 
 try {
   await db.transaction(async (tx) => {
@@ -71,6 +74,7 @@ try {
     await migrateHouseholdsAndMembers(legacy, tx);
     await migrateLogins(legacy, tx);
     await migrateParams(legacy, tx);
+    await migrateLot1(legacy, tx, { counts, issues, sheets });
     if (args['dry-run']) throw new Rollback();
   });
   console.log('Migration validée.');
@@ -380,6 +384,7 @@ async function writeReport(): Promise<string> {
     ],
     issues,
   );
+  for (const extra of sheets) sheet(extra.name, extra.columns, extra.rows);
   const dir = join(REPO_ROOT, 'exports');
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
