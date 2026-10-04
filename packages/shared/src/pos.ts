@@ -276,3 +276,28 @@ export function formatSaleNumber(year: number, n: number): string {
 export function provisionalNumber(deviceName: string, deviceSeq: number): string {
   return `${deviceName}-${String(deviceSeq).padStart(4, '0')}`;
 }
+
+// --- Low-wallet alert at the till -------------------------------------------------
+
+/** Below this balance the cashier is invited to suggest a top-up. */
+export const LOW_WALLET_CENTS = 500;
+
+export type WalletAlert = 'NEGATIVE' | 'INSUFFICIENT' | 'LOW' | null;
+
+/**
+ * Alert shown next to the household's wallet at the till:
+ * NEGATIVE: already below zero; INSUFFICIENT: the current ticket could not be paid from
+ * the wallet alone (balance − total below −overdraft); LOW: under the top-up threshold.
+ */
+export function walletAlert(
+  balanceCents: number,
+  ticketTotalCents: number,
+  overdraftCents: number,
+  lowCents = LOW_WALLET_CENTS,
+): WalletAlert {
+  if (balanceCents < 0) return 'NEGATIVE';
+  if (ticketTotalCents > 0 && !walletPaymentAllowed(balanceCents, ticketTotalCents, overdraftCents))
+    return 'INSUFFICIENT';
+  if (balanceCents < lowCents) return 'LOW';
+  return null;
+}

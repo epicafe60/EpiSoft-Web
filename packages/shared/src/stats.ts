@@ -71,3 +71,23 @@ export function grossMargin(
 export function expiresWithin(endDate: string, today: string, days: number): boolean {
   return endDate >= today && endDate <= addDays(today, days);
 }
+
+/**
+ * Suggested order quantity, in thousandths of the unit: enough to cover `targetDays`
+ * of sales at the observed rate and to get back above the minimum stock, net of the
+ * current stock (a negative stock counts as zero) and of what is already on order.
+ * Never negative; rounded up so the target is reached.
+ */
+export function suggestOrderQtyMilli(input: {
+  stockMilli: number;
+  soldMilli: number;
+  periodDays: number;
+  targetDays: number;
+  minStockMilli: number;
+  onOrderMilli: number;
+}): number {
+  const days = Math.max(1, input.periodDays);
+  const needed = (input.soldMilli / days) * input.targetDays + Math.max(0, input.minStockMilli);
+  const have = Math.max(0, input.stockMilli) + Math.max(0, input.onOrderMilli);
+  return Math.max(0, Math.ceil(needed - have - 1e-9));
+}

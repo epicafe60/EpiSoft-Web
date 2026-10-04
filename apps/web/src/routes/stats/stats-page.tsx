@@ -25,6 +25,8 @@ const KINDS = [
   ['hours', 'Heures de pointe'],
   ['losses', 'Pertes et casse'],
   ['forecast', 'Autonomie de stock'],
+  ['suggest', 'Suggestion de commande'],
+  ['cashgap', 'Écarts de caisse'],
 ] as const;
 type Kind = (typeof KINDS)[number][0];
 

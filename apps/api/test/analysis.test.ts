@@ -84,6 +84,8 @@ describe('series and reports (R-STA-03)', () => {
       'hours',
       'losses',
       'forecast',
+      'suggest',
+      'cashgap',
     ]) {
       for (const format of ['json', 'xlsx']) {
         const res = await t.app.inject({

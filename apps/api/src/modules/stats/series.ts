@@ -2,7 +2,11 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Db } from '@episoft/db';
-import { PAYMENT_METHOD_LABELS, type PaymentMethod } from '@episoft/shared';
+import {
+  PAYMENT_METHOD_LABELS,
+  suggestOrderQtyMilli,
+  type PaymentMethod,
+} from '@episoft/shared';
 import type { Config } from '../../config';
 import { reportXlsx, type ReportTable } from '../../lib/report-output';
 
@@ -40,6 +44,8 @@ export const REPORT_KINDS = [
   'hours',
   'losses',
   'forecast',
+  'suggest',
+  'cashgap',
 ] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -322,6 +328,129 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             cover: r.cover === null ? '' : String(r.cover),
           },
         })),
+      };
+    }
+    if (kind === 'suggest') {
+      // Order suggestion: cover 30 days of sales at the observed rate, back above min stock,
+      // net of stock and of quantities already on order (R-CMD, automatic suggestion).
+      const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1);
+      const res = await db.execute(sql`
+        with sold as (
+          select l.product_id, sum(l.qty) as q
+          from app.sale_line l join app.sale s on s.id = l.sale_id
+          where ${inRange('s.sold_at', from, to)} group by 1),
+        ordered as (
+          select pl.product_id, sum(pl.qty_ordered - pl.qty_received) as q
+          from app.purchase_order_line pl join app.purchase_order po on po.id = pl.order_id
+          where po.status in ('SENT', 'PARTIAL') group by 1)
+        select p.code, p.name, coalesce(su.name, '') as supplier,
+               p.stock_qty::text as stock, coalesce(p.min_stock, 0)::text as min_stock,
+               coalesce(sold.q, 0)::text as sold, coalesce(ordered.q, 0)::text as on_order,
+               coalesce(p.purchase_price_excl, 0)::text as price
+        from app.product p
+        left join sold on sold.product_id = p.id
+        left join ordered on ordered.product_id = p.id
+        left join app.supplier su on su.id = p.supplier_id
+        where p.status = 'ACTIVE' and (sold.q > 0 or p.min_stock > 0)
+          and (${q.supplierId ?? null}::uuid is null or p.supplier_id = ${q.supplierId ?? null}::uuid)`);
+      const milli = (v: unknown) => Math.round(Number(v ?? 0) * 1000);
+      const lines = (res.rows as Row[])
+        .map((r) => {
+          const qtyMilli = suggestOrderQtyMilli({
+            stockMilli: milli(r.stock),
+            soldMilli: milli(r.sold),
+            periodDays: days,
+            targetDays: 30,
+            minStockMilli: milli(r.min_stock),
+            onOrderMilli: milli(r.on_order),
+          });
+          return { r, qtyMilli, costCents: Math.round((qtyMilli / 1000) * Number(r.price) * 100) };
+        })
+        .filter((x) => x.qtyMilli > 0)
+        .sort((a, b) => String(a.r.supplier).localeCompare(String(b.r.supplier), 'fr'));
+      return {
+        title: 'Suggestion de commande',
+        subtitle: `${subtitle} — pour couvrir 30 jours au rythme de vente, net du stock et des commandes en cours`,
+        columns: [
+          { key: 'supplier', label: 'Fournisseur', type: 'text', width: 2 },
+          { key: 'code', label: 'Code', type: 'text' },
+          { key: 'name', label: 'Produit', type: 'text', width: 3 },
+          { key: 'stock', label: 'Stock', type: 'text' },
+          { key: 'onOrder', label: 'En commande', type: 'text' },
+          { key: 'qty', label: 'À commander', type: 'text' },
+          { key: 'cost', label: 'Coût estimé', type: 'money' },
+        ],
+        rows: [
+          ...lines.map(({ r, qtyMilli, costCents }) => ({
+            cells: {
+              supplier: String(r.supplier),
+              code: String(r.code),
+              name: String(r.name),
+              stock: String(r.stock),
+              onOrder: String(r.on_order),
+              qty: (qtyMilli / 1000).toFixed(3),
+              cost: eur(costCents),
+            },
+          })),
+          {
+            bold: true,
+            cells: {
+              supplier: 'Total', code: '', name: '', stock: '', onOrder: '', qty: '',
+              cost: eur(lines.reduce((t, x) => t + x.costCents, 0)),
+            },
+          },
+        ],
+      };
+    }
+    if (kind === 'cashgap') {
+      // Closing difference (counted − expected) per cashier, fixed at closing time (R-SES-02).
+      const res = await db.execute(sql`
+        select coalesce(m.last_name || ' ' || m.first_name, 'Inconnu') as cashier,
+               count(*)::int as n,
+               round(sum(c.difference) * 100)::bigint as net,
+               round(sum(abs(c.difference)) * 100)::bigint as abs_total,
+               round(max(abs(c.difference)) * 100)::bigint as worst,
+               count(*) filter (where c.difference <> 0)::int as with_gap
+        from app.cash_count c
+        join app.cash_session cs on cs.id = c.session_id
+        left join app.member m on m.id = cs.closed_by
+        where ${inRange('cs.closed_at', from, to)}
+        group by 1 order by abs_total desc, 1`);
+      const rows = res.rows as Row[];
+      return {
+        title: 'Écarts de caisse par caissier',
+        subtitle,
+        columns: [
+          { key: 'cashier', label: 'Caissier', type: 'text', width: 2 },
+          { key: 'n', label: 'Clôtures', type: 'text' },
+          { key: 'withGap', label: 'Avec écart', type: 'text' },
+          { key: 'net', label: 'Écart net', type: 'money' },
+          { key: 'abs', label: 'Écart cumulé (valeur absolue)', type: 'money' },
+          { key: 'worst', label: 'Pire écart', type: 'money' },
+        ],
+        rows: [
+          ...rows.map((r) => ({
+            cells: {
+              cashier: String(r.cashier),
+              n: String(r.n),
+              withGap: String(r.with_gap),
+              net: eur(cents(r.net)),
+              abs: eur(cents(r.abs_total)),
+              worst: eur(cents(r.worst)),
+            },
+          })),
+          {
+            bold: true,
+            cells: {
+              cashier: 'Total',
+              n: String(rows.reduce((t, r) => t + Number(r.n), 0)),
+              withGap: String(rows.reduce((t, r) => t + Number(r.with_gap), 0)),
+              net: eur(rows.reduce((t, r) => t + cents(r.net), 0)),
+              abs: eur(rows.reduce((t, r) => t + cents(r.abs_total), 0)),
+              worst: eur(Math.max(0, ...rows.map((r) => cents(r.worst)))),
+            },
+          },
+        ],
       };
     }
     if (kind === 'movements') {

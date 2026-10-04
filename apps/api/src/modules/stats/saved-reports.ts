@@ -17,6 +17,8 @@ export const SAVED_REPORT_KINDS = [
   'hours',
   'losses',
   'forecast',
+  'suggest',
+  'cashgap',
 ] as const;
 
 const bodySchema = z.object({

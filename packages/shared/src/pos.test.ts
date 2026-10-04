@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  walletAlert,
   applyPayment,
   closing,
   countedCashCents,
@@ -183,5 +184,16 @@ describe('barcodes and numbers', () => {
 
   it('formats ticket numbers (R-VTE-10)', () => {
     expect(formatSaleNumber(2026, 124)).toBe('T-2026-000124');
+  });
+});
+
+describe('walletAlert', () => {
+  it('flags negative, insufficient and low balances', () => {
+    expect(walletAlert(-100, 0, 0)).toBe('NEGATIVE');
+    expect(walletAlert(1000, 1500, 0)).toBe('INSUFFICIENT');
+    expect(walletAlert(1000, 1500, 500)).toBeNull();
+    expect(walletAlert(300, 0, 0)).toBe('LOW');
+    expect(walletAlert(500, 0, 0)).toBeNull();
+    expect(walletAlert(5000, 1500, 0)).toBeNull();
   });
 });
