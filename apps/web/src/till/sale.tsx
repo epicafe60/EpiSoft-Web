@@ -22,6 +22,7 @@ import {
   productForPlu,
   scaleQuantityMilli,
   membershipState,
+  walletAlert,
   normalizeSearch,
   parseAmountToCents,
   parseQtyToMilli,
@@ -301,6 +302,10 @@ export function SalePage() {
     .sort((a, b) => a.posSort - b.posSort || a.name.localeCompare(b.name));
   const memberResults = searchMembers(members, memberQuery);
   const balance = household ? balanceCents(household.id) : null;
+  const alert =
+    balance === null
+      ? null
+      : walletAlert(balance, total, parseAmountToCents(settings?.overdraftLimit ?? '0') ?? 0);
 
   return (
     <div className="grid min-h-0 flex-1 gap-3 p-3 lg:grid-cols-[1fr_26rem]">
@@ -478,6 +483,18 @@ export function SalePage() {
                     </span>
                   )}
                 </p>
+                {alert ? (
+                  <p
+                    className="mt-1 text-sm font-medium text-warning"
+                    data-testid="wallet-alert"
+                  >
+                    {alert === 'NEGATIVE'
+                      ? 'Cagnotte négative : proposez un versement.'
+                      : alert === 'INSUFFICIENT'
+                        ? 'Cagnotte insuffisante pour ce ticket : proposez un versement ou un autre paiement.'
+                        : 'Cagnotte basse : proposez un versement.'}
+                  </p>
+                ) : null}
               </div>
               <div className="flex gap-1">
                 {household ? (

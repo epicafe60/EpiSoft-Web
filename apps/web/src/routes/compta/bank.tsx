@@ -3,6 +3,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp } from 'lucide-react';
 import {
+  autoMatchPick,
   decimalToCents,
   ENTRY_MODE_LABELS,
   ENTRY_MODES,
@@ -250,7 +251,13 @@ export function StatementPage() {
       Object.fromEntries(
         data.lines
           .filter((l) => l.status === 'NEW')
-          .map((l) => [l.id, l.suggestions[0] ? encode(l.suggestions[0]) : '']),
+          .map((l) => [
+            l.id,
+            (() => {
+              const pick = autoMatchPick(l.suggestions);
+              return pick ? encode(pick) : '';
+            })(),
+          ]),
       ),
     );
   }, [data]);
@@ -290,6 +297,7 @@ export function StatementPage() {
   const open = data.status === 'OPEN';
   const pending = Object.values(choice).filter(Boolean).length;
   const newLines = data.lines.filter((l) => l.status === 'NEW').length;
+  const ambiguous = data.lines.filter((l) => l.status === 'NEW' && l.suggestions.length > 1).length;
 
   return (
     <div className="grid gap-4">
@@ -392,6 +400,12 @@ export function StatementPage() {
       {close.error ? <Alert>{close.error.message}</Alert> : null}
       {match.isSuccess ? (
         <Alert variant="success">{match.data.matched} ligne(s) rapprochée(s).</Alert>
+      ) : null}
+      {open && ambiguous > 0 ? (
+        <p className="text-sm text-warning">
+          {ambiguous} ligne(s) ont plusieurs propositions : choisissez-en une, elles ne sont pas
+          présélectionnées.
+        </p>
       ) : null}
       {open ? (
         <div className="flex flex-wrap gap-3">

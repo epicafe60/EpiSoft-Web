@@ -13,6 +13,8 @@ const envSchema = z.object({
   WEB_DIST: z.string().optional(),
   /** Overrides the Drizzle migrations folder (Docker image). */
   MIGRATIONS_DIR: z.string().optional(),
+  /** Login attempts per minute and instance (§5.5); the test suite raises it. */
+  AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   MIGRATE_ON_START: bool.default('false'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   // SMTP (§4.16). Without SMTP_HOST, e-mails stay in the outbox and are logged in development.
@@ -21,6 +23,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('Épicafé <no-reply@localhost>'),
+  // Web Push. Without both keys, notifications are off. Generate with `npx web-push generate-vapid-keys`.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost'),
 });
 
 export type Config = z.infer<typeof envSchema>;

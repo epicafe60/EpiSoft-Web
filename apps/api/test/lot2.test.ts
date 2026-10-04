@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { expectIntegrity } from './integrity-helper';
 import {
   emailOutbox,
   priceHistory,
@@ -22,6 +23,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => expectIntegrity(t.db));
 
 async function resetLot2(db: Db) {
   await db.execute(sql`truncate app.invoice_receipt, app.supplier_invoice, app.goods_receipt_line, app.goods_receipt,
@@ -94,6 +96,8 @@ async function setup() {
       minStock: '2',
     })
     .returning();
+  // The cached stock always comes from movements: record the opening stock.
+  await t.db.insert(stockMovement).values({ productId: p2!.id, qty: '5', kind: 'INITIAL' });
   return { s, p1: p1!, p2: p2! };
 }
 
@@ -202,7 +206,6 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
 describe('stock (R-STK-01..06)', () => {
   it('records a loss, keeps the ledger and the cache equal, values the stock', async () => {
     const { p2 } = await setup();
-    await recordMovement(t.db, { productId: p2.id, qtyMilli: 5000, kind: 'INITIAL' });
     expect(
       (await post('/api/v1/stock/losses', { productId: p2.id, qty: '1', reason: 'cassé' }))
         .statusCode,

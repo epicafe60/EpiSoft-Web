@@ -49,15 +49,18 @@ const EXPENSE_SECTIONS = [
   { code: '66', label: 'Charges financières', prefixes: ['66'] },
   { code: '67', label: 'Charges exceptionnelles', prefixes: ['67'] },
   { code: '68', label: 'Dotations aux amortissements', prefixes: ['68'] },
+  { code: '69', label: 'Impôts sur les bénéfices', prefixes: ['69'] },
 ] as const;
 
 const INCOME_SECTIONS = [
   { code: '70', label: 'Ventes', prefixes: ['70'] },
+  { code: '71', label: 'Production stockée et immobilisée', prefixes: ['71', '72', '73'] },
   { code: '74', label: 'Subventions', prefixes: ['74'] },
   { code: '75', label: 'Cotisations, dons et autres produits', prefixes: ['75'] },
   { code: '76', label: 'Produits financiers', prefixes: ['76'] },
   { code: '77', label: 'Produits exceptionnels', prefixes: ['77'] },
   { code: '78', label: 'Reprises', prefixes: ['78'] },
+  { code: '79', label: 'Transferts de charges', prefixes: ['79'] },
 ] as const;
 
 export interface IncomeStatement {
@@ -106,11 +109,14 @@ export interface BalanceSheet {
  * is allocated, so the two sides always agree.
  */
 export function balanceSheet(balances: readonly AccountBalance[]): BalanceSheet {
-  const bs = balances.filter((b) => accountClass(b.number) <= 5);
+  // Class 8 is only the transitional opening account 89, kept apart from the year's result.
+  const bs = balances.filter((b) => accountClass(b.number) <= 5 || b.number.startsWith('89'));
   const debitSide = (b: AccountBalance) =>
-    accountClass(b.number) === 4 || accountClass(b.number) === 5
+    b.number.startsWith('89')
       ? balanceOf(b) > 0
-      : accountClass(b.number) >= 2;
+      : accountClass(b.number) === 4 || accountClass(b.number) === 5
+        ? balanceOf(b) > 0
+        : accountClass(b.number) >= 2;
   const assetsList = bs.filter(debitSide);
   const liabilitiesList = bs.filter((b) => !debitSide(b));
   const assets = sectionsOf(
@@ -120,6 +126,7 @@ export function balanceSheet(balances: readonly AccountBalance[]): BalanceSheet 
       { code: '3', label: 'Stocks', prefixes: ['3'] },
       { code: '4', label: 'Créances', prefixes: ['4'] },
       { code: '5', label: 'Trésorerie', prefixes: ['5'] },
+      { code: '89', label: 'Bilan d’ouverture', prefixes: ['89'] },
     ],
     1,
   );
@@ -139,9 +146,11 @@ export function balanceSheet(balances: readonly AccountBalance[]): BalanceSheet 
     ],
     -1,
   );
-  const pendingResultCents = -balances
-    .filter((b) => accountClass(b.number) >= 6)
-    .reduce((s, b) => s + balanceOf(b), 0);
+  const pendingResultCents =
+    0 -
+    balances
+      .filter((b) => accountClass(b.number) === 6 || accountClass(b.number) === 7)
+      .reduce((s, b) => s + balanceOf(b), 0);
   const totalAssetsCents = assets.reduce((s, x) => s + x.cents, 0);
   const totalLiabilitiesCents = liabilities.reduce((s, x) => s + x.cents, 0) + pendingResultCents;
   return { assets, liabilities, totalAssetsCents, totalLiabilitiesCents, pendingResultCents };

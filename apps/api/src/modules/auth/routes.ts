@@ -26,7 +26,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
   { db, config },
 ) => {
   // §5.5: rate limiting on top of the per-username lockout (R-AUTH-03).
-  const authRateLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } };
+  const authRateLimit = { rateLimit: { max: config.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' } };
 
   app.post(
     '/auth/login',

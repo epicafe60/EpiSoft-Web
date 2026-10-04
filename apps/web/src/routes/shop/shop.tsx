@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { useCart, type CartLine } from './cart';
+import { RatingButton, type Ratings } from './reviews';
 
 interface ShopProduct {
   id: string;
@@ -44,7 +45,7 @@ export interface MyOrder {
   pickupDate: string;
   comment: string | null;
   totalCents: number;
-  lines: { id: string; label: string; qty: string; unitPrice: string }[];
+  lines: { id: string; productId: string; label: string; qty: string; unitPrice: string }[];
 }
 
 const addDays = (iso: string, n: number) => {
@@ -57,7 +58,6 @@ const addDays = (iso: string, n: number) => {
 export function ShopPage() {
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
-  const cart = useCart();
   const { data, error, isPending } = useQuery({
     queryKey: ['shop-products', query],
     queryFn: () =>
@@ -119,6 +119,11 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
   const [qty, setQty] = useState(loose ? '0,5' : '1');
   const unit = loose && p.unit ? UNIT_LABELS[p.unit] : null;
   const inCart = cart.lines.find((l) => l.productId === p.id);
+  const { data: ratings } = useQuery({
+    queryKey: ['shop-ratings'],
+    queryFn: () => api.get<Ratings>('/shop/ratings'),
+    staleTime: 60_000,
+  });
   return (
     <Card className="flex flex-col">
       <CardContent className="grid flex-1 gap-2 pt-4">
@@ -142,6 +147,7 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
         {p.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground">{p.description}</p>
         ) : null}
+        <RatingButton productId={p.id} name={p.name} rating={ratings?.[p.id]} />
         <div className="mt-auto flex items-center gap-2">
           <Input
             aria-label={`Quantité de ${p.name}`}
@@ -382,6 +388,7 @@ export function MyOrders() {
     queryKey: ['my-orders'],
     queryFn: () => api.get<MyOrder[]>('/preorders/mine'),
   });
+  const cart = useCart();
   const cancel = useMutation({
     mutationFn: (id: string) => api.post(`/preorders/${id}/status`, { status: 'CANCELLED' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-orders'] }),
@@ -400,6 +407,25 @@ export function MyOrders() {
               <Badge variant={STATUS_BADGE[o.status]}>{PREORDER_STATUS_LABELS[o.status]}</Badge>
               <span className="text-muted-foreground">retrait le {formatDate(o.pickupDate)}</span>
               <span className="ml-auto tabular-nums">{euro(o.totalCents / 100)}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  o.lines.forEach((l) =>
+                    cart.add(
+                      {
+                        productId: l.productId,
+                        name: l.label,
+                        unitPriceCents: decimalToCents(l.unitPrice),
+                        unit: null,
+                      },
+                      l.qty,
+                    ),
+                  )
+                }
+              >
+                Commander à nouveau
+              </Button>
               {memberCanCancel(o.status) ? (
                 <Button
                   variant="ghost"

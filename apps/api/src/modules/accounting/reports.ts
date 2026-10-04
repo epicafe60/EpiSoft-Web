@@ -32,6 +32,7 @@ import { toParisDate } from '../../lib/dates';
 import { reportPdf, reportXlsx, type ReportLine, type ReportTable } from '../../lib/report-output';
 import { badRequest, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
+import { budgetFor } from './budget';
 import { accountBalances, entryFilters, type BalanceFilter } from './service';
 
 const MAX_ROWS = 20_000;
@@ -288,6 +289,45 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             },
             true,
           ),
+        ],
+      };
+    },
+
+    /** Budget vs réalisé (R-CPT-20). Needs a fiscal year. */
+    async budget(q) {
+      if (!q.fiscalYearId) throw badRequest('Choisissez un exercice.');
+      const c = await budgetFor(db, q.fiscalYearId);
+      const line = (r: (typeof c.expenses)[number]) =>
+        cell({
+          label: `${r.number} ${r.label}`,
+          budget: money(r.budgetCents),
+          actual: money(r.actualCents),
+          variance: money(r.varianceCents),
+          percent: r.percent === null ? null : `${r.percent} %`,
+        });
+      const total = (label: string, b: number, a: number) =>
+        cell(
+          { label, budget: money(b), actual: money(a), variance: money(a - b), percent: null },
+          true,
+        );
+      return {
+        title: 'Budget et réalisé',
+        subtitle: await periodLabel(q),
+        columns: [
+          { key: 'label', label: 'Compte', type: 'text', width: 4 },
+          { key: 'budget', label: 'Budget', type: 'money', width: 1.3 },
+          { key: 'actual', label: 'Réalisé', type: 'money', width: 1.3 },
+          { key: 'variance', label: 'Écart', type: 'money', width: 1.3 },
+          { key: 'percent', label: 'Réalisé / budget', type: 'text', width: 1.2 },
+        ],
+        rows: [
+          cell({ label: 'CHARGES' }, true),
+          ...c.expenses.map(line),
+          total('Total des charges', c.budgetExpensesCents, c.actualExpensesCents),
+          cell({ label: 'PRODUITS' }, true),
+          ...c.income.map(line),
+          total('Total des produits', c.budgetIncomeCents, c.actualIncomeCents),
+          total('Résultat', c.budgetResultCents, c.actualResultCents),
         ],
       };
     },

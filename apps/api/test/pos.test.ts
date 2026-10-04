@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { expectIntegrity } from './integrity-helper';
 import {
   householdBalance,
   household,
@@ -22,6 +23,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => expectIntegrity(t.db));
 
 type Headers = Record<string, string>;
 let headers: Headers;
@@ -49,6 +51,11 @@ async function addProduct(over: Partial<typeof product.$inferInsert> = {}, ean?:
     })
     .returning();
   if (ean) await t.db.insert(productBarcode).values({ ean, productId: p!.id });
+  // The cached stock always comes from movements: record the opening stock like the app does.
+  if (Number(p!.stockQty) !== 0)
+    await t.db
+      .insert(stockMovement)
+      .values({ productId: p!.id, qty: p!.stockQty, kind: 'INITIAL' });
   return p!;
 }
 
@@ -206,7 +213,9 @@ describe('sales (R-VTE-10, R-SYNC-02)', () => {
     const [b] = await push([op]);
     expect(b).toEqual(a);
     expect(await t.db.select().from(sale)).toHaveLength(1);
-    expect(await t.db.select().from(stockMovement)).toHaveLength(1);
+    expect(
+      await t.db.select().from(stockMovement).where(eq(stockMovement.kind, 'SALE')),
+    ).toHaveLength(1);
   });
 
   it('CA §4.4: 50 offline tickets pushed twice are recorded once, stock and cagnotte up to date', async () => {
@@ -620,5 +629,110 @@ describe('pre-orders (R-PRE-01..03)', () => {
       payload: { status: 'CANCELLED' },
     });
     expect(cancel.statusCode).toBe(200);
+  });
+});
+
+describe('statistics on real sales (R-STA-03)', () => {
+  it('computes revenue HT, cost at the price of the day, margin, and every series', async () => {
+    // 2 × 5.50 TTC at 10 % VAT = 10.00 HT; bought 3.00 HT when sold, price raised afterwards.
+    const jam = await addProduct({
+      name: 'Confiture',
+      salePrice: '5.50',
+      vatRate: '10',
+      purchasePriceExcl: '3.0000',
+    });
+    await t.db
+      .execute(sql`insert into app.price_history (id, product_id, at, purchase_price_excl, sale_price, source)
+      values (gen_random_uuid(), ${jam.id}, now() - interval '1 day', '3.0000', '5.50', 'FORM')`);
+    const op = saleOp(
+      [{ productId: jam.id, qty: '2', unitPrice: '5.50' }],
+      [{ method: 'CASH', amount: '11.00', tendered: '11.00', change: '0.00' }],
+    );
+    expect((await push([op]))[0]!.status).toBe('OK');
+    await t.db.execute(
+      sql`update app.product set purchase_price_excl = '4.0000' where id = ${jam.id}`,
+    );
+
+    // The till user also gets STATS: another login would hit the rate limit of the file.
+    await t.db.execute(
+      sql`insert into app.user_role (member_id, role_code) values (${cashierId}, 'STATS')`,
+    );
+    const stats = headers;
+    const day = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' }).format(new Date());
+    const range = `from=${day}&to=${day}`;
+    const get = async (url: string) => {
+      const res = await t.app.inject({ url: `/api/v1${url}`, headers: stats });
+      expect(res.statusCode, url).toBe(200);
+      return res.json();
+    };
+
+    const a = await get(`/stats/analysis?${range}&by=product`);
+    expect(a.rows).toHaveLength(1);
+    expect(a.rows[0]).toMatchObject({
+      ttcCents: 1100,
+      htCents: 1000,
+      costCents: 600,
+      marginCents: 400,
+    });
+    expect(a.total.marginRatePct).toBe(40);
+
+    expect((await get(`/stats/trend?${range}&granularity=day`)).points[0]).toMatchObject({
+      cents: 1100,
+    });
+    const pay = await get(`/stats/report/payments?${range}`);
+    expect(pay.rows[0].cells.total).toBe('11.00');
+    for (const kind of [
+      'purchases',
+      'movements',
+      'households',
+      'dormant',
+      'hours',
+      'losses',
+      'forecast',
+    ])
+      await get(`/stats/report/${kind}?${range}`);
+    const forecast = await get(`/stats/report/forecast?${range}`);
+    expect(forecast.rows[0].cells).toMatchObject({ code: jam.code, perDay: '2.000', cover: '4' });
+  });
+});
+
+describe('integrity checks catch corrupted figures', () => {
+  it('flags a drifted stock cache, a missing cagnotte entry and a wrong ticket total', async () => {
+    const { runIntegrityChecks } = await import('../src/modules/admin/integrity');
+    const chips = await addProduct();
+    const { members } = await addHousehold(1, '20.00');
+    const op = saleOp(
+      [{ productId: chips.id, qty: '2', unitPrice: '2.50' }],
+      [{ method: 'WALLET', amount: '5.00' }],
+      { memberId: members[0]!.id },
+    );
+    expect((await push([op]))[0]!.status).toBe('OK');
+    const failing = async () =>
+      (await runIntegrityChecks(t.db)).checks
+        .filter((c) => c.count > 0 && c.severity === 'error')
+        .map((c) => c.id);
+    expect(await failing()).toEqual([]);
+
+    await t.db.execute(
+      sql`update app.product set stock_qty = stock_qty + 1 where id = ${chips.id}`,
+    );
+    await t.db.execute(sql`update app.sale set total = '6.00' where id = ${op.id}`);
+    await t.db.execute(sql`delete from app.wallet_entry where sale_id = ${op.id}`);
+    expect(await failing()).toEqual(
+      expect.arrayContaining(['STK-01', 'VTE-01', 'VTE-02', 'CAG-01']),
+    );
+
+    // Repair so the shared afterEach check passes.
+    await t.db.execute(
+      sql`update app.product set stock_qty = stock_qty - 1 where id = ${chips.id}`,
+    );
+    await t.db.execute(sql`update app.sale set total = '5.00' where id = ${op.id}`);
+    await t.db.insert(walletEntry).values({
+      householdId: (await t.db.select().from(sale).where(eq(sale.id, op.id)))[0]!.householdId!,
+      amount: '-5.00',
+      kind: 'PURCHASE',
+      saleId: op.id,
+    });
+    expect(await failing()).toEqual([]);
   });
 });

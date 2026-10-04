@@ -26,3 +26,4 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 *.log
+apps/web/.vite/

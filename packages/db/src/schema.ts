@@ -1291,3 +1291,131 @@ export const preorderLine = app.table(
     check('preorder_line_qty_positive', sql`${t.qty} > 0`),
   ],
 );
+
+// --- Saved reports and imports (R-STA-05, R-IMP-01..04) ------------------------------------
+
+/** A named, read-only report: a kind of the fixed library plus its filters. Never free SQL. */
+export const savedReport = app.table(
+  'saved_report',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    kind: text('kind').notNull(),
+    params: jsonb('params').notNull().default({}),
+    /** Visible to every STATS user; otherwise only to its author. */
+    shared: boolean('shared').notNull().default(false),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('saved_report_author_idx').on(t.createdBy)],
+);
+
+/** R-IMP-04: who imported which file, when, with what outcome. */
+export const importLog = app.table(
+  'import_log',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    fileName: text('file_name').notNull(),
+    fileHash: text('file_hash').notNull(),
+    summary: jsonb('summary').notNull().default({}),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('import_log_kind_idx').on(t.kind, t.createdAt)],
+);
+
+/** Remembered matches between a file and the app: supplier names, column headers. */
+export const importMapping = app.table(
+  'import_mapping',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    sourceKey: text('source_key').notNull(),
+    target: text('target').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('import_mapping_uq').on(t.kind, t.sourceKey)],
+);
+
+// --- Customer reviews (shop) -----------------------------------------------------------------
+
+/** A member's rating and comment on a product; shown once a PRODUITS user approves it. */
+export const productReview = app.table(
+  'product_review',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    rating: integer('rating').notNull(),
+    comment: text('comment'),
+    status: text('status').notNull().default('PENDING'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('product_review_uq').on(t.productId, t.memberId),
+    index('product_review_status_idx').on(t.status, t.createdAt),
+    check('product_review_rating', sql`${t.rating} between 1 and 5`),
+  ],
+);
+
+/** R-STK-07: dated batches (best-before date) to watch; informational, the ledger stays the stock truth. */
+export const productBatch = app.table(
+  'product_batch',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    bestBefore: date('best_before').notNull(),
+    qty: qty('qty').notNull(),
+    note: text('note'),
+    createdAt: createdAt(),
+    by: uuid('by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('product_batch_date_idx').on(t.bestBefore),
+    check('product_batch_qty', sql`${t.qty} > 0`),
+  ],
+);
+
+/** R-CPT-20: yearly budget of an expense or income account, compared with the books in the reports. */
+export const budgetLine = app.table(
+  'budget_line',
+  {
+    id: id(),
+    fiscalYearId: uuid('fiscal_year_id')
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => account.id),
+    amount: money('amount').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('budget_line_uq').on(t.fiscalYearId, t.accountId),
+    check('budget_line_amount', sql`${t.amount} >= 0`),
+  ],
+);
+
+/** Web Push subscription of a browser (one member may have several devices). */
+export const pushSubscription = app.table(
+  'push_subscription',
+  {
+    id: id(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('push_subscription_member_idx').on(t.memberId)],
+);

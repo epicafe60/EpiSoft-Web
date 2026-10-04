@@ -13,12 +13,14 @@ import {
   ShoppingCart,
   Truck,
   UserCog,
+  FileUp,
+  Wallet,
   Users,
   X,
   Store,
   type LucideIcon,
 } from 'lucide-react';
-import { visibleModules, type ModuleKey } from '@episoft/shared';
+import { hasAnyRole, visibleModules, type ModuleKey } from '@episoft/shared';
 import { api } from '@/lib/api';
 import { useMe, writeCachedMe } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -51,6 +53,9 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
       <Link to="/boutique" className={linkClass} onClick={onNavigate}>
         <Store /> Boutique
       </Link>
+      <Link to="/mon-foyer" className={linkClass} onClick={onNavigate}>
+        <Wallet /> Mon foyer
+      </Link>
       {visibleModules(me.roles).map((m) => {
         const Icon = MODULE_ICONS[m.key];
         return (
@@ -59,6 +64,11 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
           </Link>
         );
       })}
+      {hasAnyRole(me.roles, ['PRODUITS', 'ADHERENTS']) ? (
+        <Link to="/imports" className={linkClass} onClick={onNavigate}>
+          <FileUp /> Imports
+        </Link>
+      ) : null}
       {/* While acting as someone else `me` is that user: the entry stays to allow going back. */}
       {me.roles.includes('ADMIN') || me.impersonator ? (
         <>

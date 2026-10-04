@@ -5,6 +5,7 @@ const TABS = [
   { to: '/compta/ecritures', label: 'Écritures' },
   { to: '/compta/banque', label: 'Banque' },
   { to: '/compta/editions', label: 'Éditions' },
+  { to: '/compta/budget', label: 'Budget' },
   { to: '/compta/plan', label: 'Plan comptable' },
   { to: '/compta/cloture', label: 'Clôture' },
 ] as const;

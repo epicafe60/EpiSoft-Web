@@ -30,9 +30,15 @@ async function payAll(page: Page, method: 'Espèces' | 'Cagnotte' | 'Carte') {
   await expect(page.getByText(/Ticket E2E-[0-9]+ enregistré/)).toBeVisible();
 }
 
-test('CA §4.4: the till sells offline and sends every ticket once when the network is back', async ({ page, context }) => {
+test('CA §4.4: the till sells offline and sends every ticket once when the network is back', async ({
+  page,
+  context,
+}) => {
   // Other tests may have sold before: compare with the state at the start.
-  const stockBefore = Number((await query<{ s: string }>(`select stock_qty as s from app.product where code = '111001'`))[0]!.s);
+  const stockBefore = Number(
+    (await query<{ s: string }>(`select stock_qty as s from app.product where code = '111001'`))[0]!
+      .s,
+  );
   await login(page, USERS.cashier);
   await page.goto('/caisse');
 
@@ -84,7 +90,9 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
     `select b.balance from app.household_balance b join app.member m on m.household_id = b.household_id where m.last_name = 'DUPONT'`,
   );
   expect(balance[0]!.balance).toBe('17.50');
-  const stock = await query<{ stock_qty: string }>(`select stock_qty from app.product where code = '111001'`);
+  const stock = await query<{ stock_qty: string }>(
+    `select stock_qty from app.product where code = '111001'`,
+  );
   expect(Number(stock[0]!.stock_qty)).toBe(stockBefore - 3);
 
   // Tickets of the day carry their final numbers (R-SYNC-05).

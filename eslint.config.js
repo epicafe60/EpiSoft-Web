@@ -8,6 +8,7 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/coverage/**',
+      '**/.vite/**',
       'packages/db/drizzle/**',
       'apps/web/src/routeTree.gen.ts',
       'tools/**',

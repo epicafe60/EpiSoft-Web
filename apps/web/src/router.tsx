@@ -38,9 +38,14 @@ import { AccountingLayout } from './routes/compta/layout';
 import { EditEntryPage, EntriesPage, NewEntryPage } from './routes/compta/entries';
 import { BankPage, StatementPage } from './routes/compta/bank';
 import { PlanPage } from './routes/compta/plan';
+import { BudgetPage } from './routes/compta/budget';
 import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
+import { ImportsPage } from './routes/stats/imports-page';
+import { IntegrityPage } from './routes/admin/integrity';
+import { MyHouseholdPage } from './routes/shop/household';
+import { ReviewsModerationPage } from './routes/catalog/reviews';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
@@ -134,6 +139,11 @@ const moduleRoutes = MODULES.filter((m) => !BUILT.has(m.key)).map((m) =>
 );
 
 // --- Shop and pre-orders (§4.14): the shop is open to every signed-in member ---
+const myHouseholdRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/mon-foyer',
+  component: MyHouseholdPage,
+});
 const shopRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/boutique',
@@ -151,6 +161,13 @@ const statsRoute = createRoute({
   path: '/stats',
   beforeLoad: requireRoles(['STATS']),
   component: StatsPage,
+});
+
+const importsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/imports',
+  beforeLoad: requireRoles(['PRODUITS', 'ADHERENTS']),
+  component: ImportsPage,
 });
 
 // --- Members (§4.2, §4.3) ---
@@ -218,6 +235,13 @@ const productsShelvesRoute = createRoute({
   path: '/catalogue/rayons',
   beforeLoad: requireRoles(['PRODUITS']),
   component: ShelvesPage,
+});
+
+const productsReviewsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/avis',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: ReviewsModerationPage,
 });
 
 // --- Supplies (§4.7–§4.10) ---
@@ -339,6 +363,11 @@ const planRoute = createRoute({
   path: '/plan',
   component: PlanPage,
 });
+const budgetRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/budget',
+  component: BudgetPage,
+});
 const yearClosingRoute = createRoute({
   getParentRoute: () => accountingRoute,
   path: '/cloture',
@@ -414,6 +443,11 @@ const adminAuditRoute = createRoute({
   path: '/journal',
   component: AuditPage,
 });
+const adminIntegrityRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/controles',
+  component: IntegrityPage,
+});
 const adminLoginsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/connexions',
@@ -442,6 +476,8 @@ const routeTree = rootRoute.addChildren([
     shopRoute,
     preordersRoute,
     statsRoute,
+    importsRoute,
+    myHouseholdRoute,
     membersRoute,
     newMemberRoute,
     memberRoute,
@@ -452,6 +488,7 @@ const routeTree = rootRoute.addChildren([
     productsLabelsRoute,
     productsPricesRoute,
     productsShelvesRoute,
+    productsReviewsRoute,
     suppliesRoute.addChildren([
       suppliesIndexRoute,
       ordersRoute,
@@ -474,6 +511,7 @@ const routeTree = rootRoute.addChildren([
       bankRoute,
       statementRoute,
       reportsRoute,
+      budgetRoute,
       planRoute,
       yearClosingRoute,
     ]),
@@ -483,6 +521,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAuditRoute,
       adminLoginsRoute,
+      adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,
     ]),
