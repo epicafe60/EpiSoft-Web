@@ -6,11 +6,12 @@ export interface ReportTableData {
   title: string;
   subtitle?: string;
   columns: { key: string; label: string; type: 'text' | 'money'; width?: number }[];
-  rows: { cells: Record<string, string | null>; bold?: boolean }[];
+  rows: { cells: Record<string, string | null>; bold?: boolean; link?: string | null }[];
 }
 
 /** A generic report table (same structure as the Excel export). */
 export function ReportTableView({ data, busy }: { data: ReportTableData; busy?: boolean }) {
+  const hasLinks = data.rows.some((r) => r.link);
   return (
     <Card className={cn('overflow-x-auto', busy && 'opacity-60')} aria-busy={busy}>
       <Table>
@@ -21,6 +22,7 @@ export function ReportTableView({ data, busy }: { data: ReportTableData; busy?: 
                 {c.label}
               </th>
             ))}
+            {hasLinks ? <th className="w-0" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -31,11 +33,25 @@ export function ReportTableView({ data, busy }: { data: ReportTableData; busy?: 
                   {c.type === 'money' ? euro(r.cells[c.key]) : (r.cells[c.key] ?? '')}
                 </td>
               ))}
+              {hasLinks ? (
+                <td className="whitespace-nowrap">
+                  {r.link ? (
+                    <a
+                      href={r.link}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-primary hover:underline"
+                    >
+                      Ouvrir ↗
+                    </a>
+                  ) : null}
+                </td>
+              ) : null}
             </tr>
           ))}
           {data.rows.length === 0 ? (
             <tr>
-              <td colSpan={data.columns.length} className="text-muted-foreground">
+              <td colSpan={data.columns.length + 1} className="text-muted-foreground">
                 Aucune donnée sur cette période.
               </td>
             </tr>

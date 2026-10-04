@@ -52,7 +52,8 @@ const ANALYSES: Record<string, Analysis> = {
              coalesce(sum(m.qty) filter (where m.kind in ('SALE', 'SALE_CANCEL')), 0)::text as sales,
              coalesce(sum(m.qty) filter (where m.kind = 'INVENTORY'), 0)::text as inventories,
              coalesce(sum(m.qty) filter (where m.kind in ('LOSS', 'CORRECTION')), 0)::text as other,
-             coalesce(to_char(max(m.at) at time zone 'Europe/Paris', 'DD/MM/YYYY'), '—') as last
+             coalesce(to_char(max(m.at) at time zone 'Europe/Paris', 'DD/MM/YYYY'), '—') as last,
+             '/catalogue/' || p.id as link
         from app.product p left join app.stock_movement m on m.product_id = p.id
        where p.kind = 'GOODS'
        group by p.id
@@ -101,7 +102,8 @@ const ANALYSES: Record<string, Analysis> = {
              (coalesce(t.paid, 0) - coalesce(w.debits, 0))::text as gap_tickets,
              coalesce(pay.pay_topups, 0)::text as pay_topups,
              coalesce(w.topups, 0)::text as topups,
-             (coalesce(pay.pay_topups, 0) - coalesce(w.topups, 0))::text as gap_topups
+             (coalesce(pay.pay_topups, 0) - coalesce(w.topups, 0))::text as gap_topups,
+             '/foyers/' || h.id as link
         from app.household h
         left join w on w.household_id = h.id
         left join t on t.household_id = h.id
@@ -135,7 +137,8 @@ const ANALYSES: Record<string, Analysis> = {
              s.total::text as total,
              (s.total - coalesce(l.lines, 0))::text as gap_lines,
              (s.total - coalesce(p.paid, 0))::text as gap_pay,
-             (s.discount_total - coalesce(l.disc, 0))::text as gap_disc
+             (s.discount_total - coalesce(l.disc, 0))::text as gap_disc,
+             '/foyers/' || s.household_id as link
         from app.sale s
         left join app.household h on h.id = s.household_id
         left join (select sale_id, sum(line_total) as lines, sum(discount) as disc from app.sale_line group by 1) l on l.sale_id = s.id
@@ -171,7 +174,8 @@ const ANALYSES: Record<string, Analysis> = {
              coalesce(sum(l.debit), 0)::text as debit,
              coalesce(sum(l.credit), 0)::text as credit,
              (coalesce(sum(l.debit), 0) - coalesce(sum(l.credit), 0))::text as gap,
-             count(l.id)::text as lines
+             count(l.id)::text as lines,
+             '/compta/ecritures/' || e.id as link
         from app.entry e
         join app.journal j on j.id = e.journal_id
         left join app.entry_line l on l.entry_id = e.id
@@ -198,7 +202,8 @@ const ANALYSES: Record<string, Analysis> = {
     query: sql`
       select s.name as supplier, i.piece_ref as piece, to_char(i.date, 'DD/MM/YYYY') as day,
              i.total_excl::text as excl, i.total_vat::text as vat, i.total_incl::text as incl,
-             (i.total_incl - i.total_excl - i.total_vat)::text as gap
+             (i.total_incl - i.total_excl - i.total_vat)::text as gap,
+             '/appros/factures/' || i.id as link
         from app.supplier_invoice i join app.supplier s on s.id = i.supplier_id
        where i.total_excl + i.total_vat <> i.total_incl
        order by i.date desc limit 500`,
@@ -216,14 +221,50 @@ const ANALYSES: Record<string, Analysis> = {
     ],
     query: sql`
       select p.number, m.first_name || ' ' || m.last_name as member,
-             to_char(p.pickup_date, 'DD/MM/YYYY') as pickup, coalesce(p.comment, '') as comment
+             to_char(p.pickup_date, 'DD/MM/YYYY') as pickup, coalesce(p.comment, '') as comment,
+             '/precommandes' as link
         from app.preorder p join app.member m on m.id = p.member_id
        where p.status = 'PICKED_UP' and p.sale_id is null
        order by p.pickup_date desc limit 500`,
   },
+  wallet411: {
+    title: 'Cagnottes et compte 411000, mois par mois',
+    subtitle:
+      'Variation des cagnottes de tous les foyers, comparée à celle du compte 411000 (écritures validées et brouillons). Écart = 411000 − cagnottes ; l’écart cumulé de la dernière ligne est celui du contrôle. Cherchez le mois où il apparaît : écritures de caisse non générées, versements non comptabilisés, ou écriture datée d’un autre mois.',
+    columns: [
+      text('month', 'Mois', 1.1),
+      money('wallet', 'Cagnottes (variation)', 1.5),
+      money('acc', '411000 (variation)', 1.5),
+      money('accv', 'dont écritures validées', 1.5),
+      money('gap', 'Écart du mois', 1.3),
+      money('cum', 'Écart cumulé', 1.3),
+    ],
+    query: sql`
+      with acc as (
+        select to_char(e.date, 'YYYY-MM') as m,
+               sum(l.credit - l.debit) as v,
+               sum(l.credit - l.debit) filter (where e.status = 'VALIDATED') as vv
+          from app.entry_line l
+          join app.account a on a.id = l.account_id and a.number = '411000'
+          join app.entry e on e.id = l.entry_id
+         group by 1),
+      w as (
+        select to_char(w.at at time zone 'Europe/Paris', 'YYYY-MM') as m, sum(w.amount) as v
+          from app.wallet_entry w group by 1),
+      j as (
+        select coalesce(acc.m, w.m) as m, coalesce(w.v, 0) as wallet,
+               coalesce(acc.v, 0) as acc, coalesce(acc.vv, 0) as accv
+          from acc full join w on acc.m = w.m)
+      select substr(m, 6) || '/' || substr(m, 1, 4) as month,
+             wallet::text as wallet, acc::text as acc, accv::text as accv,
+             (acc - wallet)::text as gap,
+             (sum(acc - wallet) over (order by m))::text as cum,
+             '/compta/editions?edition=wallet-411' as link
+        from j order by m`,
+  },
 };
 
-/** Which analysis explains which integrity check (CPT-03 has its own edition under Éditions). */
+/** Which analysis explains which integrity check (CPT-03: monthly gap; the same figures with exports are under Éditions). */
 export const ANALYSIS_OF: Record<string, keyof typeof ANALYSES> = {
   'STK-01': 'stock',
   'STK-02': 'stock',
@@ -240,6 +281,7 @@ export const ANALYSIS_OF: Record<string, keyof typeof ANALYSES> = {
   'VTE-05': 'tickets',
   'CPT-01': 'entries',
   'CPT-02': 'entries',
+  'CPT-03': 'wallet411',
   'FAC-01': 'invoices',
   'PRE-01': 'preorders',
 };
@@ -253,6 +295,9 @@ export async function integrityAnalysis(db: Db, checkId: string): Promise<Report
     title: a.title,
     subtitle: a.subtitle,
     columns: a.columns,
-    rows: (res.rows as Record<string, string | null>[]).map((r) => ({ cells: r })),
+    rows: (res.rows as Record<string, string | null>[]).map(({ link, ...cells }) => ({
+      cells,
+      link: link ?? null,
+    })),
   };
 }

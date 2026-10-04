@@ -282,7 +282,10 @@ const LISTS: Record<string, { to: string; label: string }> = {
   'CAG-03': { to: '/membres', label: 'Membres' },
   'CPT-01': { to: '/compta/ecritures', label: 'Écritures' },
   'CPT-02': { to: '/compta/ecritures', label: 'Écritures' },
-  'CPT-03': { to: '/compta/editions', label: 'Éditions' },
+  'CPT-03': {
+    to: '/compta/editions?edition=wallet-411',
+    label: 'Rapprochement cagnottes / 411000',
+  },
   'FAC-01': { to: '/appros/factures', label: 'Factures' },
   'PRE-01': { to: '/precommandes', label: 'Précommandes' },
 };

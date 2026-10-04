@@ -16,6 +16,8 @@ export interface ReportColumn {
 export interface ReportLine {
   cells: Record<string, string | null>;
   bold?: boolean;
+  /** App page of the item on this row (screens only; left out of the Excel and PDF files). */
+  link?: string | null;
 }
 
 export interface ReportTable {

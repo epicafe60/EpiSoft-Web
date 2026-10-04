@@ -48,7 +48,7 @@ describe('integrity: detailed analysis', () => {
     }
     const xlsx = await call('GET', '/admin/integrity/STK-01/analysis?format=xlsx');
     expect(xlsx.headers['content-type']).toContain('spreadsheetml');
-    expect((await call('GET', '/admin/integrity/CPT-03/analysis')).statusCode).toBe(404);
+    expect((await call('GET', '/admin/integrity/ZZZ-99/analysis')).statusCode).toBe(404);
   });
 
   it('the stock analysis shows both sides of a gap', async () => {
@@ -64,6 +64,8 @@ describe('integrity: detailed analysis', () => {
       moves: '0',
       gap: '5.000',
     });
+    // Each row links to its item (opened in a new tab by the screen).
+    expect(table.rows[0].link).toMatch(/^\/catalogue\/[0-9a-f-]{36}$/);
   });
 });
 
