@@ -43,7 +43,9 @@ function Open({ to, children }: { to: string; children: string }) {
       className="text-primary hover:underline"
       onClick={(e) => {
         e.preventDefault();
-        void navigate({ to: to as never });
+        // A query string (e.g. ?edition=…) is read from the address bar: load the page normally.
+        if (to.includes('?')) window.location.assign(to);
+        else void navigate({ to: to as never });
       }}
     >
       {children}

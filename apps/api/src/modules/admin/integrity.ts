@@ -237,13 +237,16 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     severity: 'warning',
     query: sql`
       with acc as (
-        select coalesce(sum(l.credit - l.debit), 0) as v
+        select coalesce(sum(l.credit - l.debit) filter (where e.status = 'VALIDATED'), 0) as v,
+               coalesce(sum(l.credit - l.debit), 0) as v_all
         from app.entry_line l join app.account a on a.id = l.account_id
-        join app.entry e on e.id = l.entry_id and e.status = 'VALIDATED'
+        join app.entry e on e.id = l.entry_id
         where a.number = '411000'),
       wallet as (select coalesce(sum(balance), 0) as v from app.household_balance)
-      select '411000' as ref, 'comptabilité ' || acc.v || ' / cagnottes ' || wallet.v as detail,
-             '/compta/editions' as link
+      select '411000' as ref,
+             'écritures validées ' || acc.v || ' (brouillons compris : ' || acc.v_all || ') / cagnottes ' || wallet.v
+               || ' → écart ' || (acc.v - wallet.v) || ' (brouillons compris : ' || (acc.v_all - wallet.v) || ')' as detail,
+             '/compta/editions?edition=wallet-411' as link
       from acc, wallet where acc.v <> wallet.v`,
   },
   {

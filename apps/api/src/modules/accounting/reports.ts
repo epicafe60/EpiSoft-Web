@@ -383,6 +383,75 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       };
     },
 
+    /**
+     * Cagnottes against account 411000, month by month and cumulated (integrity check CPT-03).
+     * Not tied to a fiscal year: the cagnotte has no year, and neither does the running gap.
+     */
+    async 'wallet-411'(q) {
+      const validatedOnly = q.status === 'VALIDATED';
+      const res = await db.execute<{ m: string; wallet: string; acc: string }>(sql`
+        with acc as (
+          select to_char(e.date, 'YYYY-MM') as m, sum(l.credit - l.debit) as v
+            from app.entry_line l
+            join app.account a on a.id = l.account_id and a.number = '411000'
+            join app.entry e on e.id = l.entry_id
+           where (${!validatedOnly} or e.status = 'VALIDATED')
+           group by 1),
+        w as (
+          select to_char(w.at at time zone 'Europe/Paris', 'YYYY-MM') as m, sum(w.amount) as v
+            from app.wallet_entry w group by 1)
+        select coalesce(acc.m, w.m) as m, coalesce(w.v, 0)::text as wallet, coalesce(acc.v, 0)::text as acc
+          from acc full join w on acc.m = w.m
+         order by 1`);
+      let cumWallet = 0;
+      let cumAcc = 0;
+      const rows = res.rows.map((r) => {
+        const w = decimalToCents(r.wallet);
+        const a = decimalToCents(r.acc);
+        cumWallet += w;
+        cumAcc += a;
+        return cell({
+          month: `${r.m.slice(5)}/${r.m.slice(0, 4)}`,
+          wallet: money(w),
+          acc: money(a),
+          gap: money(a - w),
+          cumWallet: money(cumWallet),
+          cumAcc: money(cumAcc),
+          cumGap: money(cumAcc - cumWallet),
+        });
+      });
+      rows.push(
+        cell(
+          {
+            month: 'Total',
+            wallet: money(cumWallet),
+            acc: money(cumAcc),
+            gap: money(cumAcc - cumWallet),
+            cumWallet: money(cumWallet),
+            cumAcc: money(cumAcc),
+            cumGap: money(cumAcc - cumWallet),
+          },
+          true,
+        ),
+      );
+      return {
+        title: 'Cagnottes et compte 411000',
+        subtitle: validatedOnly
+          ? 'Écritures validées uniquement · variations mensuelles et cumul'
+          : 'Brouillons compris · variations mensuelles et cumul',
+        columns: [
+          { key: 'month', label: 'Mois', type: 'text', width: 1.2 },
+          { key: 'wallet', label: 'Cagnottes (variation)', type: 'money', width: 1.4 },
+          { key: 'acc', label: '411000 (variation)', type: 'money', width: 1.4 },
+          { key: 'gap', label: 'Écart du mois', type: 'money', width: 1.3 },
+          { key: 'cumWallet', label: 'Cagnottes cumulées', type: 'money', width: 1.4 },
+          { key: 'cumAcc', label: '411000 cumulé', type: 'money', width: 1.4 },
+          { key: 'cumGap', label: 'Écart cumulé', type: 'money', width: 1.3 },
+        ],
+        rows,
+      };
+    },
+
     /** Dettes fournisseurs par ancienneté (R-CPT-16). */
     async 'aged-payables'() {
       const today = toParisDate(new Date());

@@ -1,7 +1,15 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { expectIntegrity } from './integrity-helper';
-import { account, entry, entryLine, supplierInvoice, type Db } from '@episoft/db';
+import {
+  account,
+  entry,
+  entryLine,
+  household,
+  supplierInvoice,
+  walletEntry,
+  type Db,
+} from '@episoft/db';
 import { createUser, login, setupTestApp } from './helpers';
 
 let t: Awaited<ReturnType<typeof setupTestApp>>;
@@ -430,5 +438,49 @@ describe('budget (R-CPT-20)', () => {
     // Replacing clears the previous lines.
     await put(`/api/v1/fiscal-years/${fy}/budget`, { lines: [] });
     expect((await get(`/api/v1/fiscal-years/${fy}/budget`)).json().expenses[0].budget).toBe('0.00');
+  });
+});
+
+describe('cagnottes against 411000 (integrity CPT-03)', () => {
+  it('shows the monthly and cumulated gap, with or without drafts', async () => {
+    await year2026();
+    const hh = (await t.db.insert(household).values({}).returning())[0]!;
+    await t.db.insert(walletEntry).values({
+      householdId: hh.id,
+      amount: '20.00',
+      kind: 'CORRECTION', // no payment attached, so no CAG-02 error
+      at: new Date('2026-03-10T10:00:00Z'),
+    });
+    const created = await post(
+      '/api/v1/entries',
+      await entryBody({
+        lines: [
+          { accountId: (await acct('512001')).id, label: '', debit: '25,50', credit: '' },
+          { accountId: (await acct('411000')).id, label: '', debit: '', credit: '25.50' },
+        ],
+      }),
+    );
+    expect(created.statusCode).toBe(200);
+
+    const all = (await get('/api/v1/reports/wallet-411')).json();
+    expect(all.rows[0].cells).toMatchObject({
+      month: '03/2026',
+      wallet: '20.00',
+      acc: '25.50',
+      gap: '5.50',
+      cumGap: '5.50',
+    });
+    expect(all.rows.at(-1).cells.month).toBe('Total');
+
+    // The entry is still a draft: with validated entries only, the accounting side is empty.
+    const validated = (await get('/api/v1/reports/wallet-411?status=VALIDATED')).json();
+    expect(validated.rows[0].cells).toMatchObject({ acc: '0.00', gap: '-20.00' });
+    expect(validated.subtitle).toContain('validées');
+
+    const check = (await get('/api/v1/admin/integrity'))
+      .json()
+      .checks.find((c: { id: string }) => c.id === 'CPT-03');
+    expect(check.samples[0].detail).toContain('brouillons compris : 25.50');
+    expect(check.samples[0].link).toContain('wallet-411');
   });
 });

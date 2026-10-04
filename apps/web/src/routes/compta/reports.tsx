@@ -20,13 +20,21 @@ const REPORTS = [
   { key: 'balance', label: 'Balance des comptes' },
   { key: 'journal', label: 'Journal' },
   { key: 'ledger', label: 'Grand livre' },
+  { key: 'wallet-411', label: 'Rapprochement cagnottes / 411000' },
   { key: 'aged-payables', label: 'Dettes fournisseurs par ancienneté' },
 ] as const;
+
+/** Editions that cover every fiscal year. */
+const NO_YEAR: string[] = ['aged-payables', 'wallet-411'];
 
 export function ReportsPage() {
   const years = useFiscalYears();
   const journals = useJournals();
-  const [report, setReport] = useState<(typeof REPORTS)[number]['key']>('situation');
+  // ?edition=wallet-411 (link from the integrity page) opens that edition directly.
+  const [report, setReport] = useState<(typeof REPORTS)[number]['key']>(() => {
+    const wanted = new URLSearchParams(window.location.search).get('edition');
+    return REPORTS.find((r) => r.key === wanted)?.key ?? 'situation';
+  });
   const [fiscalYearId, setFiscalYearId] = useState('');
   const [journalId, setJournalId] = useState('');
   const [accountFrom, setFrom] = useState('');
@@ -35,12 +43,12 @@ export function ReportsPage() {
 
   const fy = fiscalYearId || years.data?.[0]?.id || '';
   const params = new URLSearchParams();
-  if (fy && report !== 'aged-payables') params.set('fiscalYearId', fy);
+  if (fy && !NO_YEAR.includes(report)) params.set('fiscalYearId', fy);
   if (journalId && report === 'journal') params.set('journalId', journalId);
   if (accountFrom) params.set('accountFrom', accountFrom);
   if (accountTo) params.set('accountTo', accountTo);
   if (validatedOnly) params.set('status', 'VALIDATED');
-  const ready = report === 'aged-payables' || !!fy;
+  const ready = NO_YEAR.includes(report) || !!fy;
   const { data, error, isFetching } = useQuery({
     queryKey: ['report', report, params.toString()],
     queryFn: () => api.get<ReportTableData>(`/reports/${report}?${params}`),
@@ -68,7 +76,7 @@ export function ReportsPage() {
             </Select>
           )}
         </Field>
-        {report !== 'aged-payables' ? (
+        {!NO_YEAR.includes(report) ? (
           <Field label="Exercice">
             {(p) => (
               <Select
