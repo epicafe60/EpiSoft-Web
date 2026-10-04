@@ -16,6 +16,7 @@ export * from './settings';
 export * from './sort';
 export * from './imports';
 export * from './reviews';
+export * from './expiry';
 export * from './stats';
 export * from './supplies';
 export * from './supplies-forms';

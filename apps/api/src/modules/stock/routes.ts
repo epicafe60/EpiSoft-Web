@@ -8,6 +8,7 @@ import {
   inventorySession,
   member,
   product,
+  productBatch,
   stockMovement,
   supplier,
   type Db,
@@ -15,7 +16,10 @@ import {
 } from '@episoft/db';
 import {
   centsToDecimal,
+  batchSchema,
   correctionSchema,
+  daysUntil,
+  expiryStatus,
   inventoryAdjustmentMilli,
   inventoryCountSchema,
   inventoryCreateSchema,
@@ -131,6 +135,105 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       });
       return { ok: true };
     }),
+  );
+
+  /** R-STK-07: batches to watch, soonest first; `days` limits to those expiring within N days (or already past). */
+  app.get(
+    '/stock/batches',
+    {
+      ...readers,
+      schema: {
+        querystring: z.object({ days: z.coerce.number().int().min(0).max(3650).optional() }),
+      },
+    },
+    async (req) => {
+      const today = (
+        (await db.execute(sql`select current_date::text as today`)).rows[0] as { today: string }
+      ).today;
+      const rows = await db
+        .select({
+          id: productBatch.id,
+          productId: product.id,
+          code: product.code,
+          name: product.name,
+          bestBefore: sql<string>`${productBatch.bestBefore}::text`,
+          qty: productBatch.qty,
+          note: productBatch.note,
+          unitCost: product.purchasePriceExcl,
+        })
+        .from(productBatch)
+        .innerJoin(product, eq(product.id, productBatch.productId))
+        .where(
+          req.query.days === undefined
+            ? undefined
+            : sql`${productBatch.bestBefore} <= current_date + ${req.query.days}::int`,
+        )
+        .orderBy(asc(productBatch.bestBefore), asc(product.name));
+      return rows.map((r) => ({
+        ...r,
+        daysLeft: daysUntil(r.bestBefore, today),
+        status: expiryStatus(r.bestBefore, today),
+      }));
+    },
+  );
+
+  app.post('/stock/batches', { ...appros, schema: { body: batchSchema } }, async (req) =>
+    db.transaction(async (tx) => {
+      const p = await tx.query.product.findFirst({ where: eq(product.id, req.body.productId) });
+      if (!p) throw notFound('Produit introuvable.');
+      if (p.kind !== 'GOODS') throw badRequest('Un service n’a pas de date limite.');
+      const [row] = await tx
+        .insert(productBatch)
+        .values({
+          productId: p.id,
+          bestBefore: req.body.bestBefore,
+          qty: req.body.qty,
+          note: req.body.note ?? null,
+          by: req.user!.id,
+        })
+        .returning({ id: productBatch.id });
+      await audit(tx, req, {
+        action: 'stock.batch.add',
+        entity: 'product',
+        entityId: p.id,
+        after: req.body,
+      });
+      return row!;
+    }),
+  );
+
+  /** Batch sold or checked: it just leaves the watch list. `discard` also books the loss in the ledger. */
+  app.delete(
+    '/stock/batches/:id',
+    {
+      ...appros,
+      schema: { ...idParams, querystring: z.object({ discard: z.coerce.boolean().optional() }) },
+    },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const [b] = await tx.select().from(productBatch).where(eq(productBatch.id, req.params.id));
+        if (!b) throw notFound('Lot introuvable.');
+        if (req.query.discard) {
+          const p = await tx.query.product.findFirst({ where: eq(product.id, b.productId) });
+          await recordMovement(tx, {
+            productId: b.productId,
+            qtyMilli: -milli(b.qty),
+            kind: 'LOSS',
+            unitCost: p?.purchasePriceExcl ?? null,
+            comment: `Péremption (DLC ${b.bestBefore})`,
+            by: req.user!.id,
+            sourceType: 'loss',
+          });
+        }
+        await tx.delete(productBatch).where(eq(productBatch.id, b.id));
+        await audit(tx, req, {
+          action: req.query.discard ? 'stock.batch.discard' : 'stock.batch.remove',
+          entity: 'product',
+          entityId: b.productId,
+          before: b,
+        });
+        return { ok: true };
+      }),
   );
 
   /** R-PRD-10: products under their minimum stock. */

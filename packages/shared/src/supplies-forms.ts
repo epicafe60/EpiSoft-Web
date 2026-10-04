@@ -236,3 +236,11 @@ export const labelsSchema = z.object({
   perPage: z.union([z.literal(24), z.literal(40)]).optional(),
   markDone: z.boolean().default(false),
 });
+
+/** R-STK-07: a dated batch of a product (best-before date and quantity). */
+export const batchSchema = z.object({
+  productId: z.string().uuid(),
+  bestBefore: isoDate,
+  qty: positiveQty,
+  note: text(200).optional(),
+});

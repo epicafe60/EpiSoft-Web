@@ -1363,3 +1363,23 @@ export const productReview = app.table(
     check('product_review_rating', sql`${t.rating} between 1 and 5`),
   ],
 );
+
+/** R-STK-07: dated batches (best-before date) to watch; informational, the ledger stays the stock truth. */
+export const productBatch = app.table(
+  'product_batch',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    bestBefore: date('best_before').notNull(),
+    qty: qty('qty').notNull(),
+    note: text('note'),
+    createdAt: createdAt(),
+    by: uuid('by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('product_batch_date_idx').on(t.bestBefore),
+    check('product_batch_qty', sql`${t.qty} > 0`),
+  ],
+);

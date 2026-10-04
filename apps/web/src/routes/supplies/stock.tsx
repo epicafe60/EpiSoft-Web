@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/inputs';
 import { ProductPicker } from '@/components/product-picker';
 import type { ProductListItem } from '@/lib/types';
 import { QueryError } from '../errors';
+import { BatchesCard } from './batches-card';
 
 interface ToOrder {
   id: string;
@@ -125,6 +126,8 @@ export function StockPage() {
       </Card>
 
       <div className="grid content-start gap-6">
+        <BatchesCard />
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Perte, casse, péremption (R-STK-03)</CardTitle>

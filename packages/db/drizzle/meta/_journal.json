@@ -85,6 +85,13 @@
       "when": 1791073240911,
       "tag": "0011_product_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791105542705,
+      "tag": "0012_product_batch",
+      "breakpoints": true
     }
   ]
 }
