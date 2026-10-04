@@ -1,4 +1,5 @@
 import { Link, Outlet } from '@tanstack/react-router';
+import { TabNav } from '@/components/tab-nav';
 import { PageHeader } from '../shell';
 
 const TABS = [
@@ -13,7 +14,7 @@ export function SuppliesLayout() {
   return (
     <>
       <PageHeader title="Approvisionnements" />
-      <nav aria-label="Approvisionnements" className="mb-6 flex gap-1 overflow-x-auto border-b">
+      <TabNav label="Approvisionnements">
         {TABS.map((t) => (
           <Link
             key={t.to}
@@ -23,7 +24,7 @@ export function SuppliesLayout() {
             {t.label}
           </Link>
         ))}
-      </nav>
+      </TabNav>
       <Outlet />
     </>
   );

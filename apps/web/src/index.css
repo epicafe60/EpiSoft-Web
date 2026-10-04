@@ -91,6 +91,14 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }
+  /*
+   * Phones: a grid child never grows past its container because of a wide table or an
+   * unbreakable word inside it (its default min-width is its content): the table scrolls in its
+   * own wrapper, the page does not.
+   */
+  .grid > * {
+    min-width: 0;
+  }
 }
 
 /* Printing a badge or a report: only the .print-area is printed. */
@@ -113,5 +121,48 @@
 @media print {
   .receipt {
     width: 72mm;
+  }
+}
+
+/*
+ * Data-entry tables on phones: below 640 px each row becomes a small card, its cells stacked
+ * under their label (data-label) in two columns; a cell marked data-wide takes the full width.
+ * Use <Table className="stack-rows"> and put data-label on the cells.
+ */
+@media (max-width: 639px) {
+  .stack-rows thead {
+    display: none;
+  }
+  .stack-rows,
+  .stack-rows tbody,
+  .stack-rows tfoot {
+    display: block;
+    width: 100%;
+  }
+  .stack-rows tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .stack-rows td {
+    display: block;
+    padding: 0;
+    min-width: 0;
+  }
+  .stack-rows td[data-wide] {
+    grid-column: 1 / -1;
+  }
+  .stack-rows td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.125rem;
+    font-size: 0.75rem;
+    color: var(--color-muted-foreground);
+  }
+  .stack-rows td[data-actions] {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
   }
 }

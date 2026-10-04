@@ -453,7 +453,7 @@ function DraftEditor({ order, onSaved }: { order: OrderDetail; onSaved: () => Pr
             ]);
           }}
         />
-        <Table>
+        <Table className="stack-rows">
           <thead>
             <tr>
               <th>Produit</th>
@@ -466,10 +466,10 @@ function DraftEditor({ order, onSaved }: { order: OrderDetail; onSaved: () => Pr
           <tbody>
             {lines.map((l, i) => (
               <tr key={l.productId}>
-                <td>
+                <td data-wide>
                   <span className="text-muted-foreground">{l.code}</span> {l.name}
                 </td>
-                <td>
+                <td data-label="Quantité">
                   <Input
                     aria-label={`Quantité ${l.name}`}
                     inputMode="decimal"
@@ -478,7 +478,7 @@ function DraftEditor({ order, onSaved }: { order: OrderDetail; onSaved: () => Pr
                     onChange={(e) => set(i, { qty: e.target.value })}
                   />
                 </td>
-                <td>
+                <td data-label="PA HT">
                   <Input
                     aria-label={`PA HT ${l.name}`}
                     inputMode="decimal"
@@ -487,7 +487,7 @@ function DraftEditor({ order, onSaved }: { order: OrderDetail; onSaved: () => Pr
                     onChange={(e) => set(i, { unitPriceExcl: e.target.value })}
                   />
                 </td>
-                <td className="text-right tabular-nums">
+                <td className="text-right tabular-nums" data-label="Total HT">
                   {euro(
                     centsToDecimal(
                       orderTotals([
@@ -500,7 +500,7 @@ function DraftEditor({ order, onSaved }: { order: OrderDetail; onSaved: () => Pr
                     ),
                   )}
                 </td>
-                <td>
+                <td data-actions>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -734,7 +734,7 @@ function ReceiveDialog({
           />
         </div>
         <div className="max-h-[50vh] overflow-y-auto">
-          <Table>
+          <Table className="stack-rows">
             <thead>
               <tr>
                 <th>Produit</th>
@@ -755,15 +755,17 @@ function ReceiveDialog({
                   : null;
                 return (
                   <tr key={`${l.productId}-${i}`}>
-                    <td>
+                    <td data-wide>
                       {l.name}
                       <span className="block text-xs text-muted-foreground">
                         PV {euro(l.salePrice)}
                         {current ? ` · marque ${current.ratePct.toLocaleString('fr-FR')} %` : ''}
                       </span>
                     </td>
-                    <td className="text-right tabular-nums">{l.remaining}</td>
-                    <td>
+                    <td className="text-right tabular-nums" data-label="Attendu">
+                      {l.remaining}
+                    </td>
+                    <td data-label="Reçu">
                       <Input
                         aria-label={`Quantité reçue ${l.name}`}
                         inputMode="decimal"
@@ -772,7 +774,7 @@ function ReceiveDialog({
                         onChange={(e) => set(i, { qty: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td data-label="PA HT réel">
                       <Input
                         aria-label={`PA HT ${l.name}`}
                         inputMode="decimal"
@@ -781,7 +783,7 @@ function ReceiveDialog({
                         onChange={(e) => set(i, { unitPriceExcl: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td data-label="DLC (option)">
                       <Input
                         aria-label={`DLC ${l.name}`}
                         type="date"
@@ -789,7 +791,7 @@ function ReceiveDialog({
                         onChange={(e) => set(i, { bestBefore: e.target.value })}
                       />
                     </td>
-                    <td>
+                    <td data-label="Nouveau PV" data-wide>
                       <div className="flex items-center gap-1">
                         <Input
                           aria-label={`Nouveau PV ${l.name}`}

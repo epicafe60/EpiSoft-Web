@@ -86,16 +86,16 @@ export function BudgetPage() {
   const section = (title: string, rows: Row[]) => (
     <>
       <tr className="bg-muted/50">
-        <td colSpan={6} className="font-medium">
+        <td colSpan={6} className="font-medium" data-wide>
           {title}
         </td>
       </tr>
       {rows.map((r) => (
         <tr key={r.number} data-testid="budget-row">
-          <td>
+          <td data-wide>
             {r.number} {r.label}
           </td>
-          <td className="w-36 text-right">
+          <td className="w-36 text-right" data-label="Budget">
             <Input
               aria-label={`Budget ${r.number}`}
               inputMode="decimal"
@@ -104,10 +104,19 @@ export function BudgetPage() {
               onChange={(e) => setAmounts({ ...amounts, [r.number]: e.target.value })}
             />
           </td>
-          <td className="text-right tabular-nums text-muted-foreground">{euro(r.expectedByNow)}</td>
-          <td className="text-right tabular-nums">{euro(r.actual)}</td>
-          <td className="text-right tabular-nums">{euro(r.variance)}</td>
-          <td className="text-right tabular-nums text-muted-foreground">
+          <td
+            className="text-right tabular-nums text-muted-foreground"
+            data-label="Prévu à ce jour"
+          >
+            {euro(r.expectedByNow)}
+          </td>
+          <td className="text-right tabular-nums" data-label="Réalisé">
+            {euro(r.actual)}
+          </td>
+          <td className="text-right tabular-nums" data-label="Écart">
+            {euro(r.variance)}
+          </td>
+          <td className="text-right tabular-nums text-muted-foreground" data-label="%">
             {r.percent === null ? '' : `${r.percent} %`}
           </td>
         </tr>
@@ -137,7 +146,7 @@ export function BudgetPage() {
       {budget.data ? (
         <Card>
           <CardContent className="grid gap-3 pt-6">
-            <Table>
+            <Table className="stack-rows">
               <thead>
                 <tr>
                   <th>Compte</th>

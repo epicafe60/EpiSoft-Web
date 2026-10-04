@@ -527,7 +527,7 @@ function EntryForm({ id }: { id: string | null }) {
       </Card>
 
       <Card>
-        <Table>
+        <Table className="stack-rows">
           <thead>
             <tr>
               <th>Compte</th>
@@ -540,7 +540,7 @@ function EntryForm({ id }: { id: string | null }) {
           <tbody>
             {lines.map((l, i) => (
               <tr key={i}>
-                <td>
+                <td data-label="Compte" data-wide>
                   <Select
                     aria-label={`Compte, ligne ${i + 1}`}
                     disabled={locked}
@@ -564,7 +564,7 @@ function EntryForm({ id }: { id: string | null }) {
                       : null}
                   </Select>
                 </td>
-                <td>
+                <td data-label="Libellé de ligne" data-wide>
                   <Input
                     aria-label={`Libellé, ligne ${i + 1}`}
                     disabled={locked}
@@ -573,7 +573,7 @@ function EntryForm({ id }: { id: string | null }) {
                     onChange={(ev) => update(i, { label: ev.target.value })}
                   />
                 </td>
-                <td>
+                <td data-label="Débit">
                   <Input
                     aria-label={`Débit, ligne ${i + 1}`}
                     inputMode="decimal"
@@ -585,7 +585,7 @@ function EntryForm({ id }: { id: string | null }) {
                     }
                   />
                 </td>
-                <td>
+                <td data-label="Crédit">
                   <Input
                     aria-label={`Crédit, ligne ${i + 1}`}
                     inputMode="decimal"
@@ -597,7 +597,7 @@ function EntryForm({ id }: { id: string | null }) {
                     }
                   />
                 </td>
-                <td className="whitespace-nowrap">
+                <td className="whitespace-nowrap" data-actions>
                   {!locked ? (
                     <>
                       <Button
@@ -625,7 +625,7 @@ function EntryForm({ id }: { id: string | null }) {
           </tbody>
           <tfoot>
             <tr className="border-t font-medium">
-              <td colSpan={2}>
+              <td colSpan={2} data-wide>
                 {!locked ? (
                   <Button
                     variant="outline"
@@ -636,9 +636,13 @@ function EntryForm({ id }: { id: string | null }) {
                   </Button>
                 ) : null}
               </td>
-              <td className="text-right tabular-nums">{euro(centsToDecimal(debit))}</td>
-              <td className="text-right tabular-nums">{euro(centsToDecimal(credit))}</td>
-              <td />
+              <td className="text-right tabular-nums" data-label="Total débit">
+                {euro(centsToDecimal(debit))}
+              </td>
+              <td className="text-right tabular-nums" data-label="Total crédit">
+                {euro(centsToDecimal(credit))}
+              </td>
+              <td className="hidden sm:table-cell" />
             </tr>
           </tfoot>
         </Table>

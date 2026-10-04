@@ -1,4 +1,5 @@
 import { Link, Outlet } from '@tanstack/react-router';
+import { TabNav } from '@/components/tab-nav';
 import { PageHeader } from '../shell';
 
 const TABS = [
@@ -15,7 +16,7 @@ export function AccountingLayout() {
   return (
     <>
       <PageHeader title="Comptabilité" />
-      <nav aria-label="Comptabilité" className="mb-6 flex gap-1 overflow-x-auto border-b">
+      <TabNav label="Comptabilité">
         {TABS.map((t) => (
           <Link
             key={t.to}
@@ -25,7 +26,7 @@ export function AccountingLayout() {
             {t.label}
           </Link>
         ))}
-      </nav>
+      </TabNav>
       <Outlet />
     </>
   );

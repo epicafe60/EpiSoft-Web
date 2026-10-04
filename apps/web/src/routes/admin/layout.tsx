@@ -1,4 +1,5 @@
 import { Link, Outlet } from '@tanstack/react-router';
+import { TabNav } from '@/components/tab-nav';
 import { Download } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import { PageHeader } from '../shell';
@@ -24,7 +25,7 @@ export function AdminLayout() {
           </a>
         }
       />
-      <nav aria-label="Administration" className="mb-6 flex gap-1 overflow-x-auto border-b">
+      <TabNav label="Administration">
         {TABS.map((t) => (
           <Link
             key={t.to}
@@ -34,7 +35,7 @@ export function AdminLayout() {
             {t.label}
           </Link>
         ))}
-      </nav>
+      </TabNav>
       <Outlet />
     </>
   );
