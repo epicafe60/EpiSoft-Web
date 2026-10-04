@@ -44,7 +44,12 @@ export const savedReportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }
         .insert(savedReport)
         .values({ ...req.body, createdBy: req.user!.id })
         .returning();
-      await audit(tx, req, { action: 'report.save', entity: 'saved_report', entityId: row!.id, after: req.body });
+      await audit(tx, req, {
+        action: 'report.save',
+        entity: 'saved_report',
+        entityId: row!.id,
+        after: req.body,
+      });
       return row;
     }),
   );
@@ -56,9 +61,15 @@ export const savedReportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }
       db.transaction(async (tx) => {
         const [row] = await tx.select().from(savedReport).where(eq(savedReport.id, req.params.id));
         if (!row) throw notFound('Rapport introuvable.');
-        if (row.createdBy !== req.user!.id && !hasAnyRole(req.user!.roles, ['ADMIN'])) throw forbidden();
+        if (row.createdBy !== req.user!.id && !hasAnyRole(req.user!.roles, ['ADMIN']))
+          throw forbidden();
         await tx.delete(savedReport).where(and(eq(savedReport.id, row.id)));
-        await audit(tx, req, { action: 'report.delete', entity: 'saved_report', entityId: row.id, before: row });
+        await audit(tx, req, {
+          action: 'report.delete',
+          entity: 'saved_report',
+          entityId: row.id,
+          before: row,
+        });
         return { ok: true };
       }),
   );

@@ -68,12 +68,34 @@ export interface ImportField {
 }
 
 export const PRODUCT_IMPORT_FIELDS: ImportField[] = [
-  { key: 'code', label: 'Code produit', required: true, synonyms: ['code', 'code produit', 'reference', 'ref'] },
-  { key: 'name', label: 'Nom', required: true, synonyms: ['nom', 'designation', 'libelle', 'produit'] },
-  { key: 'ean', label: 'Code-barres (EAN)', synonyms: ['ean', 'code barres', 'code barre', 'gtin'] },
+  {
+    key: 'code',
+    label: 'Code produit',
+    required: true,
+    synonyms: ['code', 'code produit', 'reference', 'ref'],
+  },
+  {
+    key: 'name',
+    label: 'Nom',
+    required: true,
+    synonyms: ['nom', 'designation', 'libelle', 'produit'],
+  },
+  {
+    key: 'ean',
+    label: 'Code-barres (EAN)',
+    synonyms: ['ean', 'code barres', 'code barre', 'gtin'],
+  },
   { key: 'supplierName', label: 'Fournisseur', synonyms: ['fournisseur'] },
-  { key: 'supplierRef', label: 'Réf. fournisseur', synonyms: ['ref fournisseur', 'reference fournisseur'] },
-  { key: 'purchasePrice', label: "Prix d'achat", synonyms: ['prix fournisseur', 'prix achat', "prix d achat", 'pa'] },
+  {
+    key: 'supplierRef',
+    label: 'Réf. fournisseur',
+    synonyms: ['ref fournisseur', 'reference fournisseur'],
+  },
+  {
+    key: 'purchasePrice',
+    label: "Prix d'achat",
+    synonyms: ['prix fournisseur', 'prix achat', 'prix d achat', 'pa'],
+  },
   { key: 'priceType', label: 'Type de prix (HT/TTC)', synonyms: ['type de prix', 'type prix'] },
   { key: 'vatRate', label: 'TVA %', synonyms: ['taux tva', 'tva'] },
   { key: 'salePrice', label: 'Prix de vente', synonyms: ['prix de vente', 'prix vente', 'pv'] },
@@ -88,7 +110,11 @@ export const MEMBER_IMPORT_FIELDS: ImportField[] = [
   { key: 'phone', label: 'Téléphone', synonyms: ['telephone', 'tel', 'mobile'] },
   { key: 'username', label: 'Identifiant', synonyms: ['identifiant', 'login'] },
   { key: 'balance', label: 'Solde cagnotte', synonyms: ['solde', 'cagnotte'] },
-  { key: 'epicerioNumber', label: 'N° membre', synonyms: ['n membre', 'numero membre', 'numero', 'n'] },
+  {
+    key: 'epicerioNumber',
+    label: 'N° membre',
+    synonyms: ['n membre', 'numero membre', 'numero', 'n'],
+  },
 ];
 
 export const IMPORT_FIELDS: Record<ImportKind, ImportField[]> = {

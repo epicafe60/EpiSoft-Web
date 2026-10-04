@@ -66,7 +66,10 @@ describe('product import (R-IMP-01, R-IMP-04)', () => {
     expect(upd.json()).toMatchObject({ updated: 1, stockCorrections: 1 });
     const [after] = await t.db.select().from(product).where(eq(product.code, 'IMP1'));
     expect(after).toMatchObject({ salePrice: '5.00', stockQty: '7.000' });
-    const moves = await t.db.select().from(stockMovement).where(eq(stockMovement.productId, after!.id));
+    const moves = await t.db
+      .select()
+      .from(stockMovement)
+      .where(eq(stockMovement.productId, after!.id));
     expect(moves.find((m) => m.kind === 'CORRECTION')?.qty).toBe('-3.000');
 
     expect((await t.db.select().from(importLog)).length).toBe(2);
@@ -76,7 +79,9 @@ describe('product import (R-IMP-01, R-IMP-04)', () => {
     const till = await login(t.app, (await createUser(t.db, { roles: ['CAISSE'] })).username!);
     expect((await post('/imports/products/preview', 'x', till)).statusCode).toBe(403);
     const h = await login(t.app, (await createUser(t.db, { roles: ['PRODUITS'] })).username!);
-    const bad = [HEADER, productLine({ code: '', name: 'X', pa: '', pv: '', stock: '' })].join('\n');
+    const bad = [HEADER, productLine({ code: '', name: 'X', pa: '', pv: '', stock: '' })].join(
+      '\n',
+    );
     expect((await post('/imports/products/preview', bad, h)).json().counts.error).toBe(1);
   });
 });
@@ -96,14 +101,25 @@ describe('member import (R-IMP-02)', () => {
 
     const apply = (bal: string, confirm: boolean) =>
       post(`/imports/members/apply?confirmBalance=${confirm}`, `${header}\n${row(bal)}`, h);
-    expect((await apply('20,00', true)).json()).toMatchObject({ created: 1, balanceCorrections: 1 });
+    expect((await apply('20,00', true)).json()).toMatchObject({
+      created: 1,
+      balanceCorrections: 1,
+    });
     const [m] = await t.db.select().from(member).where(eq(member.email, 'anne@example.org'));
     const balance = async () =>
-      (await t.db.select().from(householdBalance).where(eq(householdBalance.householdId, m!.householdId!)))[0]!.balance;
+      (
+        await t.db
+          .select()
+          .from(householdBalance)
+          .where(eq(householdBalance.householdId, m!.householdId!))
+      )[0]!.balance;
     expect(await balance()).toBe('20.00');
 
     // Same file again: the balance already matches, nothing is added.
-    expect((await apply('20,00', true)).json()).toMatchObject({ created: 0, balanceCorrections: 0 });
+    expect((await apply('20,00', true)).json()).toMatchObject({
+      created: 0,
+      balanceCorrections: 0,
+    });
     expect(await balance()).toBe('20.00');
 
     // A different balance is only applied when confirmed, as a correction of the gap.

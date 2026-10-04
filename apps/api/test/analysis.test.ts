@@ -48,7 +48,9 @@ describe('sales analysis (R-STA-03)', () => {
 describe('full export (R-STA-04)', () => {
   it('is reserved to ADMIN, audited, and leaves credentials out', async () => {
     const stats = await login(t.app, (await createUser(t.db, { roles: ['STATS'] })).username!);
-    expect((await t.app.inject({ url: '/api/v1/admin/export.xlsx', headers: stats })).statusCode).toBe(403);
+    expect(
+      (await t.app.inject({ url: '/api/v1/admin/export.xlsx', headers: stats })).statusCode,
+    ).toBe(403);
 
     const admin = await login(t.app, (await createUser(t.db, { roles: ['ADMIN'] })).username!);
     const res = await t.app.inject({ url: '/api/v1/admin/export.xlsx', headers: admin });

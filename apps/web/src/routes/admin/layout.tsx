@@ -1,4 +1,6 @@
 import { Link, Outlet } from '@tanstack/react-router';
+import { Download } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
 import { PageHeader } from '../shell';
 
 const TABS = [
@@ -13,7 +15,14 @@ const TABS = [
 export function AdminLayout() {
   return (
     <>
-      <PageHeader title="Administration" />
+      <PageHeader
+        title="Administration"
+        actions={
+          <a className={buttonVariants({ variant: 'outline' })} href="/api/v1/admin/export.xlsx">
+            <Download /> Exporter toute la base
+          </a>
+        }
+      />
       <nav aria-label="Administration" className="mb-6 flex gap-1 overflow-x-auto border-b">
         {TABS.map((t) => (
           <Link

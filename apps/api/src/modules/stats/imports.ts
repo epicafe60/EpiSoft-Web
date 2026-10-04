@@ -119,7 +119,11 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   );
 
   /** Table → typed records, following the chosen profile. */
-  async function load(kind: ImportKind, req: { body: unknown; headers: Record<string, unknown> }, q: z.infer<typeof query>) {
+  async function load(
+    kind: ImportKind,
+    req: { body: unknown; headers: Record<string, unknown> },
+    q: z.infer<typeof query>,
+  ) {
     const body = req.body as unknown;
     if (!Buffer.isBuffer(body) || body.length === 0)
       throw badRequest('Fichier absent : envoyez-le en application/octet-stream.');
@@ -137,7 +141,9 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     } else {
       headers = table[0]!;
       rows = table.slice(1);
-      mapping = q.mapping ? (JSON.parse(q.mapping) as Record<string, number>) : autoMapColumns(headers, kind);
+      mapping = q.mapping
+        ? (JSON.parse(q.mapping) as Record<string, number>)
+        : autoMapColumns(headers, kind);
     }
     const missing = IMPORT_FIELDS[kind].filter((f) => f.required && mapping[f.key] === undefined);
     if (missing.length)
@@ -193,7 +199,12 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             await tx
               .select()
               .from(product)
-              .where(inArray(product.id, barcodes.map((b) => b.productId)))
+              .where(
+                inArray(
+                  product.id,
+                  barcodes.map((b) => b.productId),
+                ),
+              )
           ).map((p) => [p.id, p])
         : [],
     );
@@ -204,7 +215,8 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       supplierMap,
     );
 
-    const plan: (PlanRow & { value?: ProductImport; existing?: typeof product.$inferSelect })[] = [];
+    const plan: (PlanRow & { value?: ProductImport; existing?: typeof product.$inferSelect })[] =
+      [];
     const seen = new Set<string>();
     for (const p of parsed) {
       if (!p.value) {
@@ -213,7 +225,13 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       }
       const v = p.value;
       if (seen.has(v.code)) {
-        plan.push({ line: p.line, label: v.code, action: 'error', changes: {}, error: 'Code en double dans le fichier.' });
+        plan.push({
+          line: p.line,
+          label: v.code,
+          action: 'error',
+          changes: {},
+          error: 'Code en double dans le fichier.',
+        });
         continue;
       }
       seen.add(v.code);
@@ -225,7 +243,10 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       }
       const changes: PlanRow['changes'] = {};
       if (v.purchaseExcl4 !== null) {
-        const now = cur.purchasePriceExcl === null ? null : Math.round(Number(cur.purchasePriceExcl) * 10_000);
+        const now =
+          cur.purchasePriceExcl === null
+            ? null
+            : Math.round(Number(cur.purchasePriceExcl) * 10_000);
         if (now !== v.purchaseExcl4)
           changes.purchasePrice = { from: cur.purchasePriceExcl, to: price4Str(v.purchaseExcl4) };
       }
@@ -252,10 +273,18 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const all = await tx.select().from(member);
     const bal = await tx.select().from(householdBalance);
     const balanceOf = new Map(bal.map((b) => [b.householdId, Math.round(Number(b.balance) * 100)]));
-    const byEmail = new Map(all.flatMap((m) => (m.email ? [[m.email.toLowerCase(), m] as const] : [])));
-    const byUser = new Map(all.flatMap((m) => (m.username ? [[m.username.toLowerCase(), m] as const] : [])));
+    const byEmail = new Map(
+      all.flatMap((m) => (m.email ? [[m.email.toLowerCase(), m] as const] : [])),
+    );
+    const byUser = new Map(
+      all.flatMap((m) => (m.username ? [[m.username.toLowerCase(), m] as const] : [])),
+    );
     const byName = new Map(all.map((m) => [`${m.lastName} ${m.firstName}`.toLowerCase(), m]));
-    const plan: (PlanRow & { value?: MemberImport; existing?: typeof member.$inferSelect; currentBalance?: number })[] = [];
+    const plan: (PlanRow & {
+      value?: MemberImport;
+      existing?: typeof member.$inferSelect;
+      currentBalance?: number;
+    })[] = [];
     const taken = new Set<string>();
     for (const p of parsed) {
       if (!p.value) {
@@ -270,23 +299,47 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         byName.get(label.toLowerCase());
       const clash = [v.email, v.username?.toLowerCase()].filter(Boolean).find((k) => taken.has(k!));
       if (clash) {
-        plan.push({ line: p.line, label, action: 'error', changes: {}, error: 'Courriel ou identifiant en double dans le fichier.' });
+        plan.push({
+          line: p.line,
+          label,
+          action: 'error',
+          changes: {},
+          error: 'Courriel ou identifiant en double dans le fichier.',
+        });
         continue;
       }
       for (const k of [v.email, v.username?.toLowerCase()]) if (k) taken.add(k);
       if (!cur) {
         // A free email or username may still belong to someone matched by another key.
-        const other = (v.email && byEmail.get(v.email)) || (v.username && byUser.get(v.username.toLowerCase()));
+        const other =
+          (v.email && byEmail.get(v.email)) || (v.username && byUser.get(v.username.toLowerCase()));
         if (other) {
-          plan.push({ line: p.line, label, action: 'error', changes: {}, error: 'Courriel ou identifiant déjà utilisé.' });
+          plan.push({
+            line: p.line,
+            label,
+            action: 'error',
+            changes: {},
+            error: 'Courriel ou identifiant déjà utilisé.',
+          });
           continue;
         }
-        plan.push({ line: p.line, label, action: 'create', changes: v.balanceCents ? { balance: { from: '0.00', to: centsToDecimal(v.balanceCents) } } : {}, value: v, currentBalance: 0 });
+        plan.push({
+          line: p.line,
+          label,
+          action: 'create',
+          changes: v.balanceCents
+            ? { balance: { from: '0.00', to: centsToDecimal(v.balanceCents) } }
+            : {},
+          value: v,
+          currentBalance: 0,
+        });
         continue;
       }
       const changes: PlanRow['changes'] = {};
-      if (v.email && v.email !== cur.email?.toLowerCase()) changes.email = { from: cur.email, to: v.email };
-      if (v.phone && v.phone !== (cur.phone ?? '').replace(/\s/g, '')) changes.phone = { from: cur.phone, to: v.phone };
+      if (v.email && v.email !== cur.email?.toLowerCase())
+        changes.email = { from: cur.email, to: v.email };
+      if (v.phone && v.phone !== (cur.phone ?? '').replace(/\s/g, ''))
+        changes.phone = { from: cur.phone, to: v.phone };
       const current = cur.householdId ? (balanceOf.get(cur.householdId) ?? 0) : 0;
       if (v.balanceCents !== null && v.balanceCents !== current)
         changes.balance = { from: centsToDecimal(current), to: centsToDecimal(v.balanceCents) };
@@ -326,7 +379,9 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const kind = req.params.kind;
     guard(kind, req.user!.roles);
     const file = await load(kind, req, req.query);
-    const supplierMap = req.query.supplierMap ? (JSON.parse(req.query.supplierMap) as Record<string, string>) : {};
+    const supplierMap = req.query.supplierMap
+      ? (JSON.parse(req.query.supplierMap) as Record<string, string>)
+      : {};
     const out =
       kind === 'products'
         ? await planProducts(db, file.records, supplierMap)
@@ -337,7 +392,10 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       mapping: file.mapping,
       counts: counts(out.plan),
       unknownSuppliers: out.unknownSuppliers,
-      rows: out.plan.filter((r) => r.action !== 'unchanged').slice(0, PREVIEW_ROWS).map(strip),
+      rows: out.plan
+        .filter((r) => r.action !== 'unchanged')
+        .slice(0, PREVIEW_ROWS)
+        .map(strip),
     };
   });
 
@@ -347,13 +405,24 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     guard(kind, req.user!.roles);
     const file = await load(kind, req, req.query);
     const fields = new Set(
-      req.query.fields.split(',').filter((f): f is ProductUpdateField =>
-        (PRODUCT_UPDATE_FIELDS as readonly string[]).includes(f),
-      ),
+      req.query.fields
+        .split(',')
+        .filter((f): f is ProductUpdateField =>
+          (PRODUCT_UPDATE_FIELDS as readonly string[]).includes(f),
+        ),
     );
-    const supplierMap = req.query.supplierMap ? (JSON.parse(req.query.supplierMap) as Record<string, string>) : {};
+    const supplierMap = req.query.supplierMap
+      ? (JSON.parse(req.query.supplierMap) as Record<string, string>)
+      : {};
     return db.transaction(async (tx) => {
-      const result = { created: 0, updated: 0, unchanged: 0, errors: 0, stockCorrections: 0, balanceCorrections: 0 };
+      const result = {
+        created: 0,
+        updated: 0,
+        unchanged: 0,
+        errors: 0,
+        stockCorrections: 0,
+        balanceCorrections: 0,
+      };
       for (const [name, id] of Object.entries(supplierMap)) {
         await tx
           .insert(importMapping)
@@ -384,12 +453,19 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
                 supplierRef: v.supplierRef,
                 vatRate: vat,
                 purchasePriceExcl: price4Str(v.purchaseExcl4),
-                purchasePriceIncl: v.purchaseExcl4 === null ? null : price4ToDecimal(inclFromExcl4(v.purchaseExcl4, vat)),
+                purchasePriceIncl:
+                  v.purchaseExcl4 === null
+                    ? null
+                    : price4ToDecimal(inclFromExcl4(v.purchaseExcl4, vat)),
                 salePrice: centsToDecimal(v.salePriceCents ?? 0),
                 labelPending: true,
               })
               .returning();
-            if (v.ean) await tx.insert(productBarcode).values({ ean: v.ean, productId: created!.id }).onConflictDoNothing();
+            if (v.ean)
+              await tx
+                .insert(productBarcode)
+                .values({ ean: v.ean, productId: created!.id })
+                .onConflictDoNothing();
             await tx.insert(priceHistory).values({
               productId: created!.id,
               purchasePriceExcl: created!.purchasePriceExcl,
@@ -475,12 +551,18 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
                 householdId,
               })
               .returning();
-            await tx.update(household).set({ referentMemberId: m!.id }).where(eq(household.id, householdId));
+            await tx
+              .update(household)
+              .set({ referentMemberId: m!.id })
+              .where(eq(household.id, householdId));
             result.created++;
           } else if (r.action === 'update' && (r.changes.email || r.changes.phone)) {
             await tx
               .update(member)
-              .set({ ...(r.changes.email ? { email: v.email } : {}), ...(r.changes.phone ? { phone: v.phone } : {}) })
+              .set({
+                ...(r.changes.email ? { email: v.email } : {}),
+                ...(r.changes.phone ? { phone: v.phone } : {}),
+              })
               .where(eq(member.id, r.existing!.id));
             result.updated++;
           } else result.unchanged++;
@@ -504,7 +586,11 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         summary: { profile: req.query.profile, fields: [...fields], ...result },
         createdBy: req.user!.id,
       });
-      await audit(tx, req, { action: 'import.apply', entity: 'import', after: { kind, fileName: file.fileName, ...result } });
+      await audit(tx, req, {
+        action: 'import.apply',
+        entity: 'import',
+        after: { kind, fileName: file.fileName, ...result },
+      });
       return result;
     });
   });

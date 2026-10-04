@@ -41,6 +41,7 @@ import { PlanPage } from './routes/compta/plan';
 import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
+import { ImportsPage } from './routes/stats/imports-page';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
@@ -151,6 +152,13 @@ const statsRoute = createRoute({
   path: '/stats',
   beforeLoad: requireRoles(['STATS']),
   component: StatsPage,
+});
+
+const importsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/imports',
+  beforeLoad: requireRoles(['PRODUITS', 'ADHERENTS']),
+  component: ImportsPage,
 });
 
 // --- Members (§4.2, §4.3) ---
@@ -442,6 +450,7 @@ const routeTree = rootRoute.addChildren([
     shopRoute,
     preordersRoute,
     statsRoute,
+    importsRoute,
     membersRoute,
     newMemberRoute,
     memberRoute,

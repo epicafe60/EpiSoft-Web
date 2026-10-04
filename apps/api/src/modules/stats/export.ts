@@ -40,15 +40,25 @@ export const exportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       tables.set(t, [...(tables.get(t) ?? []), name]);
     }
 
-    await audit(db, req, { action: 'export.full', entity: 'database', after: { tables: tables.size } });
+    await audit(db, req, {
+      action: 'export.full',
+      entity: 'database',
+      after: { tables: tables.size },
+    });
 
     const out = new PassThrough();
     const wb = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: out, useStyles: true });
     void (async () => {
       try {
         for (const [table, columns] of tables) {
-          const ws = wb.addWorksheet(table.slice(0, 31), { views: [{ state: 'frozen', ySplit: 1 }] });
-          ws.columns = columns.map((c) => ({ header: c, key: c, width: Math.max(10, c.length + 2) }));
+          const ws = wb.addWorksheet(table.slice(0, 31), {
+            views: [{ state: 'frozen', ySplit: 1 }],
+          });
+          ws.columns = columns.map((c) => ({
+            header: c,
+            key: c,
+            width: Math.max(10, c.length + 2),
+          }));
           ws.getRow(1).font = { bold: true };
           ws.getRow(1).commit();
           const res = await db.execute(
