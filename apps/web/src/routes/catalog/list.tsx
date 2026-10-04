@@ -73,6 +73,9 @@ export function ProductsPage() {
               <Link to="/catalogue/rayons" className={buttonVariants({ variant: 'outline' })}>
                 Rayons
               </Link>
+              <Link to="/catalogue/avis" className={buttonVariants({ variant: 'outline' })}>
+                Avis clients
+              </Link>
               <Link to="/catalogue/nouveau" className={buttonVariants()}>
                 <Plus /> Nouveau produit
               </Link>

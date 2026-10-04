@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { useCart, type CartLine } from './cart';
+import { RatingButton, type Ratings } from './reviews';
 
 interface ShopProduct {
   id: string;
@@ -119,6 +120,11 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
   const [qty, setQty] = useState(loose ? '0,5' : '1');
   const unit = loose && p.unit ? UNIT_LABELS[p.unit] : null;
   const inCart = cart.lines.find((l) => l.productId === p.id);
+  const { data: ratings } = useQuery({
+    queryKey: ['shop-ratings'],
+    queryFn: () => api.get<Ratings>('/shop/ratings'),
+    staleTime: 60_000,
+  });
   return (
     <Card className="flex flex-col">
       <CardContent className="grid flex-1 gap-2 pt-4">
@@ -142,6 +148,7 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
         {p.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground">{p.description}</p>
         ) : null}
+        <RatingButton productId={p.id} name={p.name} rating={ratings?.[p.id]} />
         <div className="mt-auto flex items-center gap-2">
           <Input
             aria-label={`Quantité de ${p.name}`}

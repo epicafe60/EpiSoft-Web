@@ -1337,3 +1337,29 @@ export const importMapping = app.table(
   },
   (t) => [uniqueIndex('import_mapping_uq').on(t.kind, t.sourceKey)],
 );
+
+// --- Customer reviews (shop) -----------------------------------------------------------------
+
+/** A member's rating and comment on a product; shown once a PRODUITS user approves it. */
+export const productReview = app.table(
+  'product_review',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    rating: integer('rating').notNull(),
+    comment: text('comment'),
+    status: text('status').notNull().default('PENDING'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('product_review_uq').on(t.productId, t.memberId),
+    index('product_review_status_idx').on(t.status, t.createdAt),
+    check('product_review_rating', sql`${t.rating} between 1 and 5`),
+  ],
+);

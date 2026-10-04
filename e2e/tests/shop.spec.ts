@@ -30,3 +30,26 @@ test('a customer fills a cart and orders; the shop sees it (R-PRE-01)', async ({
   await expect(staff.getByRole('button', { name: /PC-\d{4}-0001/ })).toBeVisible();
   await staffCtx.close();
 });
+
+test('a customer rates a product and a manager publishes the review', async ({ page, browser }) => {
+  await login(page, USERS.customer);
+  await page.getByRole('link', { name: 'Boutique' }).first().click();
+  await page.getByRole('button', { name: 'Donner un avis' }).first().click();
+  const dialog = page.getByRole('dialog', { name: /Avis sur/ });
+  await dialog.getByRole('button', { name: '4 étoiles' }).click();
+  await dialog.getByLabel('Commentaire (facultatif)').fill('Très bon miel');
+  await dialog.getByRole('button', { name: 'Envoyer mon avis' }).click();
+  await expect(dialog.getByText(/publié après modération/)).toBeVisible();
+
+  const staffCtx = await browser.newContext();
+  const staff = await staffCtx.newPage();
+  await login(staff, USERS.admin);
+  await staff.goto('/catalogue/avis');
+  const row = staff.getByRole('row').filter({ hasText: 'Très bon miel' });
+  await row.getByRole('button', { name: 'Publier' }).click();
+  await expect(staff.getByText('Aucun avis à modérer.')).toBeVisible();
+  await staffCtx.close();
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: /4 \(1\)/ })).toBeVisible();
+});

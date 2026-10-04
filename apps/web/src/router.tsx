@@ -42,6 +42,7 @@ import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
 import { ImportsPage } from './routes/stats/imports-page';
+import { ReviewsModerationPage } from './routes/catalog/reviews';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
@@ -226,6 +227,13 @@ const productsShelvesRoute = createRoute({
   path: '/catalogue/rayons',
   beforeLoad: requireRoles(['PRODUITS']),
   component: ShelvesPage,
+});
+
+const productsReviewsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/catalogue/avis',
+  beforeLoad: requireRoles(['PRODUITS']),
+  component: ReviewsModerationPage,
 });
 
 // --- Supplies (§4.7–§4.10) ---
@@ -461,6 +469,7 @@ const routeTree = rootRoute.addChildren([
     productsLabelsRoute,
     productsPricesRoute,
     productsShelvesRoute,
+    productsReviewsRoute,
     suppliesRoute.addChildren([
       suppliesIndexRoute,
       ordersRoute,

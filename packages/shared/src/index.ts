@@ -15,6 +15,7 @@ export * from './scale';
 export * from './settings';
 export * from './sort';
 export * from './imports';
+export * from './reviews';
 export * from './stats';
 export * from './supplies';
 export * from './supplies-forms';
