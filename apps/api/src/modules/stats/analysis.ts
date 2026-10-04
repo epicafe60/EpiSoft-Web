@@ -79,10 +79,14 @@ export const analysisRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
              sum(l.qty)::text as qty,
              round(sum(l.line_total) * 100)::bigint as ttc_cents,
              round(sum(l.line_total / (1 + l.vat_rate / 100)) * 100)::bigint as ht_cents,
-             round(sum(l.qty * coalesce(p.purchase_price_excl, 0)) * 100)::bigint as cost_cents
+             round(sum(l.qty * coalesce(ph.purchase_price_excl, p.purchase_price_excl, 0)) * 100)::bigint as cost_cents
       from app.sale_line l
         join app.sale s on s.id = l.sale_id
         join app.product p on p.id = l.product_id
+        left join lateral (
+          select h.purchase_price_excl from app.price_history h
+          where h.product_id = p.id and h.at <= s.sold_at and h.purchase_price_excl is not null
+          order by h.at desc limit 1) ph on true
         left join app.category c on c.id = p.category_id
         left join app.universe u on u.id = c.universe_id
         left join app.supplier sp on sp.id = p.supplier_id

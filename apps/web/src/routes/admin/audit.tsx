@@ -17,6 +17,12 @@ const ACTION_LABELS: Record<string, string> = {
   'password.link': 'Lien de mot de passe envoyé',
   'impersonate.start': 'Usurpation démarrée',
   'impersonate.stop': 'Usurpation terminée',
+  'import.apply': 'Import appliqué',
+  'export.full': 'Export complet de la base',
+  'report.save': 'Rapport enregistré',
+  'report.delete': 'Rapport supprimé',
+  'review.moderate': 'Avis modéré',
+  'preorder.status': 'État de précommande modifié',
 };
 
 function Diff({ before, after }: { before: unknown; after: unknown }) {

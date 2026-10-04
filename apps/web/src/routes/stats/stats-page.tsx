@@ -412,7 +412,7 @@ export function StatsPage() {
     <div className="grid gap-4">
       <PageHeader
         title="Statistiques"
-        description="Ventes, marge, tendances, achats et stock. Le coût des ventes utilise le prix d'achat HT actuel."
+        description="Ventes, marge, tendances, achats et stock. Le coût des ventes utilise le prix d'achat HT en vigueur le jour de la vente (à défaut, le prix actuel)."
       />
       <div role="tablist" aria-label="Analyse" className="flex flex-wrap gap-1 border-b">
         {KINDS.map(([k, label]) => (

@@ -53,3 +53,12 @@ test('a customer rates a product and a manager publishes the review', async ({ p
   await page.reload();
   await expect(page.getByRole('button', { name: /4 \(1\)/ })).toBeVisible();
 });
+
+test('a member sees their household page', async ({ page }) => {
+  await login(page, USERS.customer);
+  await page
+    .getByRole('navigation', { name: 'Menu principal' })
+    .getByRole('link', { name: 'Mon foyer' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Mon foyer' })).toBeVisible();
+});

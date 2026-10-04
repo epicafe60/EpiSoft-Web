@@ -14,6 +14,7 @@ import {
   Truck,
   UserCog,
   FileUp,
+  Wallet,
   Users,
   X,
   Store,
@@ -51,6 +52,9 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
       <Link to="/boutique" className={linkClass} onClick={onNavigate}>
         <Store /> Boutique
+      </Link>
+      <Link to="/mon-foyer" className={linkClass} onClick={onNavigate}>
+        <Wallet /> Mon foyer
       </Link>
       {visibleModules(me.roles).map((m) => {
         const Icon = MODULE_ICONS[m.key];

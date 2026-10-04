@@ -13,7 +13,9 @@ async function query<T>(sql: string): Promise<T[]> {
   }
 }
 
-test('lot 2 end criterion: order → receipt → sale → inventory, consistent stock', async ({ page }) => {
+test('lot 2 end criterion: order → receipt → sale → inventory, consistent stock', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   await login(page, USERS.admin);
 
@@ -60,7 +62,10 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
   await countDialog.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(countDialog).toBeHidden();
   await page.getByRole('button', { name: 'Valider' }).click();
-  await page.getByRole('dialog', { name: 'Valider l’inventaire' }).getByRole('button', { name: 'Valider l’inventaire' }).click();
+  await page
+    .getByRole('dialog', { name: 'Valider l’inventaire' })
+    .getByRole('button', { name: 'Valider l’inventaire' })
+    .click();
   await expect(page.getByRole('heading', { name: 'Rapport d’écarts' })).toBeVisible();
 
   // The ledger explains the stock: +6 received, −1 sold, −1 inventory = 4.
@@ -72,6 +77,8 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
     { kind: 'SALE', qty: '-1.000' },
     { kind: 'INVENTORY', qty: '-1.000' },
   ]);
-  const [p] = await query<{ stock_qty: string }>(`select stock_qty from app.product where code = '${SEED.honey.code}'`);
+  const [p] = await query<{ stock_qty: string }>(
+    `select stock_qty from app.product where code = '${SEED.honey.code}'`,
+  );
   expect(p!.stock_qty).toBe('4.000');
 });

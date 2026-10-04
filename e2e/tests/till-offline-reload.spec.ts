@@ -6,7 +6,10 @@ import { SEED } from '../seed';
 // Runs on the production build: only it has the service worker that caches the app.
 test.use({ baseURL: `http://localhost:${PREVIEW_PORT}` });
 
-test('R-OFF-01 / R-OFF-06: the till reloads, keeps its ticket and sells with no network', async ({ page, context }) => {
+test('R-OFF-01 / R-OFF-06: the till reloads, keeps its ticket and sells with no network', async ({
+  page,
+  context,
+}) => {
   await login(page, USERS.cashier);
   await page.goto('/caisse');
   await page.getByLabel('Nom du poste').fill('HORSLIGNE');

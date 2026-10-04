@@ -45,7 +45,7 @@ export interface MyOrder {
   pickupDate: string;
   comment: string | null;
   totalCents: number;
-  lines: { id: string; label: string; qty: string; unitPrice: string }[];
+  lines: { id: string; productId: string; label: string; qty: string; unitPrice: string }[];
 }
 
 const addDays = (iso: string, n: number) => {
@@ -389,6 +389,7 @@ export function MyOrders() {
     queryKey: ['my-orders'],
     queryFn: () => api.get<MyOrder[]>('/preorders/mine'),
   });
+  const cart = useCart();
   const cancel = useMutation({
     mutationFn: (id: string) => api.post(`/preorders/${id}/status`, { status: 'CANCELLED' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-orders'] }),
@@ -407,6 +408,25 @@ export function MyOrders() {
               <Badge variant={STATUS_BADGE[o.status]}>{PREORDER_STATUS_LABELS[o.status]}</Badge>
               <span className="text-muted-foreground">retrait le {formatDate(o.pickupDate)}</span>
               <span className="ml-auto tabular-nums">{euro(o.totalCents / 100)}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  o.lines.forEach((l) =>
+                    cart.add(
+                      {
+                        productId: l.productId,
+                        name: l.label,
+                        unitPriceCents: decimalToCents(l.unitPrice),
+                        unit: null,
+                      },
+                      l.qty,
+                    ),
+                  )
+                }
+              >
+                Commander à nouveau
+              </Button>
               {memberCanCancel(o.status) ? (
                 <Button
                   variant="ghost"
