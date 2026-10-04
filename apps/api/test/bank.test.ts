@@ -181,3 +181,55 @@ describe('bank rules (R-CPT-13)', () => {
     expect((await post('/api/v1/bank/rules', rule)).statusCode).toBe(200);
   });
 });
+
+describe('rule suggestions (R-CPT-13)', () => {
+  it('suggests a rule after three identical manual assignments, then stops once it exists', async () => {
+    const id = await bankAccountId();
+    const lines = ['20260305', '20260312', '20260319']
+      .map(
+        (d, i) =>
+          `<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>${d}<TRNAMT>-${10 + i}.00<FITID>S${i}<NAME>FRAIS TENUE COMPTE ${i}</STMTTRN>`,
+      )
+      .join('\n');
+    const ofx = `OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\n\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKTRANLIST>\n<DTSTART>20260301<DTEND>20260331\n${lines}\n</BANKTRANLIST>\n<LEDGERBAL><BALAMT>970.00<DTASOF>20260331</LEDGERBAL>\n</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+    const imp = await importFile(id, ofx);
+    const detail = (await get(`/api/v1/bank/statements/${imp.json().statementId}`)).json();
+    expect((await get('/api/v1/bank/rules/suggestions')).json()).toEqual([]);
+
+    const bank = await acct('627100');
+    await post('/api/v1/bank/lines/match', {
+      items: detail.lines.map((l: { id: string }) => ({
+        lineId: l.id,
+        action: 'ACCOUNT',
+        accountId: bank.id,
+      })),
+    });
+    const s = (await get('/api/v1/bank/rules/suggestions')).json();
+    expect(s).toEqual([
+      expect.objectContaining({
+        pattern: 'frais tenue',
+        direction: 'OUT',
+        counterAccount: '627100',
+        count: 3,
+      }),
+    ]);
+
+    await post('/api/v1/bank/rules', {
+      priority: 100,
+      label: 'Frais de tenue',
+      pattern: 'frais tenue',
+      matchType: 'CONTAINS',
+      direction: 'OUT',
+      minAmount: null,
+      maxAmount: null,
+      counterAccountId: bank.id,
+      journalId: null,
+      mode: null,
+      labelTemplate: null,
+      householdMatch: false,
+      supplierId: null,
+      active: true,
+    });
+    expect((await get('/api/v1/bank/rules/suggestions')).json()).toEqual([]);
+  });
+});

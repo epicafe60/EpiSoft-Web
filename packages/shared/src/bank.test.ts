@@ -6,6 +6,7 @@ import {
   matchingEntryLines,
   matchingInvoices,
   autoMatchPick,
+  suggestRules,
   matchRule,
   parseBankAmount,
   parseBankDate,
@@ -315,5 +316,49 @@ describe('automatic matching (R-CPT-13/14)', () => {
     expect(autoMatchPick([{ kind: 'INVOICE' }])).toEqual({ kind: 'INVOICE' });
     expect(autoMatchPick([{ kind: 'ENTRY_LINE' }, { kind: 'ENTRY_LINE' }])).toBeNull();
     expect(autoMatchPick([{ kind: 'RULE' }, { kind: 'INVOICE' }])).toBeNull();
+  });
+});
+
+describe('rule suggestions (R-CPT-13)', () => {
+  const m = (label: string, amountCents: number, acc = 'a-607') => ({
+    label,
+    amountCents,
+    counterAccountId: acc,
+    counterAccount: acc === 'a-607' ? '607000' : '627100',
+  });
+  it('proposes a rule after three identical manual assignments', () => {
+    const s = suggestRules(
+      [
+        m('PRLV SEPA GAEC DES ECUREUILS 0412', -1000),
+        m('PRLV SEPA GAEC DES ECUREUILS 0512', -1200),
+        m('PRLV SEPA GAEC DES ECUREUILS 0612', -900),
+        m('CB LECLERC', -500),
+      ],
+      [],
+    );
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({
+      pattern: 'prlv sepa',
+      direction: 'OUT',
+      counterAccount: '607000',
+      count: 3,
+    });
+  });
+  it('needs the same account every time, enough occurrences and no covering rule', () => {
+    const lines = [m('FRAIS CB', -100), m('FRAIS CB', -100), m('FRAIS CB', -100, 'a-627')];
+    expect(suggestRules(lines, [])).toEqual([]);
+    expect(suggestRules(lines.slice(0, 2), [])).toEqual([]);
+    const three = [m('FRAIS CB', -100), m('FRAIS CB', -100), m('FRAIS CB', -100)];
+    expect(suggestRules(three, [])).toHaveLength(1);
+    const rule: BankRuleLike = {
+      priority: 1,
+      pattern: 'frais',
+      matchType: 'CONTAINS',
+      direction: 'ANY',
+      minAmountCents: null,
+      maxAmountCents: null,
+      active: true,
+    };
+    expect(suggestRules(three, [rule])).toEqual([]);
   });
 });

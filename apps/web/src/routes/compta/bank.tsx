@@ -482,6 +482,20 @@ function RulesTab() {
     queryKey: ['bank-rules'],
     queryFn: () => api.get<BankRuleRow[]>('/bank/rules'),
   });
+  const suggestions = useQuery({
+    queryKey: ['bank-rule-suggestions'],
+    queryFn: () =>
+      api.get<
+        {
+          pattern: string;
+          direction: 'IN' | 'OUT';
+          counterAccountId: string;
+          counterAccount: string;
+          count: number;
+          example: string;
+        }[]
+      >('/bank/rules/suggestions'),
+  });
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [f, setF] = useState(blankRule());
   const set = <K extends keyof ReturnType<typeof blankRule>>(
@@ -528,6 +542,7 @@ function RulesTab() {
     onSuccess: async () => {
       setEditing(null);
       await queryClient.invalidateQueries({ queryKey: ['bank-rules'] });
+      await queryClient.invalidateQueries({ queryKey: ['bank-rule-suggestions'] });
     },
   });
   const test = useMutation({
@@ -557,6 +572,42 @@ function RulesTab() {
         <p className="text-sm text-muted-foreground">
           La première règle (par priorité croissante) dont le motif correspond propose l’écriture.
         </p>
+        {(suggestions.data ?? []).length > 0 ? (
+          <div
+            className="grid gap-2 rounded-md border border-dashed p-3"
+            data-testid="rule-suggestions"
+          >
+            <p className="text-sm font-medium">Règles suggérées</p>
+            {suggestions.data!.map((s) => (
+              <div
+                key={`${s.pattern}-${s.direction}`}
+                className="flex flex-wrap items-center gap-3 text-sm"
+              >
+                <span>
+                  « {s.pattern} » ({s.direction === 'IN' ? 'entrée' : 'sortie'}) →{' '}
+                  {s.counterAccount} · {s.count} affectations manuelles, par ex. {s.example}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditing('new');
+                    setF({
+                      ...blankRule(),
+                      label: s.pattern,
+                      pattern: s.pattern,
+                      matchType: 'CONTAINS',
+                      direction: s.direction,
+                      counterAccountId: s.counterAccountId,
+                    });
+                  }}
+                >
+                  Créer la règle
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <Table>
           <thead>
             <tr>

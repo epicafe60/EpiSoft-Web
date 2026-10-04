@@ -436,3 +436,67 @@ export { addDays };
 export function autoMatchPick<S>(suggestions: readonly S[]): S | null {
   return suggestions.length === 1 ? suggestions[0]! : null;
 }
+
+// --- Rule suggestions learned from manual matches (R-CPT-13) --------------------------------
+
+export interface ManualMatch {
+  label: string;
+  amountCents: number;
+  counterAccountId: string;
+  counterAccount: string;
+}
+
+export interface RuleSuggestion {
+  pattern: string;
+  direction: 'IN' | 'OUT';
+  counterAccountId: string;
+  counterAccount: string;
+  /** Manual matches that would have been handled by the rule. */
+  count: number;
+  example: string;
+}
+
+/** Words of a bank label that identify the counterparty: letters only, 3 characters or more. */
+function labelTokens(label: string): string[] {
+  return normalizeSearch(label)
+    .split(/[^a-z]+/)
+    .filter((t) => t.length >= 3);
+}
+
+/**
+ * Proposes rules from lines the treasurer assigned by hand: same first two words, same direction
+ * and same counter account at least `minCount` times, and not already covered by an existing
+ * rule. A label whose first words went to different accounts is not proposed.
+ */
+export function suggestRules(
+  matches: readonly ManualMatch[],
+  existing: readonly BankRuleLike[],
+  minCount = 3,
+): RuleSuggestion[] {
+  const groups = new Map<string, ManualMatch[]>();
+  for (const m of matches) {
+    const tokens = labelTokens(m.label).slice(0, 2);
+    if (!tokens.length) continue;
+    const key = `${tokens.join(' ')}|${m.amountCents >= 0 ? 'IN' : 'OUT'}`;
+    groups.set(key, [...(groups.get(key) ?? []), m]);
+  }
+  const out: RuleSuggestion[] = [];
+  for (const [key, list] of groups) {
+    const accounts = new Set(list.map((m) => m.counterAccountId));
+    if (accounts.size !== 1 || list.length < minCount) continue;
+    const [pattern, direction] = key.split('|') as [string, 'IN' | 'OUT'];
+    const covered = list.every((m) =>
+      matchRule(existing, { label: m.label, memo: null, amountCents: m.amountCents }),
+    );
+    if (covered) continue;
+    out.push({
+      pattern,
+      direction,
+      counterAccountId: list[0]!.counterAccountId,
+      counterAccount: list[0]!.counterAccount,
+      count: list.length,
+      example: list[0]!.label,
+    });
+  }
+  return out.sort((a, b) => b.count - a.count || a.pattern.localeCompare(b.pattern));
+}

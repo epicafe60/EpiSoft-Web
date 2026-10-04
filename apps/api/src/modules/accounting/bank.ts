@@ -39,6 +39,7 @@ import {
   matchingInvoices,
   renderLabelTemplate,
   statementGapCents,
+  suggestRules,
   validateRegex,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -744,6 +745,39 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
   app.get('/bank/rules', compta, async () =>
     db.select().from(bankRule).orderBy(asc(bankRule.priority), asc(bankRule.label)),
   );
+
+  /** Rules worth creating: the treasurer keeps assigning the same kind of line to the same account. */
+  app.get('/bank/rules/suggestions', compta, async () => {
+    const rows = await db.execute<{
+      label: string;
+      amount: string;
+      account_id: string;
+      number: string;
+    }>(sql`
+      select l.label, l.amount::text as amount, a.id as account_id, a.number
+        from app.bank_line l
+        join app.entry_line bl on bl.id = l.entry_line_id
+        join app.entry e on e.id = bl.entry_id and e.source_type = 'bank_line'
+        join app.entry_line cl on cl.entry_id = e.id and cl.id <> bl.id
+        join app.account a on a.id = cl.account_id
+       where l.status = 'MATCHED' and l.rule_id is null
+       order by l.date desc
+       limit 2000`);
+    const rules = (await db.select().from(bankRule).where(eq(bankRule.active, true))).map((r) => ({
+      ...r,
+      minAmountCents: r.minAmount === null ? null : decimalToCents(r.minAmount),
+      maxAmountCents: r.maxAmount === null ? null : decimalToCents(r.maxAmount),
+    }));
+    return suggestRules(
+      rows.rows.map((r) => ({
+        label: r.label,
+        amountCents: decimalToCents(r.amount),
+        counterAccountId: r.account_id,
+        counterAccount: r.number,
+      })),
+      rules,
+    );
+  });
 
   app.post('/bank/rules', { ...compta, schema: { body: bankRuleSchema } }, async (req) =>
     db.transaction(async (tx) => {
