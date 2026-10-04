@@ -1,6 +1,8 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  productReview,
+  pushSubscription,
   auditLog,
   category,
   householdBalance,
@@ -140,6 +142,16 @@ describe('members and households (R-MBR-01, R-MBR-02)', () => {
     const admin = await createUser(t.db, { roles: ['ADMIN'] });
     const ah = await login(t.app, admin.username!);
     const { id } = (await post('/api/v1/members', newMember)).json();
+    const [prod] = await t.db
+      .insert(product)
+      .values({ code: 'RG1', name: 'Miel', salePrice: '5' })
+      .returning();
+    await t.db
+      .insert(productReview)
+      .values({ productId: prod!.id, memberId: id, rating: 5, comment: 'Super' });
+    await t.db
+      .insert(pushSubscription)
+      .values({ memberId: id, endpoint: 'https://push.example/x', p256dh: 'k', auth: 'a' });
     const res = await t.app.inject({
       method: 'POST',
       url: `/api/v1/members/${id}/anonymize`,
@@ -153,6 +165,13 @@ describe('members and households (R-MBR-01, R-MBR-02)', () => {
       phone: null,
       status: 'ARCHIVED',
     });
+    // Free-text reviews and registered devices are removed with the identity.
+    expect(await t.db.select().from(productReview).where(eq(productReview.memberId, id))).toEqual(
+      [],
+    );
+    expect(
+      await t.db.select().from(pushSubscription).where(eq(pushSubscription.memberId, id)),
+    ).toEqual([]);
   });
 });
 

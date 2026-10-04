@@ -46,6 +46,9 @@ export function MyHouseholdPage() {
         description="Votre cagnotte, votre adhésion et vos derniers achats."
       />
       <PushToggle />
+      <a href="/api/v1/me/export" className="w-fit text-sm text-primary hover:underline" download>
+        Télécharger mes données (RGPD)
+      </a>
       {error ? <QueryError error={error} /> : null}
       {data && !h ? <Alert variant="info">Aucun foyer n'est rattaché à votre compte.</Alert> : null}
       {h ? (

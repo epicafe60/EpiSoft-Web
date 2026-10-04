@@ -106,5 +106,16 @@ describe('my household', () => {
     expect(
       (await t.app.inject({ url: `/api/v1/me/tickets/${theirs.id}`, headers: h })).statusCode,
     ).toBe(404);
+
+    // Right of access: my own file, never the other household's tickets, no secrets.
+    const exp = await t.app.inject({ url: '/api/v1/me/export', headers: h });
+    expect(exp.statusCode).toBe(200);
+    expect(exp.headers['content-disposition']).toContain('mes-donnees-');
+    const data = exp.json();
+    expect(data.tickets.map((x: { number: string }) => x.number)).toEqual(['T-2026-000001']);
+    expect(data.tickets[0].lines).toEqual([
+      expect.objectContaining({ label: 'Pain', qty: '2.000' }),
+    ]);
+    expect(JSON.stringify(data)).not.toMatch(/passwordHash|qrTokenHash|T-2026-000002/);
   });
 });

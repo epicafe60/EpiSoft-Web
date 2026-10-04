@@ -13,6 +13,8 @@ import {
   membershipType,
   product,
   sale,
+  productReview,
+  pushSubscription,
   session,
   userRole,
   walletEntry,
@@ -348,6 +350,9 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         if (!m) throw notFound('Membre introuvable.');
         await tx.delete(userRole).where(eq(userRole.memberId, m.id));
         await tx.delete(session).where(eq(session.memberId, m.id));
+        // Free-text reviews and devices are personal data too.
+        await tx.delete(productReview).where(eq(productReview.memberId, m.id));
+        await tx.delete(pushSubscription).where(eq(pushSubscription.memberId, m.id));
         await tx
           .update(member)
           .set({
