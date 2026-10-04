@@ -26,6 +26,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
+import { escapeHtml, queueEmail } from '../../lib/mail';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/problem';
 import { nextNumber } from '../pos/numbers';
 
@@ -304,6 +305,26 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
           before: { status: o.status },
           after: { status: to },
         });
+        // The customer is told as soon as the order is ready to be collected.
+        if (to === 'READY') {
+          const [m] = await tx
+            .select({ email: member.email, firstName: member.firstName })
+            .from(member)
+            .where(eq(member.id, o.memberId));
+          if (m?.email) {
+            const day = o.pickupDate.split('-').reverse().join('/');
+            await queueEmail(tx, {
+              to: m.email,
+              subject: `Épicafé : votre commande ${o.number} est prête`,
+              text: `Bonjour ${m.firstName},
+
+Votre commande ${o.number} est prête. Vous pouvez la retirer à l’Épicafé (retrait prévu le ${day}) et la régler à la caisse.
+
+À bientôt !`,
+              html: `<p>Bonjour ${escapeHtml(m.firstName)},</p><p>Votre commande <strong>${escapeHtml(o.number)}</strong> est prête. Vous pouvez la retirer à l’Épicafé (retrait prévu le ${day}) et la régler à la caisse.</p><p>À bientôt !</p>`,
+            });
+          }
+        }
         return { ok: true };
       }),
   );
