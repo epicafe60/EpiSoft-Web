@@ -63,6 +63,8 @@ export interface AuditEntry {
 
 export const auditQuerySchema = z.object({
   actorId: z.string().uuid().optional(),
+  /** Everything about a person: what they did, what was done on their behalf, and edits of their record. */
+  memberId: z.string().uuid().optional(),
   entity: z.string().max(50).optional(),
   from: z.string().date().optional(),
   to: z.string().date().optional(),

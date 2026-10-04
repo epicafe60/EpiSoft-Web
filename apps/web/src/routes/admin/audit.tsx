@@ -50,10 +50,14 @@ function Diff({ before, after }: { before: unknown; after: unknown }) {
 
 /** R-ADM-02: filter by entity and period. */
 export function AuditPage() {
+  // ?membre=<id> (link from a member's page) narrows the journal to one person.
+  const [memberId, setMemberId] = useState(
+    () => new URLSearchParams(window.location.search).get('membre') ?? '',
+  );
   const [entity, setEntity] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const filters = { entity: entity.trim(), from, to };
+  const filters = { entity: entity.trim(), from, to, memberId };
 
   const query = useInfiniteQuery({
     queryKey: ['audit', filters],
@@ -61,6 +65,7 @@ export function AuditPage() {
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ limit: String(PAGE) });
       if (filters.entity) params.set('entity', filters.entity);
+      if (filters.memberId) params.set('memberId', filters.memberId);
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
       if (pageParam) params.set('cursor', pageParam);
@@ -72,6 +77,18 @@ export function AuditPage() {
 
   return (
     <div className="grid gap-4">
+      {memberId ? (
+        <p className="text-sm">
+          Journal limité à une personne.{' '}
+          <button
+            type="button"
+            className="text-primary hover:underline"
+            onClick={() => setMemberId('')}
+          >
+            Tout afficher
+          </button>
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-3 lg:max-w-2xl">
         <Field label="Objet">
           {(p) => (

@@ -200,15 +200,25 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
             : undefined
         }
         actions={
-          member?.householdId ? (
-            <Link
-              to="/foyers/$id"
-              params={{ id: member.householdId }}
-              className="text-sm text-primary hover:underline"
-            >
-              Voir le foyer, la cagnotte et les adhésions →
-            </Link>
-          ) : undefined
+          <div className="flex flex-wrap gap-4">
+            {member && me?.roles.includes('ADMIN') ? (
+              <a
+                href={`/admin/journal?membre=${member.id}`}
+                className="text-sm text-primary hover:underline"
+              >
+                Historique des actions →
+              </a>
+            ) : null}
+            {member?.householdId ? (
+              <Link
+                to="/foyers/$id"
+                params={{ id: member.householdId }}
+                className="text-sm text-primary hover:underline"
+              >
+                Voir le foyer, la cagnotte et les adhésions →
+              </Link>
+            ) : null}
+          </div>
         }
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">

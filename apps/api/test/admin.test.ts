@@ -146,3 +146,18 @@ describe('audit log is append-only (principle 8)', () => {
     expect(res.json()).toHaveLength(1);
   });
 });
+
+describe('audit by person', () => {
+  it('memberId returns what the person did and what was done to their record', async () => {
+    const { headers, admin } = await adminHeaders();
+    const other = await createUser(t.db, { roles: [] });
+    await t.db.insert(auditLog).values([
+      { actorId: admin.id, action: 'a.did', entity: 'setting' },
+      { actorId: other.id, action: 'b.other', entity: 'setting' },
+      { actorId: other.id, action: 'c.on-admin', entity: 'member', entityId: admin.id },
+    ]);
+    const res = await t.app.inject({ url: `/api/v1/audit?memberId=${admin.id}`, headers });
+    const actions = (res.json() as { action: string }[]).map((r) => r.action).sort();
+    expect(actions).toEqual(['a.did', 'c.on-admin']);
+  });
+});

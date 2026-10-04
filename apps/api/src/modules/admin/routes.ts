@@ -264,6 +264,14 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       const q = req.query;
       const filters: SQL[] = [];
       if (q.actorId) filters.push(eq(auditLog.actorId, q.actorId));
+      if (q.memberId)
+        filters.push(
+          or(
+            eq(auditLog.actorId, q.memberId),
+            eq(auditLog.onBehalfOfId, q.memberId),
+            and(eq(auditLog.entity, 'member'), eq(auditLog.entityId, q.memberId)),
+          )!,
+        );
       if (q.entity) filters.push(eq(auditLog.entity, q.entity));
       if (q.from) filters.push(gte(auditLog.at, sql`${q.from}::date`));
       if (q.to) filters.push(lt(auditLog.at, sql`${q.to}::date + 1`));
