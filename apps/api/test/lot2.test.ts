@@ -5,6 +5,7 @@ import {
   emailOutbox,
   priceHistory,
   product,
+  productBatch,
   purchaseOrder,
   setting,
   stockMovement,
@@ -181,8 +182,20 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
     // A sale between the two receipts: the second receipt adds to it, never overwrites.
     await recordMovement(t.db, { productId: p1.id, qtyMilli: -1000, kind: 'SALE' });
     await post(`/api/v1/purchase-orders/${o.id}/receipts`, {
-      lines: [{ orderLineId: line.id, productId: p1.id, qty: '6', unitPriceExcl: '5.2' }],
+      lines: [
+        {
+          orderLineId: line.id,
+          productId: p1.id,
+          qty: '6',
+          unitPriceExcl: '5.2',
+          bestBefore: '2027-01-15',
+        },
+      ],
     });
+    // R-STK-07: the dated line is tracked as a batch of the received quantity.
+    const batches = await t.db.select().from(productBatch);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ productId: p1.id, bestBefore: '2027-01-15', qty: '6.000' });
     expect((await t.db.select().from(purchaseOrder))[0]!.status).toBe('RECEIVED');
     expect(await stockOf(p1.id)).toBe('9.000');
   });

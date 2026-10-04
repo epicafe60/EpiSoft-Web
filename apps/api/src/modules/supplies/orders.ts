@@ -7,6 +7,7 @@ import {
   goodsReceiptLine,
   priceHistory,
   product,
+  productBatch,
   purchaseOrder,
   purchaseOrderLine,
   supplier,
@@ -228,7 +229,13 @@ export interface ReceiptInput {
   orderId: string | null;
   date: string;
   comment: string | null;
-  lines: { orderLineId: string | null; productId: string; qty: string; unitPriceExcl: string }[];
+  lines: {
+    orderLineId: string | null;
+    productId: string;
+    qty: string;
+    unitPriceExcl: string;
+    bestBefore?: string | null;
+  }[];
   closeOrder: boolean;
   newSalePrices: Record<string, string>;
 }
@@ -289,6 +296,14 @@ export async function recordReceipt(
       vatRate: p.vatRate,
       orderLineId: l.orderLineId,
     });
+    if (p.kind === 'GOODS' && l.bestBefore)
+      await tx.insert(productBatch).values({
+        productId: p.id,
+        bestBefore: l.bestBefore,
+        qty: l.qty,
+        note: `Réception ${number}`,
+        by,
+      });
     if (p.kind === 'GOODS') {
       await recordMovement(tx, {
         productId: p.id,

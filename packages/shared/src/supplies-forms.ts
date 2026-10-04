@@ -119,6 +119,8 @@ export const receiptSchema = z.object({
         productId: z.string().uuid(),
         qty: positiveQty,
         unitPriceExcl: price4Input,
+        /** R-STK-07: best-before date of the received batch, tracked on the stock page. */
+        bestBefore: isoDate.nullish(),
       }),
     )
     .min(1, 'Aucune quantité reçue.')

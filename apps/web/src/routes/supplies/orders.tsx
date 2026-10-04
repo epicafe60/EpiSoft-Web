@@ -618,6 +618,7 @@ interface ReceiveLine {
   vatRate: string;
   salePrice: string;
   newSalePrice: string;
+  bestBefore: string;
 }
 
 /**
@@ -665,6 +666,7 @@ function ReceiveDialog({
           vatRate: l.vatRate,
           salePrice: l.salePrice,
           newSalePrice: '',
+          bestBefore: '',
         };
       }),
     );
@@ -682,6 +684,7 @@ function ReceiveDialog({
           productId: l.productId,
           qty: l.qty,
           unitPriceExcl: l.unitPriceExcl,
+          bestBefore: l.bestBefore || null,
         })),
         newSalePrices: Object.fromEntries(
           received.filter((l) => l.newSalePrice).map((l) => [l.productId, l.newSalePrice]),
@@ -723,6 +726,7 @@ function ReceiveDialog({
                   vatRate: '5.50',
                   salePrice: p.salePrice,
                   newSalePrice: '',
+                  bestBefore: '',
                 },
               ])
             }
@@ -736,6 +740,7 @@ function ReceiveDialog({
                 <th className="text-right">Attendu</th>
                 <th className="w-24 text-right">Reçu</th>
                 <th className="w-28 text-right">PA HT réel</th>
+                <th className="w-36">DLC (option)</th>
                 <th className="w-44">Nouveau PV</th>
               </tr>
             </thead>
@@ -773,6 +778,14 @@ function ReceiveDialog({
                         className="text-right"
                         value={l.unitPriceExcl}
                         onChange={(e) => set(i, { unitPriceExcl: e.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <Input
+                        aria-label={`DLC ${l.name}`}
+                        type="date"
+                        value={l.bestBefore}
+                        onChange={(e) => set(i, { bestBefore: e.target.value })}
                       />
                     </td>
                     <td>
