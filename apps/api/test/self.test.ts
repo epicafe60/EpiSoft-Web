@@ -89,7 +89,12 @@ describe('my household', () => {
     };
     const mine = await mk('T-2026-000001', ha!.id);
     const theirs = await mk('T-2026-000002', hb!.id);
+    await t.db
+      .insert(walletEntry)
+      .values({ householdId: ha!.id, amount: '-5.00', kind: 'PURCHASE', saleId: mine.id });
     const h = await login(t.app, a.username!);
+    const mineWallet = (await t.app.inject({ url: '/api/v1/me/household', headers: h })).json();
+    expect(mineWallet.household.wallet[0].saleId).toBe(mine.id);
     const ok = await t.app.inject({ url: `/api/v1/me/tickets/${mine.id}`, headers: h });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toMatchObject({

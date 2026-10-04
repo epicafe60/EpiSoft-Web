@@ -22,6 +22,7 @@ interface Mine {
       amount: string;
       kind: WalletEntryKind;
       comment: string | null;
+      saleId: string | null;
     }[];
     tickets: { id: string; number: string; soldAt: string; total: string }[];
   } | null;
@@ -117,6 +118,18 @@ export function MyHouseholdPage() {
                         {WALLET_ENTRY_KIND_LABELS[w.kind]}
                         {w.comment ? (
                           <span className="text-muted-foreground"> — {w.comment}</span>
+                        ) : null}
+                        {w.saleId ? (
+                          <>
+                            {' '}
+                            <button
+                              type="button"
+                              className="text-primary hover:underline"
+                              onClick={() => setTicketId(w.saleId)}
+                            >
+                              voir le ticket
+                            </button>
+                          </>
                         ) : null}
                       </td>
                       <td className="text-right tabular-nums">{euro(w.amount)}</td>

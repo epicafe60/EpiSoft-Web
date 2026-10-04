@@ -57,6 +57,7 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
         amount: walletEntry.amount,
         kind: walletEntry.kind,
         comment: walletEntry.comment,
+        saleId: walletEntry.saleId,
       })
       .from(walletEntry)
       .where(eq(walletEntry.householdId, householdId))
