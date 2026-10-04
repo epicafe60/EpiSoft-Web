@@ -16,7 +16,7 @@ import { Badge, Card, CardContent, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 import { useAccounts, useFiscalYears, useJournals } from './queries';
 import type { EntryDetail, EntryRow, TemplateCategory, TemplateRow } from './types';
@@ -38,7 +38,7 @@ const ENTRY_SORT = {
   label: (r: EntryRow) => r.label,
   piece: (r: EntryRow) => r.pieceRef,
   total: (r: EntryRow) => Number(r.total),
-  status: (r: EntryRow) => r.status,
+  status: (r: EntryRow) => (r.status === 'VALIDATED' ? 'Validée' : 'Brouillon'),
 };
 
 export function EntriesPage() {
@@ -225,6 +225,7 @@ export function EntriesPage() {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={rows?.length} />
         </Table>
       </Card>
     </div>

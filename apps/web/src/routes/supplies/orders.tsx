@@ -29,7 +29,7 @@ import {
   type OrderStatus,
   type SupplierRow,
 } from '@/lib/types-supplies';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const statusVariant = (s: OrderStatus) =>
@@ -40,7 +40,7 @@ const ORDER_SORT = {
   number: (o: OrderRow) => o.number,
   date: (o: OrderRow) => o.date,
   supplier: (o: OrderRow) => o.supplierName,
-  status: (o: OrderRow) => o.status,
+  status: (o: OrderRow) => ORDER_STATUS_LABELS[o.status],
   total: (o: OrderRow) => Number(o.totalIncl),
 };
 
@@ -201,6 +201,7 @@ export function OrdersPage() {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
           {data?.length ? (
             <tfoot>
               <tr className="border-t font-medium">

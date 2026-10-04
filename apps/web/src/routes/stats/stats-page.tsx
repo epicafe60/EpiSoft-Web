@@ -8,7 +8,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { LineChart } from '@/components/line-chart';
 import { ReportTableView, type ReportTableData } from '@/components/report-table';
 import { QueryError } from '../errors';
@@ -185,6 +185,7 @@ function SalesPanel({ f }: { f: Filters }) {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={data?.rows?.length} />
           {data ? (
             <tfoot>
               <tr className="font-semibold">

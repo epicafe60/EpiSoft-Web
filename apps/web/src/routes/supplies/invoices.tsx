@@ -18,7 +18,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select, Textarea } from '@/components/ui/inputs';
 import type { InvoiceDetail, InvoiceRow, SupplierDetail, SupplierRow } from '@/lib/types-supplies';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const isDue = (d: string) => d <= todayIso();
@@ -27,7 +27,7 @@ const INVOICE_SORT = {
   due: (r: InvoiceRow) => r.dueDate,
   supplier: (r: InvoiceRow) => r.supplierName,
   piece: (r: InvoiceRow) => r.pieceRef,
-  status: (r: InvoiceRow) => r.status,
+  status: (r: InvoiceRow) => (r.status === 'PAID' ? 'Réglée' : 'À régler'),
   total: (r: InvoiceRow) => Number(r.totalIncl),
 };
 
@@ -49,7 +49,9 @@ export function InvoicesPage() {
       ? [...(data ?? [])].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       : (data ?? []);
   const sort = useSort(rows, INVOICE_SORT);
-  const total = rows
+  // The sort and the column filters apply to the table and to the total.
+  const shown = sort.rows ?? [];
+  const total = shown
     .filter((r) => r.status === 'TO_PAY')
     .reduce((s, r) => s + Math.round(Number(r.totalIncl) * 100), 0);
   return (
@@ -104,7 +106,7 @@ export function InvoicesPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <tr key={r.id}>
                 <td
                   className={`tabular-nums ${r.status === 'TO_PAY' && isDue(r.dueDate) ? 'font-medium text-destructive' : ''}`}
@@ -142,6 +144,7 @@ export function InvoicesPage() {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={rows.length} />
           {total ? (
             <tfoot>
               <tr className="border-t font-medium">

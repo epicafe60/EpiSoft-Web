@@ -17,7 +17,7 @@ import { Badge, Card, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import type { MyOrder } from './shop';
@@ -42,7 +42,7 @@ const SORT = {
   number: (o: OrderRow) => o.number,
   pickup: (o: OrderRow) => o.pickupDate,
   member: (o: OrderRow) => o.memberName,
-  status: (o: OrderRow) => o.status,
+  status: (o: OrderRow) => PREORDER_STATUS_LABELS[o.status],
   total: (o: OrderRow) => Number(o.total),
 };
 
@@ -134,6 +134,7 @@ export function PreordersPage() {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
         </Table>
       </Card>
       <OrderDialog id={openId} onClose={() => setOpenId(null)} />

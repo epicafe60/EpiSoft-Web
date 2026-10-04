@@ -13,7 +13,7 @@ import { useMe } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Input, Label } from '@/components/ui/form';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 function RolesEditor({ user, onDone }: { user: UserSummary; onDone: () => void }) {
@@ -85,7 +85,7 @@ function PasswordLinkButton({ user }: { user: UserSummary }) {
 const USER_SORT = {
   number: (u: UserSummary) => u.number,
   name: (u: UserSummary) => `${u.lastName} ${u.firstName}`,
-  roles: (u: UserSummary) => u.roles.length,
+  roles: (u: UserSummary) => u.roles.map((r) => ROLE_LABELS[r]).join(' '),
 };
 
 export function UsersPage() {
@@ -205,6 +205,7 @@ export function UsersPage() {
               ))
             )}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
         </Table>
       </Card>
     </div>

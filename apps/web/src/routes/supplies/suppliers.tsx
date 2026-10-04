@@ -17,7 +17,7 @@ import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select, Textarea } from '@/components/ui/inputs';
 import type { Commune } from '@/lib/types';
 import { ORDER_STATUS_LABELS, type SupplierDetail, type SupplierRow } from '@/lib/types-supplies';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const SUPPLIER_SORT = {
@@ -118,6 +118,7 @@ export function SuppliersPage() {
               </tr>
             ))}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
         </Table>
       </Card>
     </div>

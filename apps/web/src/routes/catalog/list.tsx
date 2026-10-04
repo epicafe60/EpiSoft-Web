@@ -20,7 +20,7 @@ import { Checkbox, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import type { ProductListItem } from '@/lib/types';
 import { PageHeader } from '../shell';
-import { SortTh, useSort } from '@/components/ui/sortable';
+import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
 
 const PRODUCT_SORT = {
@@ -211,6 +211,7 @@ export function ProductsPage() {
               })
             )}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
         </Table>
       </Card>
     </>
