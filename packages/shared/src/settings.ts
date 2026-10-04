@@ -14,7 +14,7 @@ const amount = z
 const account = z
   .string()
   .trim()
-  .regex(/^d{6}$/, 'Compte à 6 chiffres.');
+  .regex(/^\d{6}$/, 'Compte à 6 chiffres.');
 
 const optionalText = (max: number) =>
   z
