@@ -1,6 +1,6 @@
 import { useDeferredValue, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Minus, Plus, ShoppingBasket, Trash2 } from 'lucide-react';
+import { Heart, Minus, Plus, ShoppingBasket, Trash2 } from 'lucide-react';
 import {
   hasAnyRole,
   PREORDER_STATUS_LABELS,
@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { useCart, type CartLine } from './cart';
+import { useFavorites } from './favorites';
 import { RatingButton, type Ratings } from './reviews';
 
 interface ShopProduct {
@@ -66,8 +67,11 @@ export function ShopPage() {
       ),
     placeholderData: (prev) => prev,
   });
+  const favorites = useFavorites();
+  const favoriteProducts = (data ?? []).filter((p) => favorites.has(p.id));
   const groups = new Map<string, ShopProduct[]>();
-  for (const p of data ?? []) {
+  // A favourite is shown once, in "Mes favoris", not again in its shelf.
+  for (const p of (data ?? []).filter((x) => !favorites.has(x.id))) {
     const k = p.categoryName ?? 'Autres produits';
     groups.set(k, [...(groups.get(k) ?? []), p]);
   }
@@ -92,6 +96,18 @@ export function ShopPage() {
           {isPending ? <p className="text-sm text-muted-foreground">Chargement…</p> : null}
           {data?.length === 0 ? (
             <Alert variant="info">Aucun produit n’est proposé à la commande pour l’instant.</Alert>
+          ) : null}
+          {favoriteProducts.length ? (
+            <section aria-label="Mes favoris" className="grid gap-2">
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+                <Heart className="size-4 fill-current text-destructive" aria-hidden /> Mes favoris
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {favoriteProducts.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            </section>
           ) : null}
           {[...groups.entries()].map(([name, products]) => (
             <section key={name} aria-label={name} className="grid gap-2">
@@ -119,6 +135,8 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
   const [qty, setQty] = useState(loose ? '0,5' : '1');
   const unit = loose && p.unit ? UNIT_LABELS[p.unit] : null;
   const inCart = cart.lines.find((l) => l.productId === p.id);
+  const favorites = useFavorites();
+  const fav = favorites.has(p.id);
   const { data: ratings } = useQuery({
     queryKey: ['shop-ratings'],
     queryFn: () => api.get<Ratings>('/shop/ratings'),
@@ -136,13 +154,26 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
               className="size-16 shrink-0 rounded object-cover"
             />
           ) : null}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="font-medium leading-tight">{p.name}</p>
             <p className="text-sm text-muted-foreground">
               {euro(p.salePrice)}
               {unit ? ` / ${unit}` : ''}
             </p>
           </div>
+          <button
+            type="button"
+            aria-pressed={fav}
+            aria-label={fav ? `Retirer ${p.name} des favoris` : `Mettre ${p.name} en favori`}
+            title={fav ? 'Retirer des favoris' : 'Mettre en favori'}
+            onClick={() => favorites.toggle(p.id)}
+            className="-m-1 h-fit shrink-0 rounded-full p-2 text-muted-foreground hover:text-destructive focus-visible:outline-2"
+          >
+            <Heart
+              className={fav ? 'size-5 fill-current text-destructive' : 'size-5'}
+              aria-hidden
+            />
+          </button>
         </div>
         {p.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground">{p.description}</p>

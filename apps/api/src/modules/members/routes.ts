@@ -13,6 +13,7 @@ import {
   membershipType,
   product,
   sale,
+  productFavorite,
   productReview,
   pushSubscription,
   session,
@@ -352,6 +353,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         await tx.delete(session).where(eq(session.memberId, m.id));
         // Free-text reviews and devices are personal data too.
         await tx.delete(productReview).where(eq(productReview.memberId, m.id));
+        await tx.delete(productFavorite).where(eq(productFavorite.memberId, m.id));
         await tx.delete(pushSubscription).where(eq(pushSubscription.memberId, m.id));
         await tx
           .update(member)

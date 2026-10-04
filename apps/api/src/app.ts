@@ -41,6 +41,7 @@ import { importRoutes } from './modules/stats/imports';
 import { integrityRoutes } from './modules/admin/integrity';
 import { selfRoutes } from './modules/members/self';
 import { reviewRoutes } from './modules/preorders/reviews';
+import { favoriteRoutes } from './modules/preorders/favorites';
 import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 
@@ -104,6 +105,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(integrityRoutes, { db, config });
       await api.register(selfRoutes, { db, config });
       await api.register(reviewRoutes, { db, config });
+      await api.register(favoriteRoutes, { db, config });
       await api.register(seriesRoutes, { db, config });
       await api.register(preorderRoutes, { db, config });
       await api.register(pushRoutes, { db, config });

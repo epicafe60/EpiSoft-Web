@@ -62,3 +62,22 @@ test('a member sees their household page', async ({ page }) => {
     .click();
   await expect(page.getByRole('heading', { name: 'Mon foyer' })).toBeVisible();
 });
+
+test('a customer pins a product as favourite; it moves to the top and stays after a reload', async ({
+  page,
+}) => {
+  await login(page, USERS.customer);
+  await page.getByRole('link', { name: 'Boutique' }).first().click();
+  await page.getByRole('button', { name: `Mettre ${SEED.honey.name} en favori` }).click();
+  const favorites = page.getByRole('region', { name: 'Mes favoris' });
+  await expect(favorites).toContainText(SEED.honey.name);
+  await expect(
+    page.getByRole('button', { name: `Retirer ${SEED.honey.name} des favoris` }),
+  ).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Mes favoris' })).toContainText(SEED.honey.name);
+
+  await page.getByRole('button', { name: `Retirer ${SEED.honey.name} des favoris` }).click();
+  await expect(page.getByRole('region', { name: 'Mes favoris' })).toHaveCount(0);
+});

@@ -1451,3 +1451,18 @@ export const integrityAck = app.table(
   },
   (t) => [primaryKey({ columns: [t.checkId, t.ref] })],
 );
+
+/** Products a member keeps at hand in the shop window. */
+export const productFavorite = app.table(
+  'product_favorite',
+  {
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.memberId, t.productId] })],
+);

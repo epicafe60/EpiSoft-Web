@@ -120,6 +120,13 @@
       "when": 1791116269027,
       "tag": "0016_integrity_ack",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791120686571,
+      "tag": "0017_product_favorite",
+      "breakpoints": true
     }
   ]
 }
