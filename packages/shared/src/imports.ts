@@ -5,7 +5,7 @@ export type ImportKind = (typeof IMPORT_KINDS)[number];
 
 /** Splits a CSV text into rows. Delimiter (; , or tab) is detected on the first line; quotes, BOM and CRLF are handled. */
 export function parseImportCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, '');
+  const src = text.replace(/^\uFEFF/, '');
   const first = src.split(/\r?\n/, 1)[0] ?? '';
   const count = (c: string) => first.split(c).length - 1;
   const delimiter = [';', '\t', ','].sort((a, b) => count(b) - count(a))[0]!;
@@ -44,7 +44,7 @@ export function parseImportCsv(text: string): string[][] {
 export function parseFrNumber(raw: string | undefined | null): number | null {
   if (raw === undefined || raw === null) return null;
   const s = raw
-    .replace(/[\s €%]/g, '')
+    .replace(/[\s\u00A0\u202F\u20AC%]/g, '')
     .replace(/\.(?=\d{3}(\D|$))/g, '')
     .replace(',', '.');
   if (s === '' || !/^-?\d+(\.\d+)?$/.test(s)) return null;

@@ -58,7 +58,6 @@ const addDays = (iso: string, n: number) => {
 export function ShopPage() {
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
-  const cart = useCart();
   const { data, error, isPending } = useQuery({
     queryKey: ['shop-products', query],
     queryFn: () =>
