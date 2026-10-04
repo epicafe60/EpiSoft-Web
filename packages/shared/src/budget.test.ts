@@ -59,3 +59,14 @@ describe('budgetSchema', () => {
     );
   });
 });
+
+describe('pro rata', () => {
+  it('measures the elapsed share of a fiscal year', async () => {
+    const { elapsedPercent, proRataCents } = await import('./budget');
+    expect(elapsedPercent('2026-01-01', '2026-12-31', '2025-12-31')).toBe(0);
+    expect(elapsedPercent('2026-01-01', '2026-12-31', '2026-07-02')).toBe(50);
+    expect(elapsedPercent('2026-01-01', '2026-12-31', '2026-12-31')).toBe(100);
+    expect(elapsedPercent('2026-01-01', '2026-12-31', '2027-03-01')).toBe(100);
+    expect(proRataCents(120_000, 25)).toBe(30_000);
+  });
+});

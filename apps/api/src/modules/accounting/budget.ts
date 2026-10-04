@@ -7,10 +7,13 @@ import {
   budgetSchema,
   centsToDecimal,
   decimalToCents,
+  elapsedPercent,
+  proRataCents,
   type BudgetComparison,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { toParisDate } from '../../lib/dates';
 import { badRequest, notFound } from '../../lib/problem';
 import { accountBalances } from './service';
 
@@ -41,6 +44,7 @@ export const budgetRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, req.params.id));
     if (!fy) throw notFound('Exercice introuvable.');
     const c = await budgetFor(db, fy.id);
+    const elapsed = elapsedPercent(fy.startDate, fy.endDate, toParisDate(new Date()));
     const fmt = (r: (typeof c.expenses)[number]) => ({
       number: r.number,
       label: r.label,
@@ -48,8 +52,10 @@ export const budgetRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       actual: centsToDecimal(r.actualCents),
       variance: centsToDecimal(r.varianceCents),
       percent: r.percent,
+      expectedByNow: centsToDecimal(proRataCents(r.budgetCents, elapsed)),
     });
     return {
+      elapsedPercent: elapsed,
       expenses: c.expenses.map(fmt),
       income: c.income.map(fmt),
       budgetResult: centsToDecimal(c.budgetResultCents),

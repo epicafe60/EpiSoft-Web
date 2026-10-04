@@ -95,3 +95,21 @@ export const budgetSchema = z.object({
     )
     .max(500),
 });
+
+/**
+ * Share of the fiscal year elapsed at `today`, in whole percent, clamped to 0..100.
+ * Used to read the budget pro rata temporis ("what should be spent by now").
+ */
+export function elapsedPercent(start: string, end: string, today: string): number {
+  const day = 86_400_000;
+  const s = Date.parse(`${start}T00:00:00Z`);
+  const e = Date.parse(`${end}T00:00:00Z`);
+  const t = Date.parse(`${today}T00:00:00Z`);
+  const total = (e - s) / day + 1;
+  const done = Math.min(Math.max((t - s) / day + 1, 0), total);
+  return Math.round((done / total) * 100);
+}
+
+/** Budget share expected by now, in cents (linear over the year). */
+export const proRataCents = (budgetCents: number, elapsedPct: number): number =>
+  Math.round((budgetCents * elapsedPct) / 100);

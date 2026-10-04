@@ -18,7 +18,9 @@ async function resetAccounting(db: Db) {
     app.invoice_receipt, app.supplier_invoice, app.number_counter cascade`);
   await db.execute(sql`delete from app.supplier`);
   // Supplier accounts (401001…) are created per supplier: leave none behind for the next file.
-  await db.execute(sql`delete from app.account where number ~ '^401[0-9]{3}$' and number <> '401000'`);
+  await db.execute(
+    sql`delete from app.account where number ~ '^401[0-9]{3}$' and number <> '401000'`,
+  );
 }
 
 beforeEach(async () => {
@@ -417,6 +419,8 @@ describe('budget (R-CPT-20)', () => {
       percent: 26,
     });
     expect(b.budgetResult).toBe('-140.00');
+    expect(b.elapsedPercent).toBeGreaterThanOrEqual(0);
+    expect(Number(b.expenses[0].expectedByNow)).toBeLessThanOrEqual(100);
     expect(b.actualResult).toBe('-25.50');
 
     const rep = (await get(`/api/v1/reports/budget?fiscalYearId=${fy}`)).json();

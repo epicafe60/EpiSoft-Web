@@ -16,8 +16,10 @@ interface Row {
   actual: string;
   variance: string;
   percent: number | null;
+  expectedByNow: string;
 }
 interface BudgetData {
+  elapsedPercent: number;
   expenses: Row[];
   income: Row[];
   budgetResult: string;
@@ -72,12 +74,19 @@ export function BudgetPage() {
   const extra = (side: '6' | '7'): Row[] =>
     added
       .filter((a) => a.number.startsWith(side))
-      .map((a) => ({ ...a, budget: '0.00', actual: '0.00', variance: '0.00', percent: null }));
+      .map((a) => ({
+        ...a,
+        budget: '0.00',
+        actual: '0.00',
+        variance: '0.00',
+        percent: null,
+        expectedByNow: '0.00',
+      }));
 
   const section = (title: string, rows: Row[]) => (
     <>
       <tr className="bg-muted/50">
-        <td colSpan={5} className="font-medium">
+        <td colSpan={6} className="font-medium">
           {title}
         </td>
       </tr>
@@ -95,6 +104,7 @@ export function BudgetPage() {
               onChange={(e) => setAmounts({ ...amounts, [r.number]: e.target.value })}
             />
           </td>
+          <td className="text-right tabular-nums text-muted-foreground">{euro(r.expectedByNow)}</td>
           <td className="text-right tabular-nums">{euro(r.actual)}</td>
           <td className="text-right tabular-nums">{euro(r.variance)}</td>
           <td className="text-right tabular-nums text-muted-foreground">
@@ -132,6 +142,7 @@ export function BudgetPage() {
                 <tr>
                   <th>Compte</th>
                   <th className="text-right">Budget</th>
+                  <th className="text-right">Prévu à ce jour ({budget.data.elapsedPercent} %)</th>
                   <th className="text-right">Réalisé</th>
                   <th className="text-right">Écart</th>
                   <th className="text-right">%</th>
@@ -141,7 +152,7 @@ export function BudgetPage() {
                 {section('Charges', [...budget.data.expenses, ...extra('6')])}
                 {section('Produits', [...budget.data.income, ...extra('7')])}
                 <tr className="font-medium">
-                  <td colSpan={2}>Résultat</td>
+                  <td colSpan={3}>Résultat</td>
                   <td className="text-right tabular-nums">{euro(budget.data.actualResult)}</td>
                   <td colSpan={2} className="text-right text-muted-foreground">
                     prévu {euro(budget.data.budgetResult)}
