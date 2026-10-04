@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import type { FastifyBaseLogger } from 'fastify';
 import { emailOutbox, type Db, type DbOrTx } from '@episoft/db';
 import type { Config } from '../config';
+import { loadSettings } from '../modules/admin/settings-store';
 
 // E-mail outbox (§4.16): e-mails are written in the business transaction, then sent
 // by a background loop with retries. pg-boss (spec §7.2) can replace the loop in a later lot.
@@ -22,8 +23,20 @@ export interface OutgoingEmail {
   attachments?: EmailAttachment[];
 }
 
+export const EMAIL_DISABLED_NOTE = 'Envoi des courriels désactivé dans l’administration.';
+
+/**
+ * Writes the e-mail in the outbox. While sending is switched off (Administration › Paramètres)
+ * it is recorded as FAILED with the reason instead, so nothing leaves the server and nobody
+ * receives a stale message when sending is switched back on.
+ */
 export async function queueEmail(db: DbOrTx, email: OutgoingEmail): Promise<void> {
-  await db.insert(emailOutbox).values({ ...email, attachments: email.attachments ?? null });
+  const enabled = (await loadSettings(db))['email.enabled'].enabled;
+  await db.insert(emailOutbox).values({
+    ...email,
+    attachments: email.attachments ?? null,
+    ...(enabled ? {} : { status: 'FAILED' as const, lastError: EMAIL_DISABLED_NOTE }),
+  });
 }
 
 export function pdfAttachment(filename: string, pdf: Buffer): EmailAttachment {
@@ -48,6 +61,14 @@ export function startMailer(db: Db, config: Config, log: FastifyBaseLogger): () 
     running = true;
     try {
       await db.transaction(async (tx) => {
+        // Switched off: what was waiting is dropped (not sent later, when it would be stale).
+        if (!(await loadSettings(tx))['email.enabled'].enabled) {
+          await tx
+            .update(emailOutbox)
+            .set({ status: 'FAILED', lastError: EMAIL_DISABLED_NOTE })
+            .where(eq(emailOutbox.status, 'PENDING'));
+          return;
+        }
         const batch = await tx
           .select()
           .from(emailOutbox)

@@ -2,11 +2,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Db } from '@episoft/db';
-import {
-  PAYMENT_METHOD_LABELS,
-  suggestOrderQtyMilli,
-  type PaymentMethod,
-} from '@episoft/shared';
+import { PAYMENT_METHOD_LABELS, suggestOrderQtyMilli, type PaymentMethod } from '@episoft/shared';
 import type { Config } from '../../config';
 import { reportXlsx, type ReportTable } from '../../lib/report-output';
 
@@ -395,7 +391,12 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           {
             bold: true,
             cells: {
-              supplier: 'Total', code: '', name: '', stock: '', onOrder: '', qty: '',
+              supplier: 'Total',
+              code: '',
+              name: '',
+              stock: '',
+              onOrder: '',
+              qty: '',
               cost: eur(lines.reduce((t, x) => t + x.costCents, 0)),
             },
           },

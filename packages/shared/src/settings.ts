@@ -60,6 +60,10 @@ export const settingSchemas = {
     enabled: z.boolean(),
     valueKind: z.enum(['PRICE', 'WEIGHT']),
   }),
+  /** Online shop on/off: off, members can no longer browse or order (orders already placed stay). */
+  'shop.enabled': z.object({ enabled: z.boolean() }),
+  /** E-mail sending on/off: off, nothing leaves the server (the outbox keeps a trace). */
+  'email.enabled': z.object({ enabled: z.boolean() }),
   /** R-ADH-04: e-mail reminder before a membership ends. */
   'membership.reminder': z.object({
     enabled: z.boolean(),
@@ -136,6 +140,8 @@ export const SETTING_DEFAULTS: Settings = {
     membershipExpiredBlocking: false,
   },
   'pos.treasurerEmail': { email: null },
+  'shop.enabled': { enabled: true },
+  'email.enabled': { enabled: true },
   'membership.reminder': { enabled: false, daysBefore: 15 },
   'stock.expiryAlert': { enabled: true, daysBefore: 7 },
   'wallet.lowReminder': { enabled: false, threshold: '5.00', everyDays: 30 },

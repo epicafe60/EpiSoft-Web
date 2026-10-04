@@ -59,6 +59,20 @@ const NO_SHELF = 'none';
 
 /** The customer's shop window and cart (R-PRE-01). */
 export function ShopPage() {
+  const me = useMe();
+  if (me.shopEnabled === false)
+    return (
+      <>
+        <PageHeader title="Boutique" />
+        <Alert variant="info">
+          La boutique en ligne est fermée pour le moment. Revenez plus tard, ou passez à l’épicerie.
+        </Alert>
+      </>
+    );
+  return <ShopContent />;
+}
+
+function ShopContent() {
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
   const { data, error, isPending } = useQuery({

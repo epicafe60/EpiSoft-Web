@@ -484,10 +484,7 @@ export function SalePage() {
                   )}
                 </p>
                 {alert ? (
-                  <p
-                    className="mt-1 text-sm font-medium text-warning"
-                    data-testid="wallet-alert"
-                  >
+                  <p className="mt-1 text-sm font-medium text-warning" data-testid="wallet-alert">
                     {alert === 'NEGATIVE'
                       ? 'Cagnotte négative : proposez un versement.'
                       : alert === 'INSUFFICIENT'

@@ -140,7 +140,12 @@ describe('invoices (R-FAC-01)', () => {
   };
   it('accepts a zero VAT and normalises amounts', () => {
     const r = invoiceSchema.parse(base);
-    expect(r).toMatchObject({ totalExcl: '100.00', totalVat: '0.00', receiptIds: [], comment: null });
+    expect(r).toMatchObject({
+      totalExcl: '100.00',
+      totalVat: '0.00',
+      receiptIds: [],
+      comment: null,
+    });
   });
   it('requires a piece number', () => {
     expect(invoiceSchema.safeParse({ ...base, pieceRef: ' ' }).success).toBe(false);
@@ -151,8 +156,12 @@ describe('catalogue administration', () => {
   it('universe code is one digit, category code two', () => {
     expect(universeSchema.safeParse({ code: '1', name: 'Épicerie', sort: 0 }).success).toBe(true);
     expect(universeSchema.safeParse({ code: '12', name: 'x', sort: 0 }).success).toBe(false);
-    expect(categorySchema.safeParse({ universeId: id(), code: '12', name: 'x', sort: 0 }).success).toBe(true);
-    expect(categorySchema.safeParse({ universeId: id(), code: '1', name: 'x', sort: 0 }).success).toBe(false);
+    expect(
+      categorySchema.safeParse({ universeId: id(), code: '12', name: 'x', sort: 0 }).success,
+    ).toBe(true);
+    expect(
+      categorySchema.safeParse({ universeId: id(), code: '1', name: 'x', sort: 0 }).success,
+    ).toBe(false);
   });
   it('bulk prices accept only the legal VAT rates', () => {
     const row = (vatRate: string) => ({

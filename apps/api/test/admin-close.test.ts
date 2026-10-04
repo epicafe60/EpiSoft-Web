@@ -8,6 +8,7 @@ let t: Awaited<ReturnType<typeof setupTestApp>>;
 let admin: Record<string, string>;
 beforeAll(async () => {
   t = await setupTestApp();
+  await t.reset();
   const u = await createUser(t.db, { roles: ['ADMIN'] });
   admin = await login(t.app, u.username!);
 });

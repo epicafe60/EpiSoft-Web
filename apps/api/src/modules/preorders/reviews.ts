@@ -6,6 +6,7 @@ import { ratingSummary, reviewAuthor, reviewSchema } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { notFound } from '../../lib/problem';
+import { shopOpen } from '../../lib/shop-gate';
 
 const idParams = z.object({ id: z.string().uuid() });
 
@@ -17,7 +18,7 @@ export const reviewRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   const moderators = { preHandler: app.requireRoles('PRODUITS') };
 
   /** Average rating and count per product, approved reviews only. */
-  app.get('/shop/ratings', async () => {
+  app.get('/shop/ratings', { preHandler: shopOpen(db) }, async () => {
     const res = await db.execute(sql`
       select product_id, round(avg(rating)::numeric, 1)::float as average, count(*)::int as count
       from app.product_review where status = 'APPROVED' group by 1`);
@@ -29,47 +30,51 @@ export const reviewRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     );
   });
 
-  app.get('/shop/products/:id/reviews', { schema: { params: idParams } }, async (req) => {
-    const me = req.user!.id;
-    const rows = await db
-      .select({
-        id: productReview.id,
-        rating: productReview.rating,
-        comment: productReview.comment,
-        status: productReview.status,
-        createdAt: productReview.createdAt,
-        memberId: productReview.memberId,
-        firstName: member.firstName,
-        lastName: member.lastName,
-      })
-      .from(productReview)
-      .innerJoin(member, eq(member.id, productReview.memberId))
-      .where(
-        and(
-          eq(productReview.productId, req.params.id),
-          or(eq(productReview.status, 'APPROVED'), eq(productReview.memberId, me)),
-        ),
-      )
-      .orderBy(desc(productReview.createdAt));
-    const published = rows.filter((r) => r.status === 'APPROVED');
-    return {
-      ...ratingSummary(published.map((r) => r.rating)),
-      reviews: rows.map((r) => ({
-        id: r.id,
-        rating: r.rating,
-        comment: r.comment,
-        status: r.status,
-        createdAt: r.createdAt.toISOString(),
-        author: reviewAuthor(r.firstName, r.lastName),
-        mine: r.memberId === me,
-      })),
-    };
-  });
+  app.get(
+    '/shop/products/:id/reviews',
+    { preHandler: shopOpen(db), schema: { params: idParams } },
+    async (req) => {
+      const me = req.user!.id;
+      const rows = await db
+        .select({
+          id: productReview.id,
+          rating: productReview.rating,
+          comment: productReview.comment,
+          status: productReview.status,
+          createdAt: productReview.createdAt,
+          memberId: productReview.memberId,
+          firstName: member.firstName,
+          lastName: member.lastName,
+        })
+        .from(productReview)
+        .innerJoin(member, eq(member.id, productReview.memberId))
+        .where(
+          and(
+            eq(productReview.productId, req.params.id),
+            or(eq(productReview.status, 'APPROVED'), eq(productReview.memberId, me)),
+          ),
+        )
+        .orderBy(desc(productReview.createdAt));
+      const published = rows.filter((r) => r.status === 'APPROVED');
+      return {
+        ...ratingSummary(published.map((r) => r.rating)),
+        reviews: rows.map((r) => ({
+          id: r.id,
+          rating: r.rating,
+          comment: r.comment,
+          status: r.status,
+          createdAt: r.createdAt.toISOString(),
+          author: reviewAuthor(r.firstName, r.lastName),
+          mine: r.memberId === me,
+        })),
+      };
+    },
+  );
 
   /** One review per member and product; editing it sends it back to moderation. */
   app.put(
     '/shop/products/:id/review',
-    { schema: { params: idParams, body: reviewSchema } },
+    { preHandler: shopOpen(db), schema: { params: idParams, body: reviewSchema } },
     async (req) =>
       db.transaction(async (tx) => {
         const [p] = await tx

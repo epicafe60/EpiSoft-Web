@@ -29,6 +29,7 @@ import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/problem';
+import { shopOpen } from '../../lib/shop-gate';
 import { nextNumber } from '../pos/numbers';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
@@ -114,6 +115,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
   app.get(
     '/shop/products',
     {
+      preHandler: shopOpen(db),
       schema: {
         querystring: z.object({
           q: z.string().trim().max(60).optional(),
@@ -151,69 +153,73 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
   );
 
   /** R-PRE-01: the signed-in member orders for themselves; a volunteer may order for a member. */
-  app.post('/preorders', { schema: { body: preorderSchema } }, async (req) => {
-    const b = req.body;
-    const user = req.user!;
-    if (b.memberId && b.memberId !== user.id && !canOrderFor(user.roles)) throw forbidden();
-    const today = toParisDate(new Date());
-    if (!pickupDateValid(b.pickupDate, today))
-      throw badRequest('La date de retrait ne peut pas être passée.');
-    return db.transaction(async (tx) => {
-      const owner = await tx.query.member.findFirst({
-        where: eq(member.id, b.memberId ?? user.id),
-      });
-      if (!owner) throw notFound('Membre introuvable.');
-      const lines = mergeCartLines(b.lines);
-      const products = await tx
-        .select()
-        .from(product)
-        .where(
-          and(
-            ORDERABLE,
-            inArray(
-              product.id,
-              lines.map((l) => l.productId),
+  app.post(
+    '/preorders',
+    { preHandler: shopOpen(db), schema: { body: preorderSchema } },
+    async (req) => {
+      const b = req.body;
+      const user = req.user!;
+      if (b.memberId && b.memberId !== user.id && !canOrderFor(user.roles)) throw forbidden();
+      const today = toParisDate(new Date());
+      if (!pickupDateValid(b.pickupDate, today))
+        throw badRequest('La date de retrait ne peut pas être passée.');
+      return db.transaction(async (tx) => {
+        const owner = await tx.query.member.findFirst({
+          where: eq(member.id, b.memberId ?? user.id),
+        });
+        if (!owner) throw notFound('Membre introuvable.');
+        const lines = mergeCartLines(b.lines);
+        const products = await tx
+          .select()
+          .from(product)
+          .where(
+            and(
+              ORDERABLE,
+              inArray(
+                product.id,
+                lines.map((l) => l.productId),
+              ),
             ),
-          ),
+          );
+        const byId = new Map(products.map((p) => [p.id, p]));
+        if (lines.some((l) => !byId.has(l.productId)))
+          throw badRequest('Certains produits ne sont plus disponibles à la commande.');
+        const year = Number(today.slice(0, 4));
+        const number = formatDocNumber('PC', year, await nextNumber(tx, `preorder:${year}`));
+        const [o] = await tx
+          .insert(preorder)
+          .values({
+            number,
+            memberId: owner.id,
+            householdId: owner.householdId,
+            pickupDate: b.pickupDate,
+            comment: b.comment || null,
+            createdBy: user.id,
+          })
+          .returning();
+        await tx.insert(preorderLine).values(
+          lines.map((l, i) => {
+            const p = byId.get(l.productId)!;
+            return {
+              preorderId: o!.id,
+              lineNo: i + 1,
+              productId: p.id,
+              label: p.name,
+              qty: l.qty,
+              unitPrice: p.salePrice,
+            };
+          }),
         );
-      const byId = new Map(products.map((p) => [p.id, p]));
-      if (lines.some((l) => !byId.has(l.productId)))
-        throw badRequest('Certains produits ne sont plus disponibles à la commande.');
-      const year = Number(today.slice(0, 4));
-      const number = formatDocNumber('PC', year, await nextNumber(tx, `preorder:${year}`));
-      const [o] = await tx
-        .insert(preorder)
-        .values({
-          number,
-          memberId: owner.id,
-          householdId: owner.householdId,
-          pickupDate: b.pickupDate,
-          comment: b.comment || null,
-          createdBy: user.id,
-        })
-        .returning();
-      await tx.insert(preorderLine).values(
-        lines.map((l, i) => {
-          const p = byId.get(l.productId)!;
-          return {
-            preorderId: o!.id,
-            lineNo: i + 1,
-            productId: p.id,
-            label: p.name,
-            qty: l.qty,
-            unitPrice: p.salePrice,
-          };
-        }),
-      );
-      await audit(tx, req, {
-        action: 'preorder.create',
-        entity: 'preorder',
-        entityId: o!.id,
-        after: { number, member: owner.number, lines: lines.length },
+        await audit(tx, req, {
+          action: 'preorder.create',
+          entity: 'preorder',
+          entityId: o!.id,
+          after: { number, member: owner.number, lines: lines.length },
+        });
+        return { id: o!.id, number };
       });
-      return { id: o!.id, number };
-    });
-  });
+    },
+  );
 
   app.get('/preorders/mine', async (req) => {
     const rows = await db

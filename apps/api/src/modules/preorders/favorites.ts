@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { product, productFavorite, type Db } from '@episoft/db';
 import type { Config } from '../../config';
 import { notFound } from '../../lib/problem';
+import { shopOpen } from '../../lib/shop-gate';
 
 const idParams = z.object({ id: z.string().uuid() });
 
@@ -12,7 +13,7 @@ export const favoriteRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
   app,
   { db },
 ) => {
-  app.get('/shop/favorites', async (req) => {
+  app.get('/shop/favorites', { preHandler: shopOpen(db) }, async (req) => {
     const rows = await db
       .select({ id: productFavorite.productId })
       .from(productFavorite)
@@ -20,28 +21,36 @@ export const favoriteRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
     return rows.map((r) => r.id);
   });
 
-  app.put('/shop/favorites/:id', { schema: { params: idParams } }, async (req) => {
-    const [p] = await db
-      .select({ id: product.id })
-      .from(product)
-      .where(eq(product.id, req.params.id));
-    if (!p) throw notFound('Produit introuvable.');
-    await db
-      .insert(productFavorite)
-      .values({ memberId: req.user!.id, productId: p.id })
-      .onConflictDoNothing();
-    return { ok: true };
-  });
+  app.put(
+    '/shop/favorites/:id',
+    { preHandler: shopOpen(db), schema: { params: idParams } },
+    async (req) => {
+      const [p] = await db
+        .select({ id: product.id })
+        .from(product)
+        .where(eq(product.id, req.params.id));
+      if (!p) throw notFound('Produit introuvable.');
+      await db
+        .insert(productFavorite)
+        .values({ memberId: req.user!.id, productId: p.id })
+        .onConflictDoNothing();
+      return { ok: true };
+    },
+  );
 
-  app.delete('/shop/favorites/:id', { schema: { params: idParams } }, async (req) => {
-    await db
-      .delete(productFavorite)
-      .where(
-        and(
-          eq(productFavorite.memberId, req.user!.id),
-          eq(productFavorite.productId, req.params.id),
-        ),
-      );
-    return { ok: true };
-  });
+  app.delete(
+    '/shop/favorites/:id',
+    { preHandler: shopOpen(db), schema: { params: idParams } },
+    async (req) => {
+      await db
+        .delete(productFavorite)
+        .where(
+          and(
+            eq(productFavorite.memberId, req.user!.id),
+            eq(productFavorite.productId, req.params.id),
+          ),
+        );
+      return { ok: true };
+    },
+  );
 };

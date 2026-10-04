@@ -17,6 +17,7 @@ import { HttpProblem, badRequest } from '../../lib/problem';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { hashPassword, hashToken, newToken, verifyDummy, verifyPassword } from '../../lib/tokens';
 import { canLogIn } from '../../plugins/auth';
+import { loadSettings } from '../admin/settings-store';
 import type { DbOrTx } from '@episoft/db';
 
 const INVALID_CREDENTIALS = 'Identifiant ou mot de passe incorrect.';
@@ -90,6 +91,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       username: u.username,
       roles: u.roles,
       impersonator: u.impersonator,
+      shopEnabled: (await loadSettings(db))['shop.enabled'].enabled,
     };
   });
 

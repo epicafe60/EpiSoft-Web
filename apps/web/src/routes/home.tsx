@@ -13,16 +13,18 @@ export function HomePage() {
   return (
     <>
       <PageHeader title={`Bonjour ${me.firstName}`} description="Choisissez un module." />
-      <Link to="/boutique" className="mb-4 block rounded-lg focus-visible:outline-2">
-        <Card className="transition-colors hover:border-primary/50 hover:bg-accent/40">
-          <CardHeader>
-            <CardTitle className="text-base">Boutique : commander pour le retrait</CardTitle>
-            <CardDescription>
-              Choisissez vos produits, validez votre panier, réglez au retrait à l’épicerie.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </Link>
+      {me.shopEnabled !== false ? (
+        <Link to="/boutique" className="mb-4 block rounded-lg focus-visible:outline-2">
+          <Card className="transition-colors hover:border-primary/50 hover:bg-accent/40">
+            <CardHeader>
+              <CardTitle className="text-base">Boutique : commander pour le retrait</CardTitle>
+              <CardDescription>
+                Choisissez vos produits, validez votre panier, réglez au retrait à l’épicerie.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+      ) : null}
       {modules.length === 0 ? (
         <Alert variant="info">
           Aucun rôle ne vous est attribué pour l’instant. Un administrateur peut vous en donner

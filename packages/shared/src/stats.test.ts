@@ -75,6 +75,8 @@ describe('suggestOrderQtyMilli', () => {
   });
   it('rounds up and guards a zero-day period', () => {
     expect(suggestOrderQtyMilli({ ...base, soldMilli: 10, periodDays: 3 })).toBe(100);
-    expect(suggestOrderQtyMilli({ ...base, soldMilli: 1000, periodDays: 0, targetDays: 1 })).toBe(1000);
+    expect(suggestOrderQtyMilli({ ...base, soldMilli: 1000, periodDays: 0, targetDays: 1 })).toBe(
+      1000,
+    );
   });
 });

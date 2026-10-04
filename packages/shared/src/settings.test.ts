@@ -19,16 +19,24 @@ describe('settings', () => {
 
   it('accounting accounts need 6 digits', () => {
     const ok = settingSchemas['accounting.accounts'];
-    expect(ok.safeParse({ ...SETTING_DEFAULTS['accounting.accounts'], sales: '707000' }).success).toBe(true);
+    expect(
+      ok.safeParse({ ...SETTING_DEFAULTS['accounting.accounts'], sales: '707000' }).success,
+    ).toBe(true);
     for (const bad of ['70700', '7070000', 'abcdef', '']) {
-      expect(ok.safeParse({ ...SETTING_DEFAULTS['accounting.accounts'], sales: bad }).success).toBe(false);
+      expect(ok.safeParse({ ...SETTING_DEFAULTS['accounting.accounts'], sales: bad }).success).toBe(
+        false,
+      );
     }
   });
 
   it('normalises amounts and refuses a negative overdraft (Q4)', () => {
-    expect(settingSchemas['pos.defaultFloat'].parse({ amount: '50,5' })).toEqual({ amount: '50.50' });
+    expect(settingSchemas['pos.defaultFloat'].parse({ amount: '50,5' })).toEqual({
+      amount: '50.50',
+    });
     expect(settingSchemas['wallet.overdraftLimit'].safeParse({ amount: '-1' }).success).toBe(false);
-    expect(settingSchemas['wallet.overdraftLimit'].parse({ amount: '20' })).toEqual({ amount: '20.00' });
+    expect(settingSchemas['wallet.overdraftLimit'].parse({ amount: '20' })).toEqual({
+      amount: '20.00',
+    });
     expect(settingSchemas['pos.defaultFloat'].safeParse({ amount: 'abc' }).success).toBe(false);
   });
 
@@ -50,10 +58,18 @@ describe('settings', () => {
   });
 
   it('bounds the numeric settings', () => {
-    expect(settingSchemas['membership.reminder'].safeParse({ enabled: true, daysBefore: 0 }).success).toBe(false);
-    expect(settingSchemas['membership.reminder'].safeParse({ enabled: true, daysBefore: 61 }).success).toBe(false);
-    expect(settingSchemas['catalog.pricing'].safeParse({ targetMarkupPct: 96, rounding: 5 }).success).toBe(false);
-    expect(settingSchemas['catalog.pricing'].safeParse({ targetMarkupPct: 25, rounding: 2 }).success).toBe(false);
+    expect(
+      settingSchemas['membership.reminder'].safeParse({ enabled: true, daysBefore: 0 }).success,
+    ).toBe(false);
+    expect(
+      settingSchemas['membership.reminder'].safeParse({ enabled: true, daysBefore: 61 }).success,
+    ).toBe(false);
+    expect(
+      settingSchemas['catalog.pricing'].safeParse({ targetMarkupPct: 96, rounding: 5 }).success,
+    ).toBe(false);
+    expect(
+      settingSchemas['catalog.pricing'].safeParse({ targetMarkupPct: 25, rounding: 2 }).success,
+    ).toBe(false);
     expect(settingSchemas['labels.layout'].safeParse({ perPage: 30 }).success).toBe(false);
   });
 });

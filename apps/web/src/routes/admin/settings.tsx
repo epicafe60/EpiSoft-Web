@@ -267,6 +267,42 @@ export function SettingsPage() {
         </SettingCard>
 
         <SettingCard
+          settingKey="shop.enabled"
+          title="Boutique en ligne"
+          description="Désactivée, la boutique n’est plus accessible aux adhérents : plus de catalogue, de panier ni de commande. Les commandes déjà passées restent gérables par l’équipe."
+          initial={data['shop.enabled']}
+        >
+          {(v, set) => (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="shop-on"
+                checked={v.enabled}
+                onChange={(e) => set({ enabled: e.target.checked })}
+              />
+              <Label htmlFor="shop-on">Activer la boutique en ligne</Label>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="email.enabled"
+          title="Envoi des courriels"
+          description="Désactivé, aucun courriel ne part (liens de mot de passe, relances, alertes, rapports). Ils sont consignés comme non envoyés et ne partiront pas en différé à la réactivation. Les liens de mot de passe restent obtenables avec la commande d’invitation du serveur."
+          initial={data['email.enabled']}
+        >
+          {(v, set) => (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="email-on"
+                checked={v.enabled}
+                onChange={(e) => set({ enabled: e.target.checked })}
+              />
+              <Label htmlFor="email-on">Activer l’envoi des courriels</Label>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
           settingKey="membership.reminder"
           title="Relance d’adhésion"
           description="Courriel au foyer avant la fin de son adhésion, une seule fois (R-ADH-04)."

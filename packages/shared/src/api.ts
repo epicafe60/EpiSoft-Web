@@ -25,6 +25,8 @@ export interface Me {
   lastName: string;
   username: string;
   roles: RoleCode[];
+  /** False when an administrator closed the online shop (absent in older cached sessions = open). */
+  shopEnabled?: boolean;
   /** Set while an administrator acts as this user (impersonation). */
   impersonator?: { id: string; firstName: string; lastName: string } | null;
 }

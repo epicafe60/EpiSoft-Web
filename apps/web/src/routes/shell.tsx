@@ -50,9 +50,11 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
       <Link to="/" className={linkClass} activeOptions={{ exact: true }} onClick={onNavigate}>
         <Home /> Accueil
       </Link>
-      <Link to="/boutique" className={linkClass} onClick={onNavigate}>
-        <Store /> Boutique
-      </Link>
+      {me.shopEnabled !== false ? (
+        <Link to="/boutique" className={linkClass} onClick={onNavigate}>
+          <Store /> Boutique
+        </Link>
+      ) : null}
       <Link to="/mon-foyer" className={linkClass} onClick={onNavigate}>
         <Wallet /> Mon foyer
       </Link>
