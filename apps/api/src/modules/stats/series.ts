@@ -31,7 +31,16 @@ const reportQuery = period.extend({
   supplierId: z.string().uuid().optional(),
 });
 
-export const REPORT_KINDS = ['payments', 'purchases', 'movements', 'households'] as const;
+export const REPORT_KINDS = [
+  'payments',
+  'purchases',
+  'movements',
+  'households',
+  'dormant',
+  'hours',
+  'losses',
+  'forecast',
+] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 const cents = (v: unknown) => Math.round(Number(v ?? 0));
@@ -166,6 +175,153 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             },
           },
         ],
+      };
+    }
+    if (kind === 'dormant') {
+      // Stock tied up: products in stock that did not sell at all over the period.
+      const res = await db.execute(sql`
+        select p.code, p.name, p.stock_qty::text as qty,
+               round(p.stock_qty * coalesce(p.purchase_price_excl, 0) * 100)::bigint as cents,
+               (select to_char(max(s.sold_at at time zone 'Europe/Paris'), 'YYYY-MM-DD')
+                  from app.sale_line l join app.sale s on s.id = l.sale_id where l.product_id = p.id) as last_sale
+        from app.product p
+        where p.status in ('ACTIVE', 'ON_ORDER') and p.stock_qty > 0
+          and not exists (
+            select 1 from app.sale_line l join app.sale s on s.id = l.sale_id
+            where l.product_id = p.id and ${inRange('s.sold_at', from, to)})
+        order by 4 desc limit 500`);
+      const data = res.rows as Row[];
+      return {
+        title: 'Produits dormants',
+        subtitle: `${subtitle} — en stock, sans aucune vente`,
+        columns: [
+          { key: 'code', label: 'Code', type: 'text' },
+          { key: 'name', label: 'Produit', type: 'text', width: 3 },
+          { key: 'qty', label: 'Stock', type: 'text' },
+          { key: 'last', label: 'Dernière vente', type: 'text' },
+          { key: 'value', label: 'Valeur immobilisée HT', type: 'money' },
+        ],
+        rows: [
+          ...data.map((r) => ({
+            cells: {
+              code: String(r.code),
+              name: String(r.name),
+              qty: String(r.qty),
+              last: r.last_sale ? String(r.last_sale) : 'jamais',
+              value: eur(cents(r.cents)),
+            },
+          })),
+          {
+            bold: true,
+            cells: {
+              code: '',
+              name: 'Total',
+              qty: '',
+              last: '',
+              value: eur(data.reduce((t, r) => t + cents(r.cents), 0)),
+            },
+          },
+        ],
+      };
+    }
+    if (kind === 'hours') {
+      const res = await db.execute(sql`
+        select extract(isodow from s.sold_at at time zone 'Europe/Paris')::int as dow,
+               extract(hour from s.sold_at at time zone 'Europe/Paris')::int as hour,
+               count(*)::int as tickets, round(sum(s.total) * 100)::bigint as cents
+        from app.sale s
+        where s.cancels_sale_id is null and s.status = 'COMPLETED' and ${inRange('s.sold_at', from, to)}
+        group by 1, 2 order by 1, 2`);
+      const DAYS = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+      return {
+        title: 'Fréquentation par jour et heure',
+        subtitle,
+        columns: [
+          { key: 'day', label: 'Jour', type: 'text' },
+          { key: 'hour', label: 'Heure', type: 'text' },
+          { key: 'tickets', label: 'Tickets', type: 'text' },
+          { key: 'amount', label: 'CA TTC', type: 'money' },
+        ],
+        rows: (res.rows as Row[]).map((r) => ({
+          cells: {
+            day: DAYS[Number(r.dow)] ?? '',
+            hour: `${String(r.hour).padStart(2, '0')} h`,
+            tickets: String(r.tickets),
+            amount: eur(cents(r.cents)),
+          },
+        })),
+      };
+    }
+    if (kind === 'losses') {
+      const res = await db.execute(sql`
+        select p.code, p.name, sum(-m.qty)::text as qty,
+               round(sum(-m.qty * coalesce(m.unit_cost, p.purchase_price_excl, 0)) * 100)::bigint as cents
+        from app.stock_movement m join app.product p on p.id = m.product_id
+        where m.kind = 'LOSS' and ${inRange('m.at', from, to)}
+        group by p.id, p.code, p.name order by 4 desc`);
+      const data = res.rows as Row[];
+      return {
+        title: 'Pertes et casse',
+        subtitle,
+        columns: [
+          { key: 'code', label: 'Code', type: 'text' },
+          { key: 'name', label: 'Produit', type: 'text', width: 3 },
+          { key: 'qty', label: 'Quantité perdue', type: 'text' },
+          { key: 'value', label: 'Valeur HT', type: 'money' },
+        ],
+        rows: [
+          ...data.map((r) => ({
+            cells: {
+              code: String(r.code),
+              name: String(r.name),
+              qty: String(r.qty),
+              value: eur(cents(r.cents)),
+            },
+          })),
+          {
+            bold: true,
+            cells: {
+              code: '',
+              name: 'Total',
+              qty: '',
+              value: eur(data.reduce((t, r) => t + cents(r.cents), 0)),
+            },
+          },
+        ],
+      };
+    }
+    if (kind === 'forecast') {
+      // Days of cover: current stock over the average daily sales of the period.
+      const res = await db.execute(sql`
+        with sold as (
+          select l.product_id, sum(l.qty) as q
+          from app.sale_line l join app.sale s on s.id = l.sale_id
+          where ${inRange('s.sold_at', from, to)} group by 1)
+        select p.code, p.name, p.stock_qty::text as stock,
+               (sold.q / greatest(1, (${to}::date - ${from}::date + 1)))::numeric(12,3)::text as per_day,
+               case when sold.q > 0 then round(p.stock_qty / (sold.q / greatest(1, (${to}::date - ${from}::date + 1))))::int end as cover
+        from app.product p join sold on sold.product_id = p.id
+        where p.status in ('ACTIVE', 'ON_ORDER') and sold.q > 0
+        order by cover asc nulls last limit 300`);
+      return {
+        title: 'Autonomie de stock',
+        subtitle: `${subtitle} — jours de stock restants au rythme de vente de la période`,
+        columns: [
+          { key: 'code', label: 'Code', type: 'text' },
+          { key: 'name', label: 'Produit', type: 'text', width: 3 },
+          { key: 'stock', label: 'Stock', type: 'text' },
+          { key: 'perDay', label: 'Ventes / jour', type: 'text' },
+          { key: 'cover', label: 'Jours de stock', type: 'text' },
+        ],
+        rows: (res.rows as Row[]).map((r) => ({
+          cells: {
+            code: String(r.code),
+            name: String(r.name),
+            stock: String(r.stock),
+            perDay: String(r.per_day),
+            cover: r.cover === null ? '' : String(r.cover),
+          },
+        })),
       };
     }
     if (kind === 'movements') {

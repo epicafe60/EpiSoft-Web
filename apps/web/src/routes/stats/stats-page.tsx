@@ -21,6 +21,10 @@ const KINDS = [
   ['purchases', 'Achats'],
   ['movements', 'Mouvements de stock'],
   ['households', 'Ventes par foyer'],
+  ['dormant', 'Produits dormants'],
+  ['hours', 'Heures de pointe'],
+  ['losses', 'Pertes et casse'],
+  ['forecast', 'Autonomie de stock'],
 ] as const;
 type Kind = (typeof KINDS)[number][0];
 
@@ -402,7 +406,7 @@ export function StatsPage() {
       )}
     </Field>
   );
-  const needsGranularity = kind !== 'sales' && kind !== 'movements' && kind !== 'households';
+  const needsGranularity = kind === 'trend' || kind === 'payments' || kind === 'purchases';
 
   return (
     <div className="grid gap-4">

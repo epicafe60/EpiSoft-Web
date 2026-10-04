@@ -38,6 +38,8 @@ describe('pre-order ready e-mail (R-PRE-02)', () => {
     });
     expect(res.statusCode).toBe(200);
     const mails = await t.db.select().from(emailOutbox);
-    expect(mails.filter((m) => m.to === 'client@example.org' && m.subject.includes(number))).toHaveLength(1);
+    expect(
+      mails.filter((m) => m.to === 'client@example.org' && m.subject.includes(number)),
+    ).toHaveLength(1);
   });
 });

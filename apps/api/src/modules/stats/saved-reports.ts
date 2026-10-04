@@ -13,6 +13,10 @@ export const SAVED_REPORT_KINDS = [
   'purchases',
   'movements',
   'households',
+  'dormant',
+  'hours',
+  'losses',
+  'forecast',
 ] as const;
 
 const bodySchema = z.object({

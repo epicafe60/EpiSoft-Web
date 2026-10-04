@@ -75,7 +75,16 @@ describe('series and reports (R-STA-03)', () => {
     });
     expect(trend.statusCode).toBe(200);
     expect((trend.json() as { points: unknown[] }).points).toEqual([]);
-    for (const kind of ['payments', 'purchases', 'movements', 'households']) {
+    for (const kind of [
+      'payments',
+      'purchases',
+      'movements',
+      'households',
+      'dormant',
+      'hours',
+      'losses',
+      'forecast',
+    ]) {
       for (const format of ['json', 'xlsx']) {
         const res = await t.app.inject({
           url: `/api/v1/stats/report/${kind}?${range}&format=${format}`,
