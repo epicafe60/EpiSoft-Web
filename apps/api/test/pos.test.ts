@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { expectIntegrity } from './integrity-helper';
 import {
   householdBalance,
   household,
@@ -22,6 +23,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => expectIntegrity(t.db));
 
 type Headers = Record<string, string>;
 let headers: Headers;
@@ -49,6 +51,11 @@ async function addProduct(over: Partial<typeof product.$inferInsert> = {}, ean?:
     })
     .returning();
   if (ean) await t.db.insert(productBarcode).values({ ean, productId: p!.id });
+  // The cached stock always comes from movements: record the opening stock like the app does.
+  if (Number(p!.stockQty) !== 0)
+    await t.db
+      .insert(stockMovement)
+      .values({ productId: p!.id, qty: p!.stockQty, kind: 'INITIAL' });
   return p!;
 }
 
@@ -206,7 +213,9 @@ describe('sales (R-VTE-10, R-SYNC-02)', () => {
     const [b] = await push([op]);
     expect(b).toEqual(a);
     expect(await t.db.select().from(sale)).toHaveLength(1);
-    expect(await t.db.select().from(stockMovement)).toHaveLength(1);
+    expect(
+      await t.db.select().from(stockMovement).where(eq(stockMovement.kind, 'SALE')),
+    ).toHaveLength(1);
   });
 
   it('CA §4.4: 50 offline tickets pushed twice are recorded once, stock and cagnotte up to date', async () => {
@@ -684,5 +693,46 @@ describe('statistics on real sales (R-STA-03)', () => {
       await get(`/stats/report/${kind}?${range}`);
     const forecast = await get(`/stats/report/forecast?${range}`);
     expect(forecast.rows[0].cells).toMatchObject({ code: jam.code, perDay: '2.000', cover: '4' });
+  });
+});
+
+describe('integrity checks catch corrupted figures', () => {
+  it('flags a drifted stock cache, a missing cagnotte entry and a wrong ticket total', async () => {
+    const { runIntegrityChecks } = await import('../src/modules/admin/integrity');
+    const chips = await addProduct();
+    const { members } = await addHousehold(1, '20.00');
+    const op = saleOp(
+      [{ productId: chips.id, qty: '2', unitPrice: '2.50' }],
+      [{ method: 'WALLET', amount: '5.00' }],
+      { memberId: members[0]!.id },
+    );
+    expect((await push([op]))[0]!.status).toBe('OK');
+    const failing = async () =>
+      (await runIntegrityChecks(t.db)).checks
+        .filter((c) => c.count > 0 && c.severity === 'error')
+        .map((c) => c.id);
+    expect(await failing()).toEqual([]);
+
+    await t.db.execute(
+      sql`update app.product set stock_qty = stock_qty + 1 where id = ${chips.id}`,
+    );
+    await t.db.execute(sql`update app.sale set total = '6.00' where id = ${op.id}`);
+    await t.db.execute(sql`delete from app.wallet_entry where sale_id = ${op.id}`);
+    expect(await failing()).toEqual(
+      expect.arrayContaining(['STK-01', 'VTE-01', 'VTE-02', 'CAG-01']),
+    );
+
+    // Repair so the shared afterEach check passes.
+    await t.db.execute(
+      sql`update app.product set stock_qty = stock_qty - 1 where id = ${chips.id}`,
+    );
+    await t.db.execute(sql`update app.sale set total = '5.00' where id = ${op.id}`);
+    await t.db.insert(walletEntry).values({
+      householdId: (await t.db.select().from(sale).where(eq(sale.id, op.id)))[0]!.householdId!,
+      amount: '-5.00',
+      kind: 'PURCHASE',
+      saleId: op.id,
+    });
+    expect(await failing()).toEqual([]);
   });
 });

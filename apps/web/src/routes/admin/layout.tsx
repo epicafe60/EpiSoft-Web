@@ -10,6 +10,7 @@ const TABS = [
   { to: '/admin/caisse', label: 'Caisse' },
   { to: '/admin/journal', label: 'Journal d’audit' },
   { to: '/admin/connexions', label: 'Connexions' },
+  { to: '/admin/controles', label: 'Contrôles' },
 ] as const;
 
 export function AdminLayout() {

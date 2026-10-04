@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { expectIntegrity } from './integrity-helper';
 import { account, entry, entryLine, supplierInvoice, type Db } from '@episoft/db';
 import { createUser, login, setupTestApp } from './helpers';
 
@@ -9,6 +10,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => expectIntegrity(t.db));
 
 async function resetAccounting(db: Db) {
   await db.execute(sql`truncate app.reconciliation, app.bank_line, app.bank_statement, app.bank_rule, app.bank_account,

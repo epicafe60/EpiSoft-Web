@@ -15,6 +15,7 @@ export async function setupTestApp() {
     NODE_ENV: 'test',
     DATABASE_URL: inject('databaseUrl'),
     APP_URL: 'http://test.local',
+    AUTH_RATE_LIMIT_MAX: '100000',
   });
   const app = await buildApp(db, config);
   await app.ready();

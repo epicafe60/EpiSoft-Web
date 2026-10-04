@@ -42,6 +42,7 @@ import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
 import { ImportsPage } from './routes/stats/imports-page';
+import { IntegrityPage } from './routes/admin/integrity';
 import { MyHouseholdPage } from './routes/shop/household';
 import { ReviewsModerationPage } from './routes/catalog/reviews';
 import { ReportsPage } from './routes/compta/reports';
@@ -436,6 +437,11 @@ const adminAuditRoute = createRoute({
   path: '/journal',
   component: AuditPage,
 });
+const adminIntegrityRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/controles',
+  component: IntegrityPage,
+});
 const adminLoginsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/connexions',
@@ -508,6 +514,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAuditRoute,
       adminLoginsRoute,
+      adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,
     ]),

@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { expectIntegrity } from './integrity-helper';
 import {
   emailOutbox,
   household,
@@ -20,6 +21,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => expectIntegrity(t.db));
 beforeEach(async () => {
   await t.reset();
   await t.db.execute(sql`truncate app.wallet_entry, app.member_payment, app.membership cascade`);

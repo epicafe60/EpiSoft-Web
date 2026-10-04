@@ -42,3 +42,10 @@ test('trend chart, saved report and import wizard (R-STA-03/05, R-IMP-01)', asyn
   await page.getByRole('button', { name: "Appliquer l'import" }).click();
   await expect(page.getByText(/Import terminé : 1 créé/)).toBeVisible();
 });
+
+test('the administrator sees the automated integrity checks', async ({ page }) => {
+  await login(page, USERS.admin);
+  await page.goto('/admin/controles');
+  await expect(page.getByRole('list', { name: 'Contrôles' })).toContainText('STK-01');
+  await expect(page.getByText('Aucune anomalie de calcul')).toBeVisible();
+});
