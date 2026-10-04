@@ -65,6 +65,17 @@ export const settingSchemas = {
     enabled: z.boolean(),
     daysBefore: z.number().int().min(1).max(60),
   }),
+  /** R-STK-07: daily e-mail/push to the purchasing team about batches close to their date. */
+  'stock.expiryAlert': z.object({
+    enabled: z.boolean(),
+    daysBefore: z.number().int().min(1).max(60),
+  }),
+  /** R-CAG-06: reminder to a household whose cagnotte runs low, at most once per `everyDays`. */
+  'wallet.lowReminder': z.object({
+    enabled: z.boolean(),
+    threshold: amount.refine((s) => !s.startsWith('-') && s !== '0.00', 'Seuil positif attendu.'),
+    everyDays: z.number().int().min(7).max(365),
+  }),
   /** R-PRD-03 (open question Q2): target markup rate on the selling price, and rounding. */
   'catalog.pricing': z.object({
     targetMarkupPct: z.number().min(0).max(95),
@@ -126,6 +137,8 @@ export const SETTING_DEFAULTS: Settings = {
   },
   'pos.treasurerEmail': { email: null },
   'membership.reminder': { enabled: false, daysBefore: 15 },
+  'stock.expiryAlert': { enabled: true, daysBefore: 7 },
+  'wallet.lowReminder': { enabled: false, threshold: '5.00', everyDays: 30 },
   'accounting.accounts': { ...DEFAULT_ACCOUNTS },
   'catalog.pricing': { targetMarkupPct: 25, rounding: 5 },
   'labels.layout': { perPage: 24 },

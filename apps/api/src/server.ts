@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { startMailer } from './lib/mail';
 import { startReminderJob } from './modules/members/reminders';
 import { startIntegrityJob } from './modules/admin/integrity';
+import { startDailyDigestJob } from './modules/admin/digest';
 import { startInvoiceAlertJob } from './modules/supplies/invoices';
 
 loadEnv();
@@ -23,9 +24,10 @@ const app = await buildApp(db, config, {
       : { level: config.LOG_LEVEL },
 });
 const stopMailer = startMailer(db, config, app.log);
-const stopReminders = startReminderJob(db, app.log);
+const stopReminders = startReminderJob(db, app.log, config);
 const stopInvoiceAlerts = startInvoiceAlertJob(db, app.log);
 const stopIntegrity = startIntegrityJob(db, app.log);
+const stopDigest = startDailyDigestJob(db, config, app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} reçu, arrêt.`);
@@ -33,6 +35,7 @@ const shutdown = async (signal: string) => {
   stopReminders();
   stopInvoiceAlerts();
   stopIntegrity();
+  stopDigest();
   await app.close();
   await pool.end();
   process.exit(0);

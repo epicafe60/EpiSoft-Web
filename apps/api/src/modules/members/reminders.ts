@@ -2,7 +2,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { household, member, membershipReminder, type Db } from '@episoft/db';
 import { addDays } from '@episoft/shared';
+import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
+import { sendPush } from '../../lib/push';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { loadSettings } from '../admin/settings-store';
 
@@ -11,14 +13,19 @@ import { loadSettings } from '../admin/settings-store';
  * run was missed) and that have not renewed. Each membership is reminded once.
  * Returns the number of e-mails queued.
  */
-export async function sendMembershipReminders(db: Db, now = new Date()): Promise<number> {
+export async function sendMembershipReminders(
+  db: Db,
+  now = new Date(),
+  config?: Config,
+): Promise<number> {
   const settings = await loadSettings(db);
   const cfg = settings['membership.reminder'];
   if (!cfg.enabled) return 0;
   const today = toParisDate(now);
   const limit = addDays(today, cfg.daysBefore);
 
-  return db.transaction(async (tx) => {
+  const pushes: { memberId: string; end: string }[] = [];
+  const sent = await db.transaction(async (tx) => {
     // Latest membership of each household, ending between today and the limit, not reminded.
     const due = await tx.execute<{
       membership_id: string;
@@ -49,6 +56,11 @@ export async function sendMembershipReminders(db: Db, now = new Date()): Promise
                 sql`${member.status} <> 'ARCHIVED'`,
               ),
             });
+      const people = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(and(eq(member.householdId, d.household_id), sql`${member.status} <> 'ARCHIVED'`));
+      for (const p of people) pushes.push({ memberId: p.id, end: d.end_date });
       await tx
         .insert(membershipReminder)
         .values({ membershipId: d.membership_id, to: to?.email ?? null });
@@ -64,12 +76,21 @@ export async function sendMembershipReminders(db: Db, now = new Date()): Promise
     }
     return sent;
   });
+  // Push is best effort, after the commit, and also reaches households without an e-mail address.
+  if (config)
+    for (const p of pushes)
+      await sendPush(db, config, p.memberId, {
+        title: 'Épicafé',
+        body: `Votre adhésion se termine le ${p.end.split('-').reverse().join('/')}.`,
+        url: '/mon-foyer',
+      });
+  return sent;
 }
 
 /** Runs the reminders every hour; the job itself only acts once per membership. */
-export function startReminderJob(db: Db, log: FastifyBaseLogger): () => void {
+export function startReminderJob(db: Db, log: FastifyBaseLogger, config?: Config): () => void {
   const run = () =>
-    sendMembershipReminders(db)
+    sendMembershipReminders(db, new Date(), config)
       .then((n) => n && log.info({ n }, 'relances d’adhésion envoyées'))
       .catch((err) => log.error({ err }, 'relances d’adhésion'));
   const timer = setInterval(run, 3600_000);

@@ -300,6 +300,83 @@ export function SettingsPage() {
         </SettingCard>
 
         <SettingCard
+          settingKey="stock.expiryAlert"
+          title="Alerte dates limites"
+          description="Chaque matin, courriel et notification à l’équipe approvisionnements s’il y a des lots périmés ou proches de leur date (R-STK-07)."
+          initial={data['stock.expiryAlert']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="expiry-on"
+                  checked={v.enabled}
+                  onChange={(e) => set({ ...v, enabled: e.target.checked })}
+                />
+                <Label htmlFor="expiry-on">Envoyer l’alerte</Label>
+              </div>
+              <Field label="Prévenir à l’avance (jours)" error={errors.daysBefore}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="numeric"
+                    className="max-w-24"
+                    value={String(v.daysBefore)}
+                    onChange={(e) =>
+                      set({ ...v, daysBefore: Number(e.target.value.replace(/\D/g, '')) || 0 })
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="wallet.lowReminder"
+          title="Rappel de cagnotte basse"
+          description="Courriel au foyer (et notification) quand sa cagnotte passe sous le seuil, s’il a acheté récemment ; un rappel au plus par période (R-CAG-06)."
+          initial={data['wallet.lowReminder']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="low-on"
+                  checked={v.enabled}
+                  onChange={(e) => set({ ...v, enabled: e.target.checked })}
+                />
+                <Label htmlFor="low-on">Envoyer le rappel</Label>
+              </div>
+              <Field label="Seuil (€)" error={errors.threshold}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="decimal"
+                    className="max-w-28"
+                    value={v.threshold}
+                    onChange={(e) => set({ ...v, threshold: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Un rappel au plus tous les (jours)" error={errors.everyDays}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="numeric"
+                    className="max-w-24"
+                    value={String(v.everyDays)}
+                    onChange={(e) =>
+                      set({ ...v, everyDays: Number(e.target.value.replace(/\D/g, '')) || 0 })
+                    }
+                  />
+                )}
+              </Field>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
           settingKey="pos.scaleBarcodes"
           title="Étiquettes de balance"
           description="Codes 20 à 29 : préfixe, code article (5 chiffres, fin du code produit), valeur (5 chiffres), clé (R-VTE-04)."

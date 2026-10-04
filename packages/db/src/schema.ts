@@ -1404,6 +1404,25 @@ export const budgetLine = app.table(
   ],
 );
 
+/** One row per job and day: a daily job runs once even if the server restarts. */
+export const jobRun = app.table(
+  'job_run',
+  {
+    name: text('name').notNull(),
+    day: date('day').notNull(),
+    at: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.name, t.day] })],
+);
+
+/** Last low-cagnotte reminder sent to a household (R-CAG-06). */
+export const walletLowNotice = app.table('wallet_low_notice', {
+  householdId: uuid('household_id')
+    .primaryKey()
+    .references(() => household.id, { onDelete: 'cascade' }),
+  at: tz('at').notNull().defaultNow(),
+});
+
 /** Web Push subscription of a browser (one member may have several devices). */
 export const pushSubscription = app.table(
   'push_subscription',

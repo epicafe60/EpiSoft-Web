@@ -17,6 +17,8 @@ async function resetAccounting(db: Db) {
     app.cash_deposit, app.entry_template_line, app.entry_template, app.entry_line, app.entry, app.fiscal_year,
     app.invoice_receipt, app.supplier_invoice, app.number_counter cascade`);
   await db.execute(sql`delete from app.supplier`);
+  // Supplier accounts (401001…) are created per supplier: leave none behind for the next file.
+  await db.execute(sql`delete from app.account where number ~ '^401[0-9]{3}$' and number <> '401000'`);
 }
 
 beforeEach(async () => {
