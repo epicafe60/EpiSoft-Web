@@ -6,6 +6,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/compon
 import { Alert } from '@/components/ui/form';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
+import { PushToggle } from './push-toggle';
 
 interface Mine {
   household: {
@@ -40,6 +41,7 @@ export function MyHouseholdPage() {
         title="Mon foyer"
         description="Votre cagnotte, votre adhésion et vos derniers achats."
       />
+      <PushToggle />
       {error ? <QueryError error={error} /> : null}
       {data && !h ? <Alert variant="info">Aucun foyer n'est rattaché à votre compte.</Alert> : null}
       {h ? (

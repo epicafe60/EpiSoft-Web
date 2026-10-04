@@ -1403,3 +1403,19 @@ export const budgetLine = app.table(
     check('budget_line_amount', sql`${t.amount} >= 0`),
   ],
 );
+
+/** Web Push subscription of a browser (one member may have several devices). */
+export const pushSubscription = app.table(
+  'push_subscription',
+  {
+    id: id(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('push_subscription_member_idx').on(t.memberId)],
+);

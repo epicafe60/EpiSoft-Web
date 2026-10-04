@@ -23,6 +23,10 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SMTP_FROM: z.string().default('Épicafé <no-reply@localhost>'),
+  // Web Push. Without both keys, notifications are off. Generate with `npx web-push generate-vapid-keys`.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost'),
 });
 
 export type Config = z.infer<typeof envSchema>;

@@ -29,6 +29,7 @@ import { catalogAdminRoutes } from './modules/catalog/admin';
 import { accountingRoutes } from './modules/accounting/routes';
 import { bankRoutes } from './modules/accounting/bank';
 import { closingRoutes } from './modules/accounting/closing';
+import { pushRoutes } from './modules/push/routes';
 import { budgetRoutes } from './modules/accounting/budget';
 import { reportRoutes } from './modules/accounting/reports';
 import { dashboardRoutes } from './modules/stats/dashboard';
@@ -103,6 +104,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(reviewRoutes, { db, config });
       await api.register(seriesRoutes, { db, config });
       await api.register(preorderRoutes, { db, config });
+      await api.register(pushRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

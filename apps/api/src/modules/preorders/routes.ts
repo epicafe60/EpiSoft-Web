@@ -24,6 +24,7 @@ import {
   preorderSchema,
 } from '@episoft/shared';
 import type { Config } from '../../config';
+import { sendPush } from '../../lib/push';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
@@ -95,7 +96,7 @@ async function detail(db: DbOrTx, id: string) {
 
 export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
   app,
-  { db },
+  { db, config },
 ) => {
   const staff = {
     preHandler: app.requireRoles('COMMANDES_GESTION', 'COMMANDES_EN_LIGNE', 'CAISSE'),
@@ -325,6 +326,12 @@ Votre commande ${o.number} est prête. Vous pouvez la retirer à l’Épicafé (
             });
           }
         }
+        if (to === 'READY')
+          void sendPush(db, config, o.memberId, {
+            title: 'Épicafé',
+            body: `Votre commande ${o.number} est prête.`,
+            url: '/boutique',
+          });
         return { ok: true };
       }),
   );
