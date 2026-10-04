@@ -23,14 +23,13 @@ export function HomePage() {
           </CardHeader>
         </Card>
       </Link>
-      {modules.length > 0 ? <Dashboard /> : null}
       {modules.length === 0 ? (
         <Alert variant="info">
           Aucun rôle ne vous est attribué pour l’instant. Un administrateur peut vous en donner
           depuis Administration › Utilisateurs.
         </Alert>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {modules.map((m) => {
             const Icon = MODULE_ICONS[m.key];
             return (
@@ -49,6 +48,7 @@ export function HomePage() {
           })}
         </div>
       )}
+      {modules.length > 0 ? <Dashboard /> : null}
     </>
   );
 }
