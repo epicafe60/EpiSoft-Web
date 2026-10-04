@@ -13,6 +13,8 @@ import {
   transformProduct,
   type LegacyPaymentRow,
   type LegacyProductRow,
+  firstContinuousTicketDate,
+  isDebitCoveredByTickets,
 } from './transform-lot1';
 
 // Legacy migration, lot 1 part (spec §9.1 steps 3–6): suppliers, catalogue, images and
@@ -490,6 +492,16 @@ async function migratePayments(src: LegacySource, tx: Tx, r: Report) {
   const rows = await src.query<LegacyPaymentRow>(
     'SELECT PAYID, PAYADHID, PAYDATE, PAYMNT, PAYMOTIF, PAYMOD FROM epidatas.adhpayements ORDER BY PAYID',
   );
+  const days = await src.query<{ d: string }>(
+    'SELECT DISTINCT DATE(TICKDATE) d FROM epidatas.tickets UNION SELECT DISTINCT DATE(TICKDATE) FROM epidatas.tmptickets',
+  );
+  const firstTicketDate = firstContinuousTicketDate(days.map((x) => x.d));
+  let skippedDebits = 0;
+  // Debits imported by an earlier run for the period now covered by the tickets.
+  if (firstTicketDate)
+    await tx.execute(
+      sql`delete from app.wallet_entry where kind = 'PURCHASE' and legacy_payid is not null and at >= ${firstTicketDate.slice(0, 10)}::date`,
+    );
   const households = new Map(
     (
       await tx
@@ -516,6 +528,10 @@ async function migratePayments(src: LegacySource, tx: Tx, r: Report) {
     const { plan, issues } = planPayment(row, today());
     r.issues.push(...issues);
     if (!plan) continue;
+    if (isDebitCoveredByTickets(plan, row.PAYDATE, firstTicketDate)) {
+      skippedDebits++;
+      continue;
+    }
     const date = row.PAYDATE;
     let paymentId: string | null = null;
     if (plan.kind === 'payment' || plan.kind === 'topup') {
@@ -558,7 +574,7 @@ async function migratePayments(src: LegacySource, tx: Tx, r: Report) {
     table: 'paiement',
     source: rows.length,
     migrated: payments,
-    note: `${entries} opérations de cagnotte`,
+    note: `${entries} opérations de cagnotte ; ${skippedDebits} débits 01011 non repris (remplacés par les tickets dès le ${firstTicketDate?.slice(0, 10) ?? '—'})`,
   });
 }
 
@@ -627,6 +643,9 @@ async function migrateTickets(src: LegacySource, tx: Tx, r: Report) {
   );
 
   // Tickets still in the tmp tables (not closed in EpiSoft) are re-imported at each run.
+  await tx.execute(
+    sql`delete from app.wallet_entry where sale_id in (select id from app.sale where legacy_ref like 'TMP:%')`,
+  );
   await tx.delete(s.sale).where(like(s.sale.legacyRef, 'TMP:%'));
   const existing = new Set(
     (
@@ -833,6 +852,8 @@ async function migrateTickets(src: LegacySource, tx: Tx, r: Report) {
     });
   }
 
+  await debitWalletFromTickets(tx, r);
+
   // New tickets continue after the migrated numbers of each year.
   await tx.execute(sql`
     insert into app.number_counter (key, value)
@@ -936,5 +957,47 @@ async function reconcile(src: LegacySource, tx: Tx, r: Report) {
       { header: 'Tickets − débits (C2)', key: 'walletDiff', width: 20 },
     ],
     rows,
+  });
+}
+
+// --- Cagnotte debits taken from the tickets ---------------------------------------------------
+
+/**
+ * One PURCHASE per migrated ticket paid (even partly) from the cagnotte (a REFUND when the cagnotte part is negative: refund or change given back), on the buyer's household,
+ * at the time of the sale: exactly what a v2 sale does. Rebuilt on each run so it stays idempotent.
+ */
+async function debitWalletFromTickets(tx: Tx, r: Report) {
+  await tx.execute(
+    sql`delete from app.wallet_entry where kind in ('PURCHASE', 'REFUND') and sale_id in (select id from app.sale where legacy_ref is not null)`,
+  );
+  const inserted = await tx.execute(sql`
+    insert into app.wallet_entry (id, household_id, at, amount, kind, sale_id, comment)
+    select gen_random_uuid(), s.household_id, s.sold_at, -sum(p.amount),
+           case when sum(p.amount) > 0 then 'PURCHASE' else 'REFUND' end::app.wallet_entry_kind, s.id,
+           'Ticket ' || s.number || ' (reprise EpiSoft)'
+      from app.sale s join app.sale_payment p on p.sale_id = s.id and p.method = 'WALLET'
+     where s.legacy_ref is not null and s.status = 'COMPLETED' and s.household_id is not null
+     group by s.id, s.household_id, s.sold_at, s.number
+    having sum(p.amount) <> 0`);
+  const orphans = await tx.execute<{ ref: string; amount: string }>(
+    sql`select s.legacy_ref as ref, sum(p.amount)::text as amount
+         from app.sale s join app.sale_payment p on p.sale_id = s.id and p.method = 'WALLET'
+        where s.legacy_ref is not null and s.status = 'COMPLETED' and s.household_id is null
+        group by s.legacy_ref`,
+  );
+  for (const o of orphans.rows)
+    r.issues.push({
+      entity: 'ticket',
+      legacyId: o.ref,
+      field: 'TICKMODPAY',
+      value: o.amount,
+      problem: 'payé par cagnotte sans foyer connu',
+      action: 'aucun débit de cagnotte',
+    });
+  r.counts.push({
+    table: 'débit cagnotte',
+    source: inserted.rowCount ?? 0,
+    migrated: inserted.rowCount ?? 0,
+    note: 'un débit par ticket payé par cagnotte (R-CAG-02)',
   });
 }

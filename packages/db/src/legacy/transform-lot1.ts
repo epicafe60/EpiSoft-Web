@@ -315,3 +315,39 @@ export function parseTicketPayments(
     .map((p, i) => ({ method: TICKET_METHODS[i]!, cents: legacyCents(p) }))
     .filter((p) => p.cents !== 0);
 }
+
+/**
+ * Legacy debits ("01011") are written by EpiSoft at closing and do not always match the tickets
+ * (days never debited, double debits, shifted days). From the first migrated ticket on, the
+ * cagnotte is therefore debited from the tickets themselves, and the negative legacy debits of
+ * that period are not imported (R-CAG-02, §9.1 step 3). Positive "debits" stay: they are
+ * manual corrections with no ticket behind them.
+ */
+export function isDebitCoveredByTickets(
+  plan: { kind: string; walletKind?: string } | null,
+  paymentDate: string,
+  firstTicketDate: string | null,
+): boolean {
+  return (
+    !!firstTicketDate &&
+    plan?.kind === 'wallet' &&
+    plan.walletKind === 'PURCHASE' &&
+    paymentDate.slice(0, 10) >= firstTicketDate.slice(0, 10)
+  );
+}
+
+/**
+ * First day of the ticket history that is really in use: stray old tickets (tests, a year
+ * restart) are ignored by starting after the last gap longer than `maxGapDays`.
+ * `days` are YYYY-MM-DD strings, in any order, duplicates allowed.
+ */
+export function firstContinuousTicketDate(days: readonly string[], maxGapDays = 31): string | null {
+  const sorted = [...new Set(days.map((d) => d.slice(0, 10)))].sort();
+  if (!sorted.length) return null;
+  let start = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = (Date.parse(sorted[i]!) - Date.parse(sorted[i - 1]!)) / 86_400_000;
+    if (gap > maxGapDays) start = sorted[i]!;
+  }
+  return start;
+}

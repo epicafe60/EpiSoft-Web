@@ -4,6 +4,8 @@ import {
   legacyCents,
   parseQualities,
   parseTicketPayments,
+  firstContinuousTicketDate,
+  isDebitCoveredByTickets,
   planPayment,
   transformProduct,
   type LegacyProductRow,
@@ -163,5 +165,44 @@ describe('tickets', () => {
     expect(legacyCents(0.1 + 0.2)).toBe(30);
     expect(legacyCents(-2.675)).toBe(-268);
     expect(fixed(1.2345, 3)).toBe('1.235');
+  });
+});
+
+describe('isDebitCoveredByTickets (R-CAG-02)', () => {
+  const debit = { kind: 'wallet', walletKind: 'PURCHASE' };
+  it('drops negative legacy debits from the first ticket day on', () => {
+    expect(isDebitCoveredByTickets(debit, '2026-04-08', '2026-04-08 09:12:00')).toBe(true);
+    expect(isDebitCoveredByTickets(debit, '2026-09-30', '2026-04-08 09:12:00')).toBe(true);
+    expect(isDebitCoveredByTickets(debit, '2026-04-07', '2026-04-08 09:12:00')).toBe(false);
+  });
+  it('keeps topups, corrections and everything when there is no ticket', () => {
+    expect(isDebitCoveredByTickets({ kind: 'topup' }, '2026-05-01', '2026-04-08')).toBe(false);
+    expect(
+      isDebitCoveredByTickets(
+        { kind: 'wallet', walletKind: 'CORRECTION' },
+        '2026-05-01',
+        '2026-04-08',
+      ),
+    ).toBe(false);
+    expect(isDebitCoveredByTickets(debit, '2026-05-01', null)).toBe(false);
+    expect(isDebitCoveredByTickets(null, '2026-05-01', '2026-04-08')).toBe(false);
+  });
+});
+
+describe('firstContinuousTicketDate', () => {
+  it('ignores stray old tickets before a long gap', () => {
+    expect(
+      firstContinuousTicketDate([
+        '2026-04-09',
+        '2020-08-26',
+        '2026-04-08',
+        '2026-05-02',
+        '2020-08-26',
+      ]),
+    ).toBe('2026-04-08');
+  });
+  it('keeps the first day of a continuous history, and handles empty input', () => {
+    expect(firstContinuousTicketDate(['2026-04-08 10:00:00', '2026-05-01'])).toBe('2026-04-08');
+    expect(firstContinuousTicketDate([])).toBeNull();
   });
 });
