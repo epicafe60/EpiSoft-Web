@@ -38,6 +38,7 @@ import { AccountingLayout } from './routes/compta/layout';
 import { EditEntryPage, EntriesPage, NewEntryPage } from './routes/compta/entries';
 import { BankPage, StatementPage } from './routes/compta/bank';
 import { PlanPage } from './routes/compta/plan';
+import { BudgetPage } from './routes/compta/budget';
 import { ShopPage } from './routes/shop/shop';
 import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
@@ -362,6 +363,11 @@ const planRoute = createRoute({
   path: '/plan',
   component: PlanPage,
 });
+const budgetRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/budget',
+  component: BudgetPage,
+});
 const yearClosingRoute = createRoute({
   getParentRoute: () => accountingRoute,
   path: '/cloture',
@@ -505,6 +511,7 @@ const routeTree = rootRoute.addChildren([
       bankRoute,
       statementRoute,
       reportsRoute,
+      budgetRoute,
       planRoute,
       yearClosingRoute,
     ]),

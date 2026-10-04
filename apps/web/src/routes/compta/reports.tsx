@@ -15,6 +15,7 @@ import type { ReportTableData } from './types';
 const REPORTS = [
   { key: 'situation', label: 'Situation intermédiaire' },
   { key: 'income', label: 'Compte de résultat' },
+  { key: 'budget', label: 'Budget et réalisé' },
   { key: 'balance-sheet', label: 'Bilan' },
   { key: 'balance', label: 'Balance des comptes' },
   { key: 'journal', label: 'Journal' },

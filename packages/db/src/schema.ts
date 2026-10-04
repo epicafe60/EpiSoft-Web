@@ -1383,3 +1383,23 @@ export const productBatch = app.table(
     check('product_batch_qty', sql`${t.qty} > 0`),
   ],
 );
+
+/** R-CPT-20: yearly budget of an expense or income account, compared with the books in the reports. */
+export const budgetLine = app.table(
+  'budget_line',
+  {
+    id: id(),
+    fiscalYearId: uuid('fiscal_year_id')
+      .notNull()
+      .references(() => fiscalYear.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => account.id),
+    amount: money('amount').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('budget_line_uq').on(t.fiscalYearId, t.accountId),
+    check('budget_line_amount', sql`${t.amount} >= 0`),
+  ],
+);

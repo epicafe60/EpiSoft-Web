@@ -372,3 +372,57 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
     ).toBe(409);
   });
 });
+
+describe('budget (R-CPT-20)', () => {
+  it('stores a yearly budget and compares it with the validated books', async () => {
+    await year2026();
+    const fy = (await get('/api/v1/fiscal-years')).json()[0].id as string;
+    const created = await post('/api/v1/entries', await entryBody());
+    expect(created.statusCode).toBe(200);
+
+    expect(
+      (
+        await put(`/api/v1/fiscal-years/${fy}/budget`, {
+          lines: [{ number: '512000', amount: '5' }],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await put(`/api/v1/fiscal-years/${fy}/budget`, {
+          lines: [{ number: '699999', amount: '5' }],
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await put(`/api/v1/fiscal-years/${fy}/budget`, {
+          lines: [
+            { number: '607000', amount: '100,00' },
+            { number: '627100', amount: '40' },
+            { number: '707000', amount: '0' },
+          ],
+        })
+      ).json(),
+    ).toMatchObject({ ok: true, lines: 2 });
+
+    const b = (await get(`/api/v1/fiscal-years/${fy}/budget`)).json();
+    expect(b.expenses.map((r: { number: string }) => r.number)).toEqual(['607000', '627100']);
+    expect(b.expenses[0]).toMatchObject({
+      budget: '100.00',
+      actual: '25.50',
+      variance: '-74.50',
+      percent: 26,
+    });
+    expect(b.budgetResult).toBe('-140.00');
+    expect(b.actualResult).toBe('-25.50');
+
+    const rep = (await get(`/api/v1/reports/budget?fiscalYearId=${fy}`)).json();
+    expect(rep.title).toBe('Budget et réalisé');
+    expect((await get('/api/v1/reports/budget')).statusCode).toBe(400);
+
+    // Replacing clears the previous lines.
+    await put(`/api/v1/fiscal-years/${fy}/budget`, { lines: [] });
+    expect((await get(`/api/v1/fiscal-years/${fy}/budget`)).json().expenses[0].budget).toBe('0.00');
+  });
+});
