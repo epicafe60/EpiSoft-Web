@@ -33,6 +33,13 @@ pnpm dev                                            # API on :3000, web app on h
 `user:invite` prints a link, valid for one hour, to set the password. No password is ever
 migrated from EpiSoft (spec §6.3). Without SMTP settings, e-mails are written to the API log.
 
+Optional Web Push notifications ("order ready", membership and low-cagnotte reminders): set
+`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (`mailto:…`) in the API environment;
+generate the pair with `npx web-push generate-vapid-keys`. Without them push is simply off.
+
+Daily alerts (best-before dates, low cagnotte, failing integrity checks) are sent each morning
+from 7:00 (Paris) by the API itself, once per day; they are enabled under Administration › Paramètres.
+
 ## Everyday commands
 
 | Command | Does |
@@ -52,6 +59,10 @@ runs in one PostgreSQL transaction and can be replayed: rows are matched on thei
 On a re-run, roles that exist in EpiSoft follow EpiSoft; `STATS` and `ADMIN`, which only
 exist in v2, are kept. The Excel report lists counts and anomalies (shared QR codes,
 postcode mismatches, unknown permissions…).
+
+Cagnotte (R-CAG-02): from the first day of the real ticket history, balances are debited from the
+migrated tickets themselves; the legacy `01011` debits of that period, which did not always match
+the tickets, are not imported. Older debits are kept as they are.
 
 ## Deployment
 
