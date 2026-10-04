@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
@@ -383,10 +384,14 @@ function EntryForm({ id }: { id: string | null }) {
 
   return (
     <div className="grid gap-4">
+      <Breadcrumbs
+        items={[
+          { label: 'Comptabilité', to: '/compta' },
+          { label: 'Écritures', to: '/compta/ecritures' },
+          { label: e ? (e.displayNumber ?? 'Brouillon') : 'Nouvelle écriture' },
+        ]}
+      />
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/compta/ecritures" className="text-sm text-primary hover:underline">
-          ← Écritures
-        </Link>
         {e ? (
           <h2 className="text-lg font-semibold">
             {e.displayNumber ?? 'Brouillon'}{' '}

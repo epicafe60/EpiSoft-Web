@@ -1,6 +1,7 @@
 import { hasAnyRole } from '@episoft/shared';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ImageUp } from 'lucide-react';
 import {
@@ -291,6 +292,12 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: 'Catalogue', to: '/catalogue' },
+          { label: product ? product.name : 'Nouveau produit' },
+        ]}
+      />
       <PageHeader
         title={product ? product.name : 'Nouveau produit'}
         description={
@@ -483,12 +490,6 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
                 {product ? 'Enregistrer' : 'Créer le produit'}
               </Button>
             ) : null}
-            <Link
-              to="/catalogue"
-              className="inline-flex h-10 items-center px-3 text-sm text-muted-foreground hover:text-foreground"
-            >
-              Retour au catalogue
-            </Link>
           </div>
         </form>
 

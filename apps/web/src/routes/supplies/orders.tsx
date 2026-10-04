@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, FileSpreadsheet, PackageCheck, Plus, Send, Trash2 } from 'lucide-react';
@@ -247,6 +248,13 @@ export function OrderPage() {
 
   return (
     <div className="grid gap-4">
+      <Breadcrumbs
+        items={[
+          { label: 'Approvisionnements', to: '/appros' },
+          { label: 'Commandes', to: '/appros/commandes' },
+          { label: `Commande ${o.number}` },
+        ]}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">

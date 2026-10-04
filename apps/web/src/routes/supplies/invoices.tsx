@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp, Plus } from 'lucide-react';
@@ -258,6 +259,13 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <form onSubmit={submit} className="grid content-start gap-4">
+        <Breadcrumbs
+          items={[
+            { label: 'Approvisionnements', to: '/appros' },
+            { label: 'Factures', to: '/appros/factures' },
+            { label: invoice ? `Facture ${invoice.pieceRef}` : 'Nouvelle facture' },
+          ]}
+        />
         <h2 className="text-xl font-semibold">
           {invoice ? `Facture ${invoice.pieceRef}` : 'Nouvelle facture fournisseur'}
         </h2>

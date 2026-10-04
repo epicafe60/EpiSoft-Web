@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BadgePlus, FileSpreadsheet, Mail, Minus, Plus } from 'lucide-react';
@@ -171,6 +172,9 @@ export function HouseholdPage() {
 
   return (
     <>
+      <Breadcrumbs
+        items={[{ label: 'Membres', to: '/membres' }, { label: `Foyer n° ${h.number}` }]}
+      />
       <PageHeader
         title={`Foyer n° ${h.number}`}
         description={h.members.map((m) => `${m.firstName} ${m.lastName}`).join(', ')}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp } from 'lucide-react';
@@ -330,10 +331,14 @@ export function StatementPage() {
 
   return (
     <div className="grid gap-4">
+      <Breadcrumbs
+        items={[
+          { label: 'Comptabilité', to: '/compta' },
+          { label: 'Banque', to: '/compta/banque' },
+          { label: data.fileName },
+        ]}
+      />
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/compta/banque" className="text-sm text-primary hover:underline">
-          ← Banque
-        </Link>
         <h2 className="text-lg font-semibold">{data.fileName}</h2>
         <Badge variant={open ? 'muted' : 'success'}>{open ? 'Ouvert' : 'Clos'}</Badge>
       </div>

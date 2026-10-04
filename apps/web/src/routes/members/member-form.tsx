@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, KeyRound, QrCode, UserX } from 'lucide-react';
@@ -192,6 +193,12 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: 'Membres', to: '/membres' },
+          { label: member ? `${member.firstName} ${member.lastName}` : 'Nouveau membre' },
+        ]}
+      />
       <PageHeader
         title={member ? `${member.firstName} ${member.lastName}` : 'Nouveau membre'}
         description={
@@ -395,12 +402,6 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
             <Button type="submit" disabled={save.isPending}>
               {member ? 'Enregistrer' : 'Créer le membre'}
             </Button>
-            <Link
-              to="/membres"
-              className="inline-flex h-10 items-center px-3 text-sm text-muted-foreground hover:text-foreground"
-            >
-              Retour à la liste
-            </Link>
           </div>
         </form>
 

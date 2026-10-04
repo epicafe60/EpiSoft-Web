@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -256,6 +257,13 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
       <form onSubmit={submit} className="grid content-start gap-4" noValidate>
+        <Breadcrumbs
+          items={[
+            { label: 'Approvisionnements', to: '/appros' },
+            { label: 'Fournisseurs', to: '/appros/fournisseurs' },
+            { label: supplier ? supplier.name : 'Nouveau fournisseur' },
+          ]}
+        />
         <h2 className="text-xl font-semibold">
           {supplier ? `${supplier.name} (${supplier.code})` : 'Nouveau fournisseur'}
         </h2>
@@ -361,12 +369,6 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
           <Button type="submit" disabled={save.isPending}>
             {supplier ? 'Enregistrer' : 'Créer le fournisseur'}
           </Button>
-          <Link
-            to="/appros/fournisseurs"
-            className="inline-flex h-10 items-center px-3 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Retour à la liste
-          </Link>
         </div>
       </form>
 
