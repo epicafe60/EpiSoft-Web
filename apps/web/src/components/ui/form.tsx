@@ -1,4 +1,5 @@
-import { useId, type ComponentProps, type ReactNode } from 'react';
+import { useId, useState, type ComponentProps, type ReactNode } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Input({ className, ...props }: ComponentProps<'input'>) {
@@ -10,6 +11,29 @@ export function Input({ className, ...props }: ComponentProps<'input'>) {
       )}
       {...props}
     />
+  );
+}
+
+/** Password field with a button to reveal what was typed (WCAG: the user can check their entry). */
+export function PasswordInput({ className, ...props }: Omit<ComponentProps<'input'>, 'type'>) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <Input {...props} type={shown ? 'text' : 'password'} className={cn('pr-10', className)} />
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-label={shown ? 'Masquer les caractères' : 'Afficher les caractères'}
+        aria-pressed={shown}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {shown ? (
+          <EyeOff className="h-4 w-4" aria-hidden />
+        ) : (
+          <Eye className="h-4 w-4" aria-hidden />
+        )}
+      </button>
+    </div>
   );
 }
 

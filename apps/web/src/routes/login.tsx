@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { meQuery } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-import { Alert, Field, Input } from '@/components/ui/form';
+import { Alert, Field, Input, PasswordInput } from '@/components/ui/form';
 import { PublicLayout } from './public-layout';
 
 export function LoginPage() {
@@ -54,9 +54,8 @@ export function LoginPage() {
         </Field>
         <Field label="Mot de passe">
           {(p) => (
-            <Input
+            <PasswordInput
               {...p}
-              type="password"
               autoComplete="current-password"
               required
               value={password}

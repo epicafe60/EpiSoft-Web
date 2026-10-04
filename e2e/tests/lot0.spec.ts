@@ -50,3 +50,15 @@ test('logout returns to the login page', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/connexion/);
 });
+
+test('the password can be revealed and hidden again on the login page', async ({ page }) => {
+  await page.goto('/connexion');
+  const field = page.getByLabel('Mot de passe');
+  await field.fill('secret-visible');
+  await expect(field).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: 'Afficher les caractères' }).click();
+  await expect(field).toHaveAttribute('type', 'text');
+  await expect(field).toHaveValue('secret-visible');
+  await page.getByRole('button', { name: 'Masquer les caractères' }).click();
+  await expect(field).toHaveAttribute('type', 'password');
+});

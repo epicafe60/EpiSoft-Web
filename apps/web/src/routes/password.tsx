@@ -3,7 +3,7 @@ import { Link, useSearch } from '@tanstack/react-router';
 import { PASSWORD_MIN_LENGTH } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Alert, Field, Input } from '@/components/ui/form';
+import { Alert, Field, Input, PasswordInput } from '@/components/ui/form';
 import { PublicLayout } from './public-layout';
 
 const backToLogin = (
@@ -135,9 +135,8 @@ export function SetPasswordPage() {
             error={tooShort ? `Au moins ${PASSWORD_MIN_LENGTH} caractères.` : undefined}
           >
             {(p) => (
-              <Input
+              <PasswordInput
                 {...p}
-                type="password"
                 autoComplete="new-password"
                 autoFocus
                 value={password}
@@ -150,9 +149,8 @@ export function SetPasswordPage() {
             error={mismatch ? 'Les deux saisies sont différentes.' : undefined}
           >
             {(p) => (
-              <Input
+              <PasswordInput
                 {...p}
-                type="password"
                 autoComplete="new-password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
