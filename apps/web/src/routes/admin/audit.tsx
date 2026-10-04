@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, Table } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/form';
 import { QueryError } from '../errors';
+import { AuditDiff } from './audit-diff';
 
 const PAGE = 50;
 
@@ -24,29 +25,6 @@ const ACTION_LABELS: Record<string, string> = {
   'review.moderate': 'Avis modéré',
   'preorder.status': 'État de précommande modifié',
 };
-
-function Diff({ before, after }: { before: unknown; after: unknown }) {
-  if (before == null && after == null) return <span className="text-muted-foreground">—</span>;
-  return (
-    <details>
-      <summary className="cursor-pointer text-xs text-primary">Détail</summary>
-      <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
-        <div>
-          <p className="mb-1 font-medium text-muted-foreground">Avant</p>
-          <pre className="overflow-x-auto rounded bg-muted p-2">
-            {JSON.stringify(before, null, 2)}
-          </pre>
-        </div>
-        <div>
-          <p className="mb-1 font-medium text-muted-foreground">Après</p>
-          <pre className="overflow-x-auto rounded bg-muted p-2">
-            {JSON.stringify(after, null, 2)}
-          </pre>
-        </div>
-      </div>
-    </details>
-  );
-}
 
 /** R-ADM-02: filter by entity and period. */
 export function AuditPage() {
@@ -142,8 +120,8 @@ export function AuditPage() {
                     </span>
                   ) : null}
                 </td>
-                <td className="min-w-48">
-                  <Diff before={r.before} after={r.after} />
+                <td className="min-w-64">
+                  <AuditDiff before={r.before} after={r.after} />
                 </td>
               </tr>
             ))}

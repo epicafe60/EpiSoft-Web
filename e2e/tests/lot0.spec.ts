@@ -34,6 +34,13 @@ test('an administrator changes a setting and sees it in the audit log (R-ADM-01,
 
   await page.getByRole('link', { name: 'Journal d’audit' }).click();
   await expect(page.getByRole('cell', { name: 'Paramètre modifié' }).first()).toBeVisible();
+
+  // The change reads as a comparison (added lines in green, removed in red), not as raw JSON.
+  const row = page.getByRole('row', { name: /Paramètre modifié/ }).first();
+  await row.getByText(/^Détail/).click();
+  const diff = row.getByRole('group', { name: 'Comparaison avant / après' });
+  await expect(diff).toContainText('150.5');
+  await expect(diff.getByText('+', { exact: true }).first()).toBeVisible();
 });
 
 test('logout returns to the login page', async ({ page }) => {
