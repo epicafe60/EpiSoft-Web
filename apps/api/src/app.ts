@@ -32,6 +32,10 @@ import { closingRoutes } from './modules/accounting/closing';
 import { reportRoutes } from './modules/accounting/reports';
 import { dashboardRoutes } from './modules/stats/dashboard';
 import { analysisRoutes } from './modules/stats/analysis';
+import { exportRoutes } from './modules/stats/export';
+import { savedReportRoutes } from './modules/stats/saved-reports';
+import { importRoutes } from './modules/stats/imports';
+import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
@@ -86,6 +90,10 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(closingRoutes, { db, config });
       await api.register(dashboardRoutes, { db, config });
       await api.register(analysisRoutes, { db, config });
+      await api.register(exportRoutes, { db, config });
+      await api.register(savedReportRoutes, { db, config });
+      await api.register(importRoutes, { db, config });
+      await api.register(seriesRoutes, { db, config });
       await api.register(preorderRoutes, { db, config });
     },
     { prefix: '/api/v1' },

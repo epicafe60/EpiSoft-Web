@@ -25,7 +25,7 @@ export async function setupTestApp() {
     async reset() {
       // audit_log is append-only (trigger), so TRUNCATE is the only way to clear it.
       await db.execute(sql`truncate app.audit_log, app.login_log, app.session, app.password_reset_token,
-        app.email_outbox, app.setting, app.user_role, app.member, app.household cascade`);
+        app.email_outbox, app.import_mapping, app.setting, app.user_role, app.member, app.household cascade`);
       // CASCADE reaches the catalogue (member → supplier → product): restore the seeds.
       await seedMembershipTypes(db);
     },

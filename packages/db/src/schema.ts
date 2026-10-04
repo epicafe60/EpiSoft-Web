@@ -1291,3 +1291,49 @@ export const preorderLine = app.table(
     check('preorder_line_qty_positive', sql`${t.qty} > 0`),
   ],
 );
+
+// --- Saved reports and imports (R-STA-05, R-IMP-01..04) ------------------------------------
+
+/** A named, read-only report: a kind of the fixed library plus its filters. Never free SQL. */
+export const savedReport = app.table(
+  'saved_report',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    kind: text('kind').notNull(),
+    params: jsonb('params').notNull().default({}),
+    /** Visible to every STATS user; otherwise only to its author. */
+    shared: boolean('shared').notNull().default(false),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('saved_report_author_idx').on(t.createdBy)],
+);
+
+/** R-IMP-04: who imported which file, when, with what outcome. */
+export const importLog = app.table(
+  'import_log',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    fileName: text('file_name').notNull(),
+    fileHash: text('file_hash').notNull(),
+    summary: jsonb('summary').notNull().default({}),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('import_log_kind_idx').on(t.kind, t.createdAt)],
+);
+
+/** Remembered matches between a file and the app: supplier names, column headers. */
+export const importMapping = app.table(
+  'import_mapping',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    sourceKey: text('source_key').notNull(),
+    target: text('target').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('import_mapping_uq').on(t.kind, t.sourceKey)],
+);
