@@ -6,6 +6,7 @@ import { integrityAck, type Db } from '@episoft/db';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/problem';
+import { FALLBACK_HELP, INTEGRITY_HELP, type IntegrityHelp } from './integrity-help';
 
 type Row = Record<string, unknown>;
 
@@ -331,6 +332,8 @@ export interface IntegrityResult {
   samples: IntegritySample[];
   list: { to: string; label: string } | null;
   fix: { label: string; confirm: string } | null;
+  /** What is compared and what to do when cases are listed. */
+  help: IntegrityHelp;
   /** Warnings can be accepted after review; errors cannot. */
   ackable: boolean;
   accepted: (IntegritySample & { note: string | null })[];
@@ -354,6 +357,7 @@ export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
     const common = {
       id: c.id,
       label: c.label,
+      help: INTEGRITY_HELP[c.id] ?? FALLBACK_HELP,
       list: LISTS[c.id] ?? null,
       fix: FIXES[c.id] ? { label: FIXES[c.id]!.label, confirm: FIXES[c.id]!.confirm } : null,
       ackable: c.severity === 'warning',

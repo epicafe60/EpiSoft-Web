@@ -20,6 +20,7 @@ interface Check {
   severity: 'error' | 'warning';
   count: number;
   samples: Sample[];
+  help: { what: string; todo: string };
   list: { to: string; label: string } | null;
   fix: { label: string; confirm: string } | null;
   ackable: boolean;
@@ -133,6 +134,21 @@ export function IntegrityPage() {
                       <span className="font-medium">{c.label}</span>
                       {c.count ? <span className="ml-auto tabular-nums">{c.count}</span> : null}
                     </p>
+                    <details>
+                      <summary className="cursor-pointer text-xs text-primary">
+                        Que contrôle-t-on ? Que faire ?
+                      </summary>
+                      <div className="mt-2 grid gap-2 rounded-md bg-muted/50 p-3 text-xs">
+                        <p>
+                          <strong>Contrôlé : </strong>
+                          {c.help.what}
+                        </p>
+                        <p>
+                          <strong>À faire : </strong>
+                          {c.help.todo}
+                        </p>
+                      </div>
+                    </details>
                     {c.count > 0 && (c.list || c.fix) ? (
                       <p className="flex flex-wrap items-center gap-3">
                         {c.list ? <Open to={c.list.to}>{`Ouvrir : ${c.list.label} →`}</Open> : null}

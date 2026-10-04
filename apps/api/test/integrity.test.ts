@@ -31,6 +31,21 @@ async function setup() {
 }
 
 describe('integrity: links and remediation', () => {
+  it('explains every check: what it compares and what to do', async () => {
+    const { call } = await setup();
+    const checks = (await call('GET', '/admin/integrity')).json().checks as {
+      id: string;
+      help: { what: string; todo: string };
+    }[];
+    expect(checks.length).toBeGreaterThan(10);
+    for (const c of checks) {
+      expect(c.help.what.length, c.id).toBeGreaterThan(40);
+      expect(c.help.todo.length, c.id).toBeGreaterThan(40);
+      // The generic fallback must not be used: each check has its own text.
+      expect(c.help.what, c.id).not.toMatch(/^Contrôle automatique de cohérence/);
+    }
+  });
+
   it('links an offending item and recomputes a stale stock cache from the movements', async () => {
     const { call, check } = await setup();
     const [p] = await t.db

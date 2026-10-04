@@ -110,6 +110,7 @@ describe('integrity alert', () => {
           severity: 'error' as const,
           count: errors,
           samples: [],
+          help: { what: '', todo: '' },
           list: null,
           fix: null,
           ackable: false,
