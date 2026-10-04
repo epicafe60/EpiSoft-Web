@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { WALLET_ENTRY_KIND_LABELS, type WalletEntryKind } from '@episoft/shared';
 import { api } from '@/lib/api';
@@ -7,6 +8,7 @@ import { Alert } from '@/components/ui/form';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { PushToggle } from './push-toggle';
+import { TicketDialog } from './ticket-dialog';
 
 interface Mine {
   household: {
@@ -31,6 +33,7 @@ export function MyHouseholdPage() {
     queryKey: ['my-household'],
     queryFn: () => api.get<Mine>('/me/household'),
   });
+  const [ticketId, setTicketId] = useState<string | null>(null);
   const h = data?.household;
   const soon = h?.membership
     ? new Date(h.membership.endDate).getTime() - Date.now() < 30 * 86_400_000
@@ -147,7 +150,15 @@ export function MyHouseholdPage() {
                   {h.tickets.map((s) => (
                     <tr key={s.id}>
                       <td>{formatDate(s.soldAt)}</td>
-                      <td>{s.number}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => setTicketId(s.id)}
+                        >
+                          {s.number}
+                        </button>
+                      </td>
                       <td className="text-right tabular-nums">{euro(s.total)}</td>
                     </tr>
                   ))}
@@ -164,6 +175,7 @@ export function MyHouseholdPage() {
           </Card>
         </>
       ) : null}
+      <TicketDialog id={ticketId} onClose={() => setTicketId(null)} />
     </div>
   );
 }

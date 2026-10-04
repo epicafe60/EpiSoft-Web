@@ -1,16 +1,20 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import {
   householdBalance,
   member,
   membership,
   membershipType,
   sale,
+  saleLine,
+  salePayment,
   walletEntry,
   type Db,
 } from '@episoft/db';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
+import { notFound } from '../../lib/problem';
 
 /** Self-service: a member sees their own household, never anyone else's. */
 export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
@@ -81,4 +85,44 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       },
     };
   });
+
+  /** One ticket of the member's own household; any other ticket is "not found". */
+  app.get(
+    '/me/tickets/:id',
+    { schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (req) => {
+      const [me] = await db.select().from(member).where(eq(member.id, req.user!.id));
+      const [s] = me?.householdId
+        ? await db
+            .select()
+            .from(sale)
+            .where(and(eq(sale.id, req.params.id), eq(sale.householdId, me.householdId)))
+        : [];
+      if (!s) throw notFound('Ticket introuvable.');
+      const lines = await db
+        .select({
+          label: saleLine.label,
+          qty: saleLine.qty,
+          unitPrice: saleLine.unitPrice,
+          discount: saleLine.discount,
+          lineTotal: saleLine.lineTotal,
+        })
+        .from(saleLine)
+        .where(eq(saleLine.saleId, s.id))
+        .orderBy(asc(saleLine.lineNo));
+      const payments = await db
+        .select({ method: salePayment.method, amount: salePayment.amount })
+        .from(salePayment)
+        .where(eq(salePayment.saleId, s.id));
+      return {
+        id: s.id,
+        number: s.number,
+        soldAt: s.soldAt.toISOString(),
+        total: s.total,
+        status: s.status,
+        lines,
+        payments,
+      };
+    },
+  );
 };
