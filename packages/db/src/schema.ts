@@ -1438,3 +1438,16 @@ export const pushSubscription = app.table(
   },
   (t) => [index('push_subscription_member_idx').on(t.memberId)],
 );
+
+/** An integrity warning the treasurer has looked at and accepted (legacy data, known gap…). */
+export const integrityAck = app.table(
+  'integrity_ack',
+  {
+    checkId: text('check_id').notNull(),
+    ref: text('ref').notNull(),
+    note: text('note'),
+    by: uuid('by').references(() => member.id, { onDelete: 'set null' }),
+    at: tz('at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.checkId, t.ref] })],
+);

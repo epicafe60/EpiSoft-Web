@@ -61,12 +61,10 @@ describe('R-CAG-06 low cagnotte reminder', () => {
       { householdId: h!.id, amount: '-7.00', kind: 'PURCHASE' },
     ]);
     expect(await sendLowWalletReminders(t.db, t.config)).toBe(0); // disabled
-    await t.db
-      .insert(setting)
-      .values({
-        key: 'wallet.lowReminder',
-        value: { enabled: true, threshold: '5.00', everyDays: 30 },
-      });
+    await t.db.insert(setting).values({
+      key: 'wallet.lowReminder',
+      value: { enabled: true, threshold: '5.00', everyDays: 30 },
+    });
     expect(await sendLowWalletReminders(t.db, t.config)).toBe(1);
     // Same day: the job already ran. Next day would still be blocked by the 30-day rule.
     expect(await sendLowWalletReminders(t.db, t.config)).toBe(0);
@@ -90,12 +88,10 @@ describe('R-CAG-06 low cagnotte reminder', () => {
       kind: 'TOPUP',
       at: new Date(Date.now() - 200 * 86_400_000),
     });
-    await t.db
-      .insert(setting)
-      .values({
-        key: 'wallet.lowReminder',
-        value: { enabled: true, threshold: '5.00', everyDays: 30 },
-      });
+    await t.db.insert(setting).values({
+      key: 'wallet.lowReminder',
+      value: { enabled: true, threshold: '5.00', everyDays: 30 },
+    });
     expect(await sendLowWalletReminders(t.db, t.config)).toBe(0);
   });
 });
@@ -108,7 +104,17 @@ describe('integrity alert', () => {
       errors,
       warnings: 0,
       checks: [
-        { id: 'CAG-01', label: 'Solde', severity: 'error' as const, count: errors, samples: [] },
+        {
+          id: 'CAG-01',
+          label: 'Solde',
+          severity: 'error' as const,
+          count: errors,
+          samples: [],
+          list: null,
+          fix: null,
+          ackable: false,
+          accepted: [],
+        },
       ],
     });
     expect(await sendIntegrityAlert(t.db, t.config, report(0))).toBe(0);
