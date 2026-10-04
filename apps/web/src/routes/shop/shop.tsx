@@ -20,7 +20,7 @@ import { euro, formatDate, todayIso } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Field, Input } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/inputs';
+import { Select, Textarea } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { useCart, type CartLine } from './cart';
@@ -55,6 +55,8 @@ const addDays = (iso: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
+const NO_SHELF = 'none';
+
 /** The customer's shop window and cart (R-PRE-01). */
 export function ShopPage() {
   const [q, setQ] = useState('');
@@ -67,11 +69,21 @@ export function ShopPage() {
       ),
     placeholderData: (prev) => prev,
   });
+  // Shelves offered by the filter come from the whole window, whatever is typed in the search.
+  const all = useQuery({
+    queryKey: ['shop-products', ''],
+    queryFn: () => api.get<ShopProduct[]>('/shop/products'),
+  });
+  const [shelf, setShelf] = useState('');
+  const shelves = new Map<string, string>();
+  for (const p of all.data ?? [])
+    shelves.set(p.categoryId ?? NO_SHELF, p.categoryName ?? 'Autres produits');
+  const inShelf = (p: ShopProduct) => !shelf || (p.categoryId ?? NO_SHELF) === shelf;
   const favorites = useFavorites();
-  const favoriteProducts = (data ?? []).filter((p) => favorites.has(p.id));
+  const favoriteProducts = (data ?? []).filter((p) => favorites.has(p.id) && inShelf(p));
   const groups = new Map<string, ShopProduct[]>();
   // A favourite is shown once, in "Mes favoris", not again in its shelf.
-  for (const p of (data ?? []).filter((x) => !favorites.has(x.id))) {
+  for (const p of (data ?? []).filter((x) => !favorites.has(x.id) && inShelf(x))) {
     const k = p.categoryName ?? 'Autres produits';
     groups.set(k, [...(groups.get(k) ?? []), p]);
   }
@@ -84,18 +96,40 @@ export function ShopPage() {
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="grid content-start gap-4">
-          <Input
-            type="search"
-            aria-label="Rechercher un produit"
-            placeholder="Rechercher un produit…"
-            className="max-w-sm"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+          <div className="flex flex-wrap gap-3">
+            <Input
+              type="search"
+              aria-label="Rechercher un produit"
+              placeholder="Rechercher un produit…"
+              className="w-full sm:max-w-sm"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {shelves.size > 1 ? (
+              <Select
+                aria-label="Rayon"
+                className="w-full sm:w-56"
+                value={shelf}
+                onChange={(e) => setShelf(e.target.value)}
+              >
+                <option value="">Tous les rayons</option>
+                {[...shelves.entries()]
+                  .sort(([, a], [, b]) => a.localeCompare(b, 'fr'))
+                  .map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+              </Select>
+            ) : null}
+          </div>
           {error ? <QueryError error={error} /> : null}
           {isPending ? <p className="text-sm text-muted-foreground">Chargement…</p> : null}
           {data?.length === 0 ? (
             <Alert variant="info">Aucun produit n’est proposé à la commande pour l’instant.</Alert>
+          ) : null}
+          {data?.length && !favoriteProducts.length && !groups.size ? (
+            <Alert variant="info">Aucun produit dans ce rayon.</Alert>
           ) : null}
           {favoriteProducts.length ? (
             <section aria-label="Mes favoris" className="grid gap-2">

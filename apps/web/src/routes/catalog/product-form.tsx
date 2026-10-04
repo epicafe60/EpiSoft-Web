@@ -54,6 +54,7 @@ interface FormState {
   unitQty: string;
   unit: Unit | '';
   saleCondition: SaleCondition;
+  shopVisible: boolean;
   categoryId: string;
   supplierId: string;
   supplierRef: string;
@@ -78,6 +79,7 @@ const EMPTY: FormState = {
   unitQty: '',
   unit: '',
   saleCondition: 'ON_SITE',
+  shopVisible: true,
   categoryId: '',
   supplierId: '',
   supplierRef: '',
@@ -106,6 +108,7 @@ function toForm(p: ProductDetail): FormState {
     unitQty: dec(p.unitQty),
     unit: p.unit ?? '',
     saleCondition: p.saleCondition,
+    shopVisible: p.shopVisible,
     categoryId: p.categoryId ?? '',
     supplierId: p.supplierId ?? '',
     supplierRef: p.supplierRef ?? '',
@@ -131,6 +134,7 @@ function toPayload(f: FormState): ProductCreate {
     unitQty: f.unitQty || null,
     unit: f.unit || null,
     saleCondition: f.saleCondition,
+    shopVisible: f.shopVisible,
     categoryId: f.categoryId || null,
     supplierId: f.supplierId || null,
     supplierRef: f.supplierRef,
@@ -378,6 +382,21 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
                   ))}
                 </div>
               </fieldset>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="shop-visible"
+                  disabled={readOnly}
+                  checked={form.shopVisible}
+                  onChange={(e) => set('shopVisible', e.target.checked)}
+                />
+                <Label htmlFor="shop-visible" className="font-normal">
+                  Visible dans la boutique en ligne
+                  <span className="block text-xs text-muted-foreground">
+                    Décochez pour masquer ce produit de la boutique, sans toucher à sa vente en
+                    caisse. Un rayon entier se masque dans Catalogue › Rayons.
+                  </span>
+                </Label>
+              </div>
             </CardContent>
           </Card>
 

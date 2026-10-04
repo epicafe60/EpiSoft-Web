@@ -127,6 +127,13 @@
       "when": 1791120686571,
       "tag": "0017_product_favorite",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791121276749,
+      "tag": "0018_shop_visible",
+      "breakpoints": true
     }
   ]
 }

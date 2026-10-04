@@ -301,6 +301,8 @@ export const category = app.table(
     sort: integer('sort').notNull().default(0),
     /** Q6: revenue account of the shelf; null means the default sales account. */
     salesAccountNumber: text('sales_account_number'),
+    /** False keeps the whole shelf out of the online shop (products stay sold at the till). */
+    shopVisible: boolean('shop_visible').notNull().default(true),
   },
   (t) => [uniqueIndex('category_universe_code_uq').on(t.universeId, t.code)],
 );
@@ -383,6 +385,8 @@ export const product = app.table(
     minStock: qty('min_stock'),
     /** Cache of the sum of stock_movement.qty, updated in the same transaction (principle 6). */
     stockQty: qty('stock_qty').notNull().default('0'),
+    /** False keeps this product out of the online shop (it stays sold at the till). */
+    shopVisible: boolean('shop_visible').notNull().default(true),
     labelPending: boolean('label_pending').notNull().default(false),
     posTabId: uuid('pos_tab_id').references(() => posTab.id, { onDelete: 'set null' }),
     posSort: integer('pos_sort').notNull().default(0),

@@ -319,6 +319,7 @@ export function ShelvesPage() {
         code: c.code,
         name: c.name,
         sort: c.sort,
+        shopVisible: c.shopVisible,
       }),
     onSuccess: invalidate,
   });
@@ -356,6 +357,14 @@ export function ShelvesPage() {
                           rename.mutate({ ...c, name: e.target.value.trim() })
                         }
                       />
+                      <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        <Checkbox
+                          aria-label={`Rayon ${c.code} visible dans la boutique`}
+                          checked={c.shopVisible}
+                          onChange={(e) => rename.mutate({ ...c, shopVisible: e.target.checked })}
+                        />
+                        Boutique
+                      </label>
                     </div>
                   </Fragment>
                 ))}

@@ -216,6 +216,7 @@ export const categorySchema = z.object({
     .regex(/^\d{2}$/, 'Deux chiffres.'),
   name: z.string().trim().min(1).max(100),
   sort: z.number().int().min(0).max(999),
+  shopVisible: z.boolean().default(true),
 });
 
 export const bulkPricesSchema = z.object({

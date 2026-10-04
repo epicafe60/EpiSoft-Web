@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import pg from 'pg';
 import { login, USERS } from '../fixtures';
 import { SEED } from '../seed';
 
@@ -80,4 +81,35 @@ test('a customer pins a product as favourite; it moves to the top and stays afte
 
   await page.getByRole('button', { name: `Retirer ${SEED.honey.name} des favoris` }).click();
   await expect(page.getByRole('region', { name: 'Mes favoris' })).toHaveCount(0);
+});
+
+test('a customer narrows the shop window to one shelf', async ({ page }) => {
+  // A second shelf with its own product (the seed only has products without a shelf).
+  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`
+      with u as (insert into app.universe (id, code, name) values (gen_random_uuid(), 'U9', 'Épicerie') on conflict (code) do update set name = excluded.name returning id),
+           c as (insert into app.category (id, universe_id, code, name) select gen_random_uuid(), u.id, 'R9', 'Confitures' from u returning id)
+      insert into app.product (id, code, name, sale_price, sale_condition, category_id)
+      select gen_random_uuid(), '999001', 'Confiture de fraises', 4.5, 'ON_ORDER', c.id from c`);
+  } finally {
+    await client.end();
+  }
+  await login(page, USERS.customer);
+  await page.getByRole('link', { name: 'Boutique' }).first().click();
+  await expect(page.getByText('Confiture de fraises')).toBeVisible();
+  await expect(page.getByText(SEED.honey.name).first()).toBeVisible();
+
+  await page.getByLabel('Rayon').selectOption({ label: 'Confitures' });
+  await expect(page.getByText('Confiture de fraises')).toBeVisible();
+  // Shelves are regions of the window (the honey also shows in "Mes commandes").
+  await expect(page.getByRole('region', { name: 'Autres produits' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Confitures' })).toBeVisible();
+
+  // The shelf filter combines with the search, and can be cleared.
+  await page.getByLabel('Rechercher un produit').fill('miel');
+  await expect(page.getByText('Aucun produit dans ce rayon.')).toBeVisible();
+  await page.getByLabel('Rayon').selectOption({ label: 'Tous les rayons' });
+  await expect(page.getByRole('region', { name: 'Autres produits' })).toBeVisible();
 });

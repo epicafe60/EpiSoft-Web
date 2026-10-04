@@ -124,6 +124,7 @@ export const productFields = {
   unitQty: qtyInput.nullable(),
   unit: z.enum(UNITS).nullable(),
   saleCondition: z.enum(SALE_CONDITIONS),
+  shopVisible: z.boolean().default(true),
   categoryId: z.string().uuid().nullable(),
   supplierId: z.string().uuid().nullable(),
   supplierRef: text(60),

@@ -185,6 +185,7 @@ export interface ProductDetail {
   unitQty: string | null;
   unit: Unit | null;
   saleCondition: SaleCondition;
+  shopVisible: boolean;
   categoryId: string | null;
   supplierId: string | null;
   supplierRef: string | null;
@@ -215,7 +216,14 @@ export interface ProductDetail {
 
 export interface CatalogRefs {
   universes: { id: string; code: string; name: string; sort: number }[];
-  categories: { id: string; universeId: string; code: string; name: string; sort: number }[];
+  categories: {
+    id: string;
+    universeId: string;
+    code: string;
+    name: string;
+    sort: number;
+    shopVisible: boolean;
+  }[];
   suppliers: { id: string; code: string; name: string; active: boolean }[];
   posTabs: { id: string; name: string; sort: number; active: boolean }[];
 }

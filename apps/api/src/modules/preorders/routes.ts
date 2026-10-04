@@ -61,6 +61,9 @@ const ORDERABLE = and(
   inArray(product.status, ['ACTIVE', 'ON_ORDER']),
   inArray(product.saleCondition, ['ON_ORDER', 'BOTH']),
   eq(product.kind, 'GOODS'),
+  // Excluded from the shop: the product itself, or its whole shelf.
+  eq(product.shopVisible, true),
+  sql`(${product.categoryId} is null or exists (select 1 from app.category c where c.id = ${product.categoryId} and c.shop_visible))`,
 );
 
 async function detail(db: DbOrTx, id: string) {
