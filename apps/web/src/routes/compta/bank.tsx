@@ -18,8 +18,24 @@ import { Alert, Checkbox, Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
 import { useAccounts, useFiscalYears, useJournals } from './queries';
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
+
+const STATEMENT_SORT = {
+  file: (s: StatementRow) => s.fileName,
+  period: (s: StatementRow) => s.periodStart,
+  matched: (s: StatementRow) => s.matched,
+  gap: (s: StatementRow) => Number(s.gap),
+  status: (s: StatementRow) => (s.status === 'CLOSED' ? 'Clos' : 'Ouvert'),
+};
+const LINE_SORT = {
+  date: (l: BankLineRow) => l.date,
+  label: (l: BankLineRow) => `${l.label} ${l.memo ?? ''}`,
+  amount: (l: BankLineRow) => Number(l.amount),
+  state: (l: BankLineRow) => (l.status === 'MATCHED' ? 'Rapprochée' : 'À rapprocher'),
+};
 import type {
   BankAccountRow,
+  BankLineRow,
   BankRuleRow,
   StatementDetail,
   StatementRow,
@@ -82,6 +98,7 @@ function StatementsTab() {
     queryFn: () =>
       api.get<StatementRow[]>(`/bank/statements${bank ? `?bankAccountId=${bank}` : ''}`),
   });
+  const sort = useSort(list.data, STATEMENT_SORT, { key: 'period', dir: 'desc' });
   const upload = useMutation({
     mutationFn: (file: File) => {
       const p = new URLSearchParams({ bankAccountId: bank });
@@ -179,15 +196,25 @@ function StatementsTab() {
         <Table>
           <thead>
             <tr>
-              <th>Relevé</th>
-              <th>Période</th>
-              <th className="text-right">Rapprochées</th>
-              <th className="text-right">Écart</th>
-              <th>État</th>
+              <SortTh state={sort} sortKey="file">
+                Relevé
+              </SortTh>
+              <SortTh state={sort} sortKey="period">
+                Période
+              </SortTh>
+              <SortTh state={sort} sortKey="matched" className="text-right">
+                Rapprochées
+              </SortTh>
+              <SortTh state={sort} sortKey="gap" className="text-right">
+                Écart
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {(list.data ?? []).map((s) => (
+            {(sort.rows ?? []).map((s) => (
               <tr key={s.id}>
                 <td>
                   <Link
@@ -226,6 +253,7 @@ function StatementsTab() {
               </tr>
             ) : null}
           </tbody>
+          <NoMatchRow state={sort} total={list.data?.length} />
         </Table>
       </Card>
     </div>
@@ -291,6 +319,7 @@ export function StatementPage() {
     mutationFn: () => api.post(`/bank/statements/${id}/close`),
     onSuccess: refresh,
   });
+  const lineSort = useSort(data?.lines, LINE_SORT);
 
   if (error) return <QueryError error={error} />;
   if (!data) return null;
@@ -325,14 +354,22 @@ export function StatementPage() {
         <Table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Libellé</th>
-              <th className="text-right">Montant</th>
-              <th>Affectation</th>
+              <SortTh state={lineSort} sortKey="date">
+                Date
+              </SortTh>
+              <SortTh state={lineSort} sortKey="label">
+                Libellé
+              </SortTh>
+              <SortTh state={lineSort} sortKey="amount" className="text-right">
+                Montant
+              </SortTh>
+              <SortTh state={lineSort} sortKey="state">
+                Affectation
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {data.lines.map((l) => (
+            {(lineSort.rows ?? []).map((l) => (
               <tr key={l.id}>
                 <td className="tabular-nums">{formatDate(l.date)}</td>
                 <td>
@@ -393,6 +430,7 @@ export function StatementPage() {
               </tr>
             ))}
           </tbody>
+          <NoMatchRow state={lineSort} total={data.lines.length} />
         </Table>
       </Card>
       {match.error ? <Alert>{match.error.message}</Alert> : null}

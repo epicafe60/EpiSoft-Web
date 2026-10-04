@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Ban, CheckCircle2, Clock, XCircle } from 'lucide-react';
 import {
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, Field, Input } from '@/components/ui/form';
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 import { tillDb, type OutboxEntry } from './db';
 import { useTill } from './context';
 import { enqueue } from './sync';
@@ -51,21 +52,41 @@ export function TicketsPage() {
   const [selected, setSelected] = useState<SaleEntry | null>(null);
   const [reason, setReason] = useState('');
 
-  if (!entries || !members) return <p className="p-6 text-muted-foreground">Chargement…</p>;
   const sessionId = meta.session?.id;
-  const sales = entries.filter(
+  const sales = (entries ?? []).filter(
     (e): e is SaleEntry => e.op.kind === 'SALE' && e.op.payload.sessionId === sessionId,
   );
   const cancelled = new Set(
-    entries.flatMap((e) =>
+    (entries ?? []).flatMap((e) =>
       e.op.kind === 'SALE_CANCEL' && e.status !== 'REJECTED' ? [e.op.payload.saleId] : [],
     ),
   );
-  const others = entries.filter((e) => e.op.kind !== 'SALE' && e.status === 'REJECTED');
+  const others = (entries ?? []).filter((e) => e.op.kind !== 'SALE' && e.status === 'REJECTED');
   const nameOf = (id: string | null) => {
-    const m = members.find((x) => x.id === id);
+    const m = (members ?? []).find((x) => x.id === id);
     return m ? `${m.firstName} ${m.lastName}` : 'Sans adhérent';
   };
+
+  const accessors = useMemo(
+    () => ({
+      at: (s: SaleEntry) => s.op.payload.soldAt,
+      number: (s: SaleEntry) => s.op.payload.provisionalNumber,
+      member: (s: SaleEntry) => nameOf(s.op.payload.memberId),
+      status: (s: SaleEntry) =>
+        cancelled.has(s.id)
+          ? 'Annulé'
+          : s.status === 'PENDING'
+            ? 'En attente'
+            : s.status === 'REJECTED'
+              ? 'Refusé'
+              : (s.result?.number ?? 'Envoyé'),
+      total: (s: SaleEntry) => Number(s.op.payload.total),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [members, entries],
+  );
+  const sort = useSort(sales, accessors);
+  if (!entries || !members) return <p className="p-6 text-muted-foreground">Chargement…</p>;
 
   const cancel = async (s: SaleEntry) => {
     await enqueue((deviceSeq) => ({
@@ -103,11 +124,21 @@ export function TicketsPage() {
         <Table>
           <thead>
             <tr>
-              <th>Heure</th>
-              <th>N° provisoire</th>
-              <th>Adhérent</th>
-              <th>État</th>
-              <th className="text-right">Total</th>
+              <SortTh state={sort} sortKey="at">
+                Heure
+              </SortTh>
+              <SortTh state={sort} sortKey="number">
+                N° provisoire
+              </SortTh>
+              <SortTh state={sort} sortKey="member">
+                Adhérent
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
+              <SortTh state={sort} sortKey="total" className="text-right">
+                Total
+              </SortTh>
             </tr>
           </thead>
           <tbody>
@@ -118,7 +149,7 @@ export function TicketsPage() {
                 </td>
               </tr>
             ) : (
-              sales.map((s) => (
+              (sort.rows ?? []).map((s) => (
                 <tr
                   key={s.id}
                   className={cancelled.has(s.id) ? 'text-muted-foreground line-through' : ''}
@@ -150,6 +181,7 @@ export function TicketsPage() {
               ))
             )}
           </tbody>
+          <NoMatchRow state={sort} total={sales.length} />
         </Table>
       </Card>
 

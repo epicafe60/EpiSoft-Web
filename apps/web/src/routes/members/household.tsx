@@ -19,6 +19,17 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select, Textarea } from '@/components/ui/inputs';
 import type { HouseholdDetail, MembershipTypeRow, SaleListItem } from '@/lib/types';
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
+
+type WalletRow = HouseholdDetail['wallet'][number];
+const WALLET_SORT = {
+  at: (w: WalletRow) => w.at,
+  kind: (w: WalletRow) =>
+    `${WALLET_ENTRY_KIND_LABELS[w.kind]} ${w.paymentMethod ? PAYMENT_METHOD_LABELS[w.paymentMethod] : ''}`,
+  detail: (w: WalletRow) =>
+    `${w.saleNumber ? `Ticket ${w.saleNumber}` : (w.comment ?? '')} ${w.byName ?? ''}`,
+  amount: (w: WalletRow) => Number(w.amount),
+};
 import { PageHeader } from '../shell';
 import { QueryError } from '../errors';
 import { MembershipBadge } from './list';
@@ -152,6 +163,7 @@ export function HouseholdPage() {
     onSuccess: refresh,
   });
 
+  const walletSort = useSort(h?.wallet, WALLET_SORT);
   if (isPending) return <p className="text-muted-foreground">Chargement…</p>;
   if (error) return <QueryError error={error} />;
   const membershipEnd = h.memberships.find((m) => !m.cancelledAt)?.endDate ?? null;
@@ -307,10 +319,18 @@ export function HouseholdPage() {
           <Table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Opération</th>
-                <th>Détail</th>
-                <th className="text-right">Montant</th>
+                <SortTh state={walletSort} sortKey="at">
+                  Date
+                </SortTh>
+                <SortTh state={walletSort} sortKey="kind">
+                  Opération
+                </SortTh>
+                <SortTh state={walletSort} sortKey="detail">
+                  Détail
+                </SortTh>
+                <SortTh state={walletSort} sortKey="amount" className="text-right">
+                  Montant
+                </SortTh>
               </tr>
             </thead>
             <tbody>
@@ -321,7 +341,7 @@ export function HouseholdPage() {
                   </td>
                 </tr>
               ) : (
-                h.wallet.map((w) => (
+                (walletSort.rows ?? []).map((w) => (
                   <tr key={w.id}>
                     <td className="whitespace-nowrap tabular-nums">{formatDateTime(w.at)}</td>
                     <td>
@@ -375,6 +395,7 @@ export function HouseholdPage() {
                 ))
               )}
             </tbody>
+            <NoMatchRow state={walletSort} total={h.wallet.length} />
           </Table>
         </Card>
 

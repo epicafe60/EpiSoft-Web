@@ -1,3 +1,4 @@
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -25,6 +26,12 @@ export function PlanPage() {
 
 const SIDE_LABELS = { D: 'Débiteur', C: 'Créditeur', M: 'Mixte' } as const;
 
+const ACCOUNT_SORT = {
+  number: (a: AccountRow) => a.number,
+  label: (a: AccountRow) => a.label,
+  side: (a: AccountRow) => SIDE_LABELS[a.normalSide],
+};
+
 function AccountsCard() {
   const queryClient = useQueryClient();
   const { data, error } = useAccounts();
@@ -36,6 +43,7 @@ function AccountsCard() {
       a.number.startsWith(q.trim()) ||
       a.label.toLowerCase().includes(q.trim().toLowerCase()),
   );
+  const sort = useSort(rows, ACCOUNT_SORT);
   const [number, setNumber] = useState('');
   const [label, setLabel] = useState('');
   const [side, setSide] = useState<'D' | 'C' | 'M'>('D');
@@ -85,14 +93,20 @@ function AccountsCard() {
           <Table>
             <thead>
               <tr>
-                <th>Compte</th>
-                <th>Libellé</th>
-                <th>Sens</th>
+                <SortTh state={sort} sortKey="number">
+                  Compte
+                </SortTh>
+                <SortTh state={sort} sortKey="label">
+                  Libellé
+                </SortTh>
+                <SortTh state={sort} sortKey="side">
+                  Sens
+                </SortTh>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {rows.map((a) => (
+              {(sort.rows ?? []).map((a) => (
                 <tr key={a.id}>
                   <td className="tabular-nums">{a.number}</td>
                   <td>
@@ -118,6 +132,7 @@ function AccountsCard() {
                 </tr>
               ))}
             </tbody>
+            <NoMatchRow state={sort} total={rows.length} />
           </Table>
         </div>
       </CardContent>

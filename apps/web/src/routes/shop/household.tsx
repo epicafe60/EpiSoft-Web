@@ -9,6 +9,7 @@ import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
 import { PushToggle } from './push-toggle';
 import { TicketDialog } from './ticket-dialog';
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 
 interface Mine {
   household: {
@@ -28,6 +29,19 @@ interface Mine {
   } | null;
 }
 
+type Wallet = NonNullable<Mine['household']>['wallet'][number];
+type Ticket = NonNullable<Mine['household']>['tickets'][number];
+const WALLET_SORT = {
+  at: (w: Wallet) => w.at,
+  kind: (w: Wallet) => `${WALLET_ENTRY_KIND_LABELS[w.kind]} ${w.comment ?? ''}`,
+  amount: (w: Wallet) => Number(w.amount),
+};
+const TICKET_SORT = {
+  at: (t: Ticket) => t.soldAt,
+  number: (t: Ticket) => t.number,
+  total: (t: Ticket) => Number(t.total),
+};
+
 /** Self-service view of the member's own household: cagnotte, membership, recent purchases. */
 export function MyHouseholdPage() {
   const { data, error } = useQuery({
@@ -35,6 +49,8 @@ export function MyHouseholdPage() {
     queryFn: () => api.get<Mine>('/me/household'),
   });
   const [ticketId, setTicketId] = useState<string | null>(null);
+  const walletSort = useSort(data?.household?.wallet, WALLET_SORT);
+  const ticketSort = useSort(data?.household?.tickets, TICKET_SORT);
   const h = data?.household;
   const soon = h?.membership
     ? new Date(h.membership.endDate).getTime() - Date.now() < 30 * 86_400_000
@@ -108,13 +124,19 @@ export function MyHouseholdPage() {
               <Table>
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Opération</th>
-                    <th className="text-right">Montant</th>
+                    <SortTh state={walletSort} sortKey="at">
+                      Date
+                    </SortTh>
+                    <SortTh state={walletSort} sortKey="kind">
+                      Opération
+                    </SortTh>
+                    <SortTh state={walletSort} sortKey="amount" className="text-right">
+                      Montant
+                    </SortTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {h.wallet.map((w) => (
+                  {(walletSort.rows ?? []).map((w) => (
                     <tr key={w.id}>
                       <td>{formatDate(w.at)}</td>
                       <td>
@@ -146,6 +168,7 @@ export function MyHouseholdPage() {
                     </tr>
                   ) : null}
                 </tbody>
+                <NoMatchRow state={walletSort} total={h.wallet.length} />
               </Table>
             </CardContent>
           </Card>
@@ -157,13 +180,19 @@ export function MyHouseholdPage() {
               <Table>
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th className="text-right">Total</th>
+                    <SortTh state={ticketSort} sortKey="at">
+                      Date
+                    </SortTh>
+                    <SortTh state={ticketSort} sortKey="number">
+                      Ticket
+                    </SortTh>
+                    <SortTh state={ticketSort} sortKey="total" className="text-right">
+                      Total
+                    </SortTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {h.tickets.map((s) => (
+                  {(ticketSort.rows ?? []).map((s) => (
                     <tr key={s.id}>
                       <td>{formatDate(s.soldAt)}</td>
                       <td>
@@ -186,6 +215,7 @@ export function MyHouseholdPage() {
                     </tr>
                   ) : null}
                 </tbody>
+                <NoMatchRow state={ticketSort} total={h.tickets.length} />
               </Table>
             </CardContent>
           </Card>

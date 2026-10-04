@@ -55,7 +55,11 @@ export function matchesColumnFilter(value: SortValue, query: string): boolean {
     return String(value).includes(q.replace(',', '.'));
   }
   if (value === null || value === undefined) return false;
-  return normalizeSearch(String(value)).includes(normalizeSearch(q));
+  const text = String(value);
+  // ISO dates are shown as dd/mm/yyyy: both spellings can be typed.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+  const haystack = iso ? `${text} ${iso[3]}/${iso[2]}/${iso[1]}` : text;
+  return normalizeSearch(haystack).includes(normalizeSearch(q));
 }
 
 /** Keeps the rows matching every non-empty column filter (AND). */

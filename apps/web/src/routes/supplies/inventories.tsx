@@ -8,6 +8,7 @@ import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
+import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
@@ -17,12 +18,20 @@ import { QueryError } from '../errors';
 
 const STATUS = { OPEN: 'En cours', VALIDATED: 'Validé', CANCELLED: 'Annulé' } as const;
 
+const INVENTORY_SORT = {
+  label: (s: InventoryRow) => s.label,
+  openedAt: (s: InventoryRow) => s.openedAt,
+  status: (s: InventoryRow) => STATUS[s.status],
+  counted: (s: InventoryRow) => s.counted,
+};
+
 export function InventoriesPage() {
   const navigate = useNavigate();
   const { data, error } = useQuery({
     queryKey: ['inventories'],
     queryFn: () => api.get<InventoryRow[]>('/inventories'),
   });
+  const sort = useSort(data, INVENTORY_SORT, { key: 'openedAt', dir: 'desc' });
   const refs = useQuery({
     queryKey: ['catalog-refs'],
     queryFn: () => api.get<CatalogRefs>('/catalog/refs'),
@@ -112,14 +121,22 @@ export function InventoriesPage() {
         <Table>
           <thead>
             <tr>
-              <th>Inventaire</th>
-              <th>Ouvert le</th>
-              <th>État</th>
-              <th className="text-right">Comptés</th>
+              <SortTh state={sort} sortKey="label">
+                Inventaire
+              </SortTh>
+              <SortTh state={sort} sortKey="openedAt">
+                Ouvert le
+              </SortTh>
+              <SortTh state={sort} sortKey="status">
+                État
+              </SortTh>
+              <SortTh state={sort} sortKey="counted" className="text-right">
+                Comptés
+              </SortTh>
             </tr>
           </thead>
           <tbody>
-            {(data ?? []).map((s) => (
+            {(sort.rows ?? []).map((s) => (
               <tr key={s.id}>
                 <td>
                   <Link
@@ -150,6 +167,7 @@ export function InventoriesPage() {
               </tr>
             ))}
           </tbody>
+          <NoMatchRow state={sort} total={data?.length} />
         </Table>
       </Card>
     </div>

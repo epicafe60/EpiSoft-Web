@@ -34,6 +34,11 @@ describe('column filters', () => {
     expect(matchesColumnFilter(null, '')).toBe(true);
     expect(matchesColumnFilter(null, 'a')).toBe(false);
   });
+  it('ISO dates can be searched as dd/mm/yyyy', () => {
+    expect(matchesColumnFilter('2026-10-04T09:00:00Z', '04/10/2026')).toBe(true);
+    expect(matchesColumnFilter('2026-10-04', '2026-10')).toBe(true);
+    expect(matchesColumnFilter('2026-10-04', '05/10')).toBe(false);
+  });
   it('numbers: comparison operators with comma decimals, or contained digits', () => {
     expect(matchesColumnFilter(12.5, '>10')).toBe(true);
     expect(matchesColumnFilter(12.5, '<=12,5')).toBe(true);
