@@ -111,6 +111,7 @@ describe('integrity alert', () => {
           count: errors,
           samples: [],
           help: { what: '', todo: '' },
+          analysis: false,
           list: null,
           fix: null,
           ackable: false,

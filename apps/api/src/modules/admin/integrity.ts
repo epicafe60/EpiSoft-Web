@@ -7,6 +7,8 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/problem';
 import { FALLBACK_HELP, INTEGRITY_HELP, type IntegrityHelp } from './integrity-help';
+import { ANALYSIS_OF, integrityAnalysis } from './integrity-analysis';
+import { reportXlsx } from '../../lib/report-output';
 
 type Row = Record<string, unknown>;
 
@@ -337,6 +339,8 @@ export interface IntegrityResult {
   fix: { label: string; confirm: string } | null;
   /** What is compared and what to do when cases are listed. */
   help: IntegrityHelp;
+  /** A detailed table (figures on both sides, gaps) is available for this check. */
+  analysis: boolean;
   /** Warnings can be accepted after review; errors cannot. */
   ackable: boolean;
   accepted: (IntegritySample & { note: string | null })[];
@@ -361,6 +365,7 @@ export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
       id: c.id,
       label: c.label,
       help: INTEGRITY_HELP[c.id] ?? FALLBACK_HELP,
+      analysis: c.id in ANALYSIS_OF,
       list: LISTS[c.id] ?? null,
       fix: FIXES[c.id] ? { label: FIXES[c.id]!.label, confirm: FIXES[c.id]!.confirm } : null,
       ackable: c.severity === 'warning',
@@ -423,6 +428,27 @@ export const integrityRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
     last = await runIntegrityChecks(db);
     return last;
   });
+
+  /** The table of items and figures behind a check, as JSON or Excel. */
+  app.get(
+    '/admin/integrity/:id/analysis',
+    {
+      ...guard,
+      schema: {
+        params: z.object({ id: z.string().max(20) }),
+        querystring: z.object({ format: z.enum(['json', 'xlsx']).default('json') }),
+      },
+    },
+    async (req, reply) => {
+      const table = await integrityAnalysis(db, req.params.id);
+      if (!table) throw notFound('Pas d’analyse détaillée pour ce contrôle.');
+      if (req.query.format === 'json') return table;
+      return reply
+        .header('content-disposition', `attachment; filename="analyse-${req.params.id}.xlsx"`)
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(await reportXlsx(table));
+    },
+  );
 
   /** Recomputes a derived figure from its source of truth (see FIXES). */
   app.post(

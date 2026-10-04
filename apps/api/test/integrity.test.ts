@@ -30,6 +30,43 @@ async function setup() {
   return { call, check };
 }
 
+describe('integrity: detailed analysis', () => {
+  it('every check that announces an analysis can produce its table (JSON and Excel)', async () => {
+    const { call } = await setup();
+    const checks = (await call('GET', '/admin/integrity')).json().checks as {
+      id: string;
+      analysis: boolean;
+    }[];
+    const withAnalysis = checks.filter((c) => c.analysis);
+    expect(withAnalysis.length).toBeGreaterThanOrEqual(15);
+    for (const c of withAnalysis) {
+      const res = await call('GET', `/admin/integrity/${c.id}/analysis`);
+      expect(res.statusCode, c.id).toBe(200);
+      const table = res.json();
+      expect(table.columns.length, c.id).toBeGreaterThan(2);
+      expect(table.subtitle.length, c.id).toBeGreaterThan(40);
+    }
+    const xlsx = await call('GET', '/admin/integrity/STK-01/analysis?format=xlsx');
+    expect(xlsx.headers['content-type']).toContain('spreadsheetml');
+    expect((await call('GET', '/admin/integrity/CPT-03/analysis')).statusCode).toBe(404);
+  });
+
+  it('the stock analysis shows both sides of a gap', async () => {
+    const { call } = await setup();
+    await t.db
+      .insert(product)
+      .values({ code: 'AN1', name: 'Farine', salePrice: '2', stockQty: '5.000' });
+    const table = (await call('GET', '/admin/integrity/STK-01/analysis')).json();
+    expect(table.rows).toHaveLength(1);
+    expect(table.rows[0].cells).toMatchObject({
+      product: 'AN1 · Farine',
+      cache: '5.000',
+      moves: '0',
+      gap: '5.000',
+    });
+  });
+});
+
 describe('integrity: links and remediation', () => {
   it('explains every check: what it compares and what to do', async () => {
     const { call } = await setup();

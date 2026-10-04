@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/form';
 import { Badge, Card, CardContent } from '@/components/ui/card';
 import { QueryError } from '../errors';
+import { Dialog } from '@/components/ui/dialog';
+import { ReportTableView, type ReportTableData } from '@/components/report-table';
+import { useState } from 'react';
 
 interface Sample {
   ref: string;
@@ -21,6 +24,7 @@ interface Check {
   count: number;
   samples: Sample[];
   help: { what: string; todo: string };
+  analysis: boolean;
   list: { to: string; label: string } | null;
   fix: { label: string; confirm: string } | null;
   ackable: boolean;
@@ -84,6 +88,12 @@ export function IntegrityPage() {
     onSuccess: done,
   });
   const failure = fix.error ?? accept.error ?? unaccept.error;
+  const [analysis, setAnalysis] = useState<Check | null>(null);
+  const detail = useQuery({
+    queryKey: ['integrity-analysis', analysis?.id],
+    queryFn: () => api.get<ReportTableData>(`/admin/integrity/${analysis!.id}/analysis`),
+    enabled: !!analysis,
+  });
 
   return (
     <div className="grid gap-4">
@@ -151,8 +161,13 @@ export function IntegrityPage() {
                         </p>
                       </div>
                     </details>
-                    {c.count > 0 && (c.list || c.fix) ? (
+                    {c.count > 0 && (c.list || c.fix || c.analysis) ? (
                       <p className="flex flex-wrap items-center gap-3">
+                        {c.analysis ? (
+                          <Button size="sm" variant="outline" onClick={() => setAnalysis(c)}>
+                            Analyse détaillée
+                          </Button>
+                        ) : null}
                         {c.list ? <Open to={c.list.to}>{`Ouvrir : ${c.list.label} →`}</Open> : null}
                         {c.fix ? (
                           <Button
@@ -231,6 +246,30 @@ export function IntegrityPage() {
           </ul>
         </>
       ) : null}
+      <Dialog
+        open={!!analysis}
+        onClose={() => setAnalysis(null)}
+        title={detail.data?.title ?? 'Analyse détaillée'}
+        description={detail.data?.subtitle}
+        className="max-w-6xl"
+      >
+        {detail.error ? <QueryError error={detail.error} /> : null}
+        {detail.data ? (
+          <div className="grid gap-3">
+            <div className="max-h-[60vh] overflow-auto">
+              <ReportTableView data={detail.data} busy={detail.isFetching} />
+            </div>
+            <a
+              className="w-fit text-sm text-primary hover:underline"
+              href={`/api/v1/admin/integrity/${analysis!.id}/analysis?format=xlsx`}
+            >
+              Exporter en Excel
+            </a>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Chargement…</p>
+        )}
+      </Dialog>
     </div>
   );
 }
