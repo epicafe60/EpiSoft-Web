@@ -427,3 +427,12 @@ export function statementGapCents(
 }
 
 export { addDays };
+
+/**
+ * Automatic matching (R-CPT-13/14): a line is pre-assigned only when exactly one suggestion
+ * exists. Several candidates (two entries of the same amount, a rule and an invoice…) are an
+ * ambiguity left to the treasurer. Documented default: the treasurer still confirms the batch.
+ */
+export function autoMatchPick<S>(suggestions: readonly S[]): S | null {
+  return suggestions.length === 1 ? suggestions[0]! : null;
+}

@@ -5,6 +5,7 @@ import {
   fingerprints,
   matchingEntryLines,
   matchingInvoices,
+  autoMatchPick,
   matchRule,
   parseBankAmount,
   parseBankDate,
@@ -305,5 +306,14 @@ describe('reconciliation (R-CPT-14)', () => {
   it('the statement closes only with a zero gap', () => {
     expect(statementGapCents(100000, 123456, [3000, -25564, 46020])).toBe(0);
     expect(statementGapCents(100000, 123456, [3000])).toBe(20456);
+  });
+});
+
+describe('automatic matching (R-CPT-13/14)', () => {
+  it('pre-assigns a line only when the suggestion is unique', () => {
+    expect(autoMatchPick([])).toBeNull();
+    expect(autoMatchPick([{ kind: 'INVOICE' }])).toEqual({ kind: 'INVOICE' });
+    expect(autoMatchPick([{ kind: 'ENTRY_LINE' }, { kind: 'ENTRY_LINE' }])).toBeNull();
+    expect(autoMatchPick([{ kind: 'RULE' }, { kind: 'INVOICE' }])).toBeNull();
   });
 });
