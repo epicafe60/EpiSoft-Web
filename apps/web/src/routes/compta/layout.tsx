@@ -3,6 +3,7 @@ import { PageHeader } from '../shell';
 
 const TABS = [
   { to: '/compta/ecritures', label: 'Écritures' },
+  { to: '/compta/propositions', label: 'Propositions' },
   { to: '/compta/banque', label: 'Banque' },
   { to: '/compta/editions', label: 'Éditions' },
   { to: '/compta/budget', label: 'Budget' },

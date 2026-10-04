@@ -31,6 +31,7 @@ import { bankRoutes } from './modules/accounting/bank';
 import { closingRoutes } from './modules/accounting/closing';
 import { pushRoutes } from './modules/push/routes';
 import { budgetRoutes } from './modules/accounting/budget';
+import { proposalRoutes } from './modules/accounting/proposals';
 import { reportRoutes } from './modules/accounting/reports';
 import { dashboardRoutes } from './modules/stats/dashboard';
 import { analysisRoutes } from './modules/stats/analysis';
@@ -93,6 +94,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(bankRoutes, { db, config });
       await api.register(reportRoutes, { db, config });
       await api.register(budgetRoutes, { db, config });
+      await api.register(proposalRoutes, { db, config });
       await api.register(closingRoutes, { db, config });
       await api.register(dashboardRoutes, { db, config });
       await api.register(analysisRoutes, { db, config });
