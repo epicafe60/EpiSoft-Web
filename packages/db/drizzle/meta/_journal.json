@@ -134,6 +134,41 @@
       "when": 1791121276749,
       "tag": "0018_shop_visible",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792852683371,
+      "tag": "0019_inventory_freeze",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792855884753,
+      "tag": "0020_ticket_email_image_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792860364469,
+      "tag": "0021_protections",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792860514122,
+      "tag": "0022_sale_warnings_reviewed",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792868270478,
+      "tag": "0023_orphan_references",
+      "breakpoints": true
     }
   ]
 }

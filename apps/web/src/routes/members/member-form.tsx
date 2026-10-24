@@ -1,9 +1,11 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useDeferredValue, useMemo, useState, type FormEvent } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useConfirm } from '@/components/confirm';
 import { Download, KeyRound, QrCode, UserX } from 'lucide-react';
 import {
+  suggestEmailDomain,
   MEMBER_STATUS_LABELS,
   MEMBER_STATUSES,
   memberCreateSchema,
@@ -13,6 +15,7 @@ import {
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
+import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +38,8 @@ interface FormState {
   status: MemberStatus;
   publicVisible: boolean;
   newsletter: boolean;
+  ticketEmailOptOut: boolean;
+  imageConsent: boolean;
   username: string;
 }
 
@@ -49,6 +54,8 @@ const EMPTY: FormState = {
   status: 'NEW',
   publicVisible: false,
   newsletter: false,
+  ticketEmailOptOut: false,
+  imageConsent: false,
   username: '',
 };
 
@@ -64,6 +71,8 @@ function toForm(m: MemberDetail): FormState {
     status: m.status,
     publicVisible: m.publicVisible,
     newsletter: m.newsletter,
+    ticketEmailOptOut: m.ticketEmailOptOut,
+    imageConsent: m.imageConsent,
     username: m.username ?? '',
   };
 }
@@ -158,6 +167,27 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
       }),
   });
 
+  // The same person may already have a card, and an e-mail address is easy to mistype.
+  const confirm = useConfirm();
+  const deferred = {
+    firstName: useDeferredValue(form.firstName.trim()),
+    lastName: useDeferredValue(form.lastName.trim()),
+    phone: useDeferredValue(form.phone.trim()),
+  };
+  const twins = useQuery({
+    queryKey: ['member-duplicates', deferred, member?.id ?? ''],
+    queryFn: () =>
+      api.get<{ id: string; number: number; firstName: string; lastName: string }[]>(
+        `/members/duplicates?${new URLSearchParams({
+          firstName: deferred.firstName,
+          lastName: deferred.lastName,
+          ...(deferred.phone ? { phone: deferred.phone } : {}),
+          ...(member ? { exceptId: member.id } : {}),
+        })}`,
+      ),
+    enabled: deferred.firstName.length >= 2 || deferred.phone.length >= 8,
+  });
+  const emailHint = form.email.trim() ? suggestEmailDomain(form.email.trim()) : null;
   const anonymize = useMutation({
     mutationFn: () => api.post(`/members/${member!.id}/anonymize`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['member', member!.id] }),
@@ -239,6 +269,20 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
                 {text('lastName', 'Nom', { autoComplete: 'off' })}
                 {text('firstName', 'Prénom', { autoComplete: 'off' })}
               </div>
+              {twins.data?.length ? (
+                <Alert variant="info">
+                  Cette personne a peut-être déjà une fiche :{' '}
+                  {twins.data.map((m, i) => (
+                    <span key={m.id}>
+                      {i ? ', ' : ''}
+                      <Link to="/membres/$id" params={{ id: m.id }} className="underline">
+                        {m.lastName} {m.firstName} (n° {m.number})
+                      </Link>
+                    </span>
+                  ))}
+                  . Évitez de créer un doublon : la cagnotte et l’historique seraient séparés.
+                </Alert>
+              ) : null}
               {text('street', 'Adresse')}
               <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
                 {text('postcode', 'Code postal', { inputMode: 'numeric', maxLength: 5 })}
@@ -263,6 +307,18 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
                 {text('phone', 'Téléphone', { type: 'tel' })}
                 {text('email', 'Courriel', { type: 'email' })}
               </div>
+              {emailHint ? (
+                <p className="text-sm">
+                  Vouliez-vous écrire <strong>{emailHint}</strong> ?{' '}
+                  <button
+                    type="button"
+                    className="text-primary underline"
+                    onClick={() => set('email', emailHint)}
+                  >
+                    Corriger
+                  </button>
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -275,7 +331,7 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
                 <Field
                   label="Statut"
                   error={errors.status}
-                  hint="Les membres Inactif ou Archivé ne peuvent plus acheter (R-MBR-03)."
+                  hint="Les membres Inactif ou Archivé ne peuvent plus acheter."
                 >
                   {(p) => (
                     <Select
@@ -339,9 +395,36 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
                   </Label>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="image-consent"
+                    checked={form.imageConsent}
+                    onChange={(e) => set('imageConsent', e.target.checked)}
+                  />
+                  <Label htmlFor="image-consent" className="font-normal">
+                    Accepte l’utilisation de son image
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="ticket-optout"
+                    checked={form.ticketEmailOptOut}
+                    onChange={(e) => set('ticketEmailOptOut', e.target.checked)}
+                  />
+                  <Label htmlFor="ticket-optout" className="font-normal">
+                    Ne plus recevoir les tickets par courriel
+                  </Label>
+                </div>
+              </div>
+              {member?.imageConsentAt ? (
+                <p className="text-xs text-muted-foreground">
+                  Droit à l’image accordé le {formatDateTime(member.imageConsentAt)}.
+                </p>
+              ) : null}
               {member?.newsletterOptInAt ? (
                 <p className="text-xs text-muted-foreground">
-                  Consentement donné le {formatDateTime(member.newsletterOptInAt)} (R-MBR-08).
+                  Consentement donné le {formatDateTime(member.newsletterOptInAt)}.
                 </p>
               ) : null}
             </CardContent>
@@ -440,13 +523,22 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
                   <Button
                     variant="outline"
                     className="text-destructive"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          'Anonymiser ce membre ? Son nom et ses coordonnées seront effacés définitivement ; les montants sont conservés.',
-                        )
-                      )
-                        anonymize.mutate();
+                    onClick={async () => {
+                      const balance = Number(member.householdBalance ?? 0);
+                      const ok = await confirm({
+                        title: 'Anonymiser ce membre ?',
+                        message:
+                          'Son nom et ses coordonnées seront effacés définitivement ; les montants sont conservés. Cette action ne se défait pas.',
+                        impact:
+                          balance > 0
+                            ? [
+                                `Son foyer a encore ${euro(member.householdBalance!)} sur la cagnotte : prévenez le foyer ou rendez la somme avant d’archiver.`,
+                              ]
+                            : undefined,
+                        confirmLabel: 'Archiver et anonymiser',
+                        destructive: true,
+                      });
+                      if (ok) anonymize.mutate();
                     }}
                   >
                     <UserX /> Archiver et anonymiser

@@ -1,14 +1,17 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
-import { jobRun, member, userRole, type Db } from '@episoft/db';
-import { addDays, decimalToCents, type RoleCode } from '@episoft/shared';
+import { jobRun, member, type Db } from '@episoft/db';
+import { addDays, decimalToCents } from '@episoft/shared';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
+import { notifyStaff } from '../../lib/alerts';
 import { escapeHtml, queueEmail } from '../../lib/mail';
-import { sendPush, type PushMessage } from '../../lib/push';
+import { sendPush } from '../../lib/push';
 import { eur } from '../../lib/pdf';
 import { loadSettings } from './settings-store';
-import { lastIntegrity, type IntegrityReport } from './integrity';
+import { lastIntegrity, runIntegrityChecks, type IntegrityReport } from './integrity';
+import { computeAttention } from './attention';
+import { takeWalletSnapshot } from '../members/wallet-snapshot';
 
 // Daily alerts (R-STK-07, R-CAG-06, integrity): one run per job and day, e-mail and push.
 
@@ -37,38 +40,6 @@ export async function runOncePerDay(
     await release();
     throw e;
   }
-}
-
-/** Active members holding at least one of the roles. */
-async function staffWith(db: Db, roles: RoleCode[]) {
-  return db
-    .selectDistinct({ id: member.id, email: member.email })
-    .from(member)
-    .innerJoin(userRole, eq(userRole.memberId, member.id))
-    .where(and(inArray(userRole.roleCode, roles), sql`${member.status} <> 'ARCHIVED'`));
-}
-
-/** One e-mail (when an address is known) and one push per recipient. Returns the recipients. */
-async function notifyStaff(
-  db: Db,
-  config: Config,
-  roles: RoleCode[],
-  mail: { subject: string; lines: string[] },
-  push: PushMessage,
-  log?: FastifyBaseLogger,
-): Promise<number> {
-  const staff = await staffWith(db, roles);
-  for (const s of staff) {
-    if (s.email)
-      await queueEmail(db, {
-        to: s.email,
-        subject: mail.subject,
-        text: mail.lines.join('\n'),
-        html: `<ul>${mail.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
-      });
-    await sendPush(db, config, s.id, push, log);
-  }
-  return staff.length;
 }
 
 const fr = (iso: string) => iso.split('-').reverse().join('/');
@@ -201,6 +172,43 @@ export async function sendIntegrityAlert(
   return sent ?? 0;
 }
 
+/**
+ * One summary a day for ADMIN and COMPTA: everything that deserves a look (refused tickets,
+ * failed e-mails, late backup, tickets saved with a warning…). The integrity failures keep
+ * their own message above, so they are not repeated here. Nothing to report, nothing sent.
+ */
+export async function sendAttentionSummary(
+  db: Db,
+  config: Config,
+  now = new Date(),
+  log?: FastifyBaseLogger,
+): Promise<number> {
+  const thresholds = (await loadSettings(db))['controls.thresholds'];
+  const sent = await runOncePerDay(db, 'attention-summary', toParisDate(now), async () => {
+    const items = (await computeAttention(db, thresholds, now)).filter(
+      (i) => !i.code.startsWith('INTEGRITY'),
+    );
+    if (!items.length) return 0;
+    await notifyStaff(
+      db,
+      config,
+      ['ADMIN', 'COMPTA'],
+      {
+        subject: 'Épicafé : points à surveiller',
+        lines: items.map((i) => `${i.count} · ${i.label}`),
+      },
+      {
+        title: 'Points à surveiller',
+        body: `${items.length} point(s) à regarder.`,
+        url: '/',
+      },
+      log,
+    );
+    return items.length;
+  });
+  return sent ?? 0;
+}
+
 /** Hourly tick; each alert acts once per day, from 7 h (Paris). */
 export function startDailyDigestJob(db: Db, config: Config, log: FastifyBaseLogger): () => void {
   const run = async () => {
@@ -218,10 +226,15 @@ export function startDailyDigestJob(db: Db, config: Config, log: FastifyBaseLogg
     try {
       const expiry = await sendExpiryDigest(db, config, now, log);
       const wallets = await sendLowWalletReminders(db, config, now, log);
-      const report = lastIntegrity();
-      const integrity = report ? await sendIntegrityAlert(db, config, report, now, log) : 0;
-      if (expiry || wallets || integrity)
-        log.info({ expiry, wallets, integrity }, 'alertes quotidiennes envoyées');
+      // After a restart the last result is gone: run the checks rather than miss the alert.
+      const report = lastIntegrity() ?? (await runIntegrityChecks(db));
+      const integrity = await sendIntegrityAlert(db, config, report, now, log);
+      // The cagnotte balances noted every morning feed the check CAG-05.
+      // One note per household and day: running it at every tick changes nothing.
+      await takeWalletSnapshot(db, now);
+      const attention = await sendAttentionSummary(db, config, now, log);
+      if (expiry || wallets || integrity || attention)
+        log.info({ expiry, wallets, integrity, attention }, 'alertes quotidiennes envoyées');
     } catch (err) {
       log.error({ err }, 'alertes quotidiennes');
     }

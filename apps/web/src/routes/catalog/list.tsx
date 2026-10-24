@@ -38,17 +38,24 @@ export function ProductsPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<ProductStatus | ''>('ACTIVE');
   const [labels, setLabels] = useState(false);
+  const [supplierId, setSupplierId] = useState('');
   const query = useDeferredValue(q.trim());
   const { data, error, isPending } = useQuery({
-    queryKey: ['products', query, status, labels],
+    queryKey: ['products', query, status, labels, supplierId],
     queryFn: () => {
       const p = new URLSearchParams({ limit: '1000' });
       if (query) p.set('q', query);
       if (status) p.set('status', status);
       if (labels) p.set('labelPending', 'true');
+      if (supplierId) p.set('supplierId', supplierId);
       return api.get<ProductListItem[]>(`/products?${p}`);
     },
     placeholderData: (prev) => prev,
+  });
+  // R-EVO-13: filter the catalogue (and its stock column) by supplier.
+  const suppliers = useQuery({
+    queryKey: ['suppliers', 'active'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/suppliers?active=true'),
   });
   const sort = useSort(data, PRODUCT_SORT);
   const labelsDone = useMutation({
@@ -105,6 +112,19 @@ export function ProductsPage() {
           {PRODUCT_STATUSES.map((s) => (
             <option key={s} value={s}>
               {PRODUCT_STATUS_LABELS[s]}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label="Fournisseur"
+          className="w-52"
+          value={supplierId}
+          onChange={(e) => setSupplierId(e.target.value)}
+        >
+          <option value="">Tous les fournisseurs</option>
+          {(suppliers.data ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
             </option>
           ))}
         </Select>

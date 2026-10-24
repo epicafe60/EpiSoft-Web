@@ -23,6 +23,8 @@ export interface ReceiptSale {
   lines: { label: string; qty: string; unitPrice: string; lineTotal: string }[];
   payments: { method: PaymentMethod; amount: string }[];
   cashierName: string | null;
+  /** R-EVO-40: cagnotte before and after the ticket, when the member has a household. */
+  balance?: { beforeCents: number; afterCents: number };
 }
 
 /** R-VTE-11 / R-VTE-16: the ticket by e-mail, sent only once the sale is recorded. */
@@ -39,17 +41,22 @@ export function saleReceiptEmail(to: string, firstName: string, s: ReceiptSale):
   const pays = s.payments
     .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} : ${formatEuro(p.amount)}`)
     .join('<br>');
+  const before = s.balance ? `Solde de votre cagnotte avant : ${euros(s.balance.beforeCents)}` : '';
+  const after = s.balance ? `Solde de votre cagnotte après : ${euros(s.balance.afterCents)}` : '';
   const html = wrap(
     `Ticket ${s.number}`,
     `<p>Bonjour ${escapeHtml(firstName)},<br>voici votre ticket du ${formatParis(s.soldAt)}.</p>` +
+      (before ? `<p>${before}</p>` : '') +
       `<table style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr>` +
       `<th style="${td};text-align:left">Article</th><th style="${td};text-align:right">Qté</th>` +
       `<th style="${td};text-align:right">P.U.</th><th style="${td};text-align:right">Total</th></tr></thead>` +
       `<tbody>${rows}</tbody></table>` +
-      `<p style="font-size:16px"><strong>Total : ${formatEuro(s.total)}</strong></p><p>${pays}</p>`,
+      `<p style="font-size:16px"><strong>Total : ${formatEuro(s.total)}</strong></p><p>${pays}</p>` +
+      (after ? `<p><strong>${after}</strong></p>` : ''),
   );
   const text =
     `Ticket ${s.number} du ${formatParis(s.soldAt)}\n\n` +
+    (before ? `${before}\n\n` : '') +
     s.lines
       .map(
         (l) =>
@@ -59,7 +66,8 @@ export function saleReceiptEmail(to: string, firstName: string, s: ReceiptSale):
     `\n\nTotal : ${formatEuro(s.total)}\n` +
     s.payments
       .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} : ${formatEuro(p.amount)}`)
-      .join('\n');
+      .join('\n') +
+    (after ? `\n\n${after}` : '');
   return { to, subject: `Épicafé : ticket ${s.number}`, html, text };
 }
 

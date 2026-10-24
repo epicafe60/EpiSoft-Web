@@ -104,6 +104,54 @@ export function applyPayment(
   return { amountCents: Math.min(tenderedCents, remainingCents), changeCents: 0 };
 }
 
+// --- Adhérent avant le ticket (R-EVO-01) ---------------------------------------------
+
+/**
+ * R-EVO-01: no article can be added before a member is chosen or a membership (passing or
+ * annual) is on the ticket. `requireMemberFirst` is true when absent (old snapshot).
+ */
+export function lineEntryBlocked(a: {
+  memberId: string | null;
+  hasMembershipLine: boolean;
+  requireMemberFirst?: boolean;
+}): boolean {
+  return a.requireMemberFirst !== false && !a.memberId && !a.hasMembershipLine;
+}
+
+/** R-EVO-04 / R-EVO-41: green when the cagnotte is positive and covers the ticket, red otherwise. */
+export function walletTone(balanceCents: number, ticketCents = 0): 'ok' | 'low' {
+  return balanceCents > 0 && balanceCents >= ticketCents ? 'ok' : 'low';
+}
+
+/** R-EVO-02: the payment can be added only once a method is chosen. */
+export function canAddPayment(method: string | null, remainingCents: number): boolean {
+  return method !== null && remainingCents > 0;
+}
+
+/**
+ * R-EVO-30: why the till refuses a new ticket, or null. `salesFrozen` is absent in an old
+ * snapshot, which never freezes.
+ */
+export function salesBlockedReason(
+  settings: { salesFrozen?: boolean } | null | undefined,
+): string | null {
+  return settings?.salesFrozen ? 'Ventes suspendues : inventaire en cours.' : null;
+}
+
+/**
+ * R-EVO-06: the session this till works in was closed from another till when the server no
+ * longer lists it as open — unless it is our own, opened offline and not sent yet. `openIds`
+ * undefined (old server) never drops anything.
+ */
+export function shouldDropSession(
+  sessionId: string | null,
+  openIds: readonly string[] | undefined,
+  pendingOpenIds: readonly string[],
+): boolean {
+  if (!sessionId || !openIds) return false;
+  return !openIds.includes(sessionId) && !pendingOpenIds.includes(sessionId);
+}
+
 // --- Cagnotte (R-CAG-04, R-OFF-04) -----------------------------------------------
 
 /** R-CAG-04: the wallet may go down to −overdraft, not below. */

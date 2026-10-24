@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import ExcelJS from 'exceljs';
 import { and, asc, desc, eq, ilike, ne, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -27,6 +28,7 @@ import {
   householdPatchSchema,
   MEMBER_STATUSES,
   memberCreateSchema,
+  memberDuplicates,
   membershipCreateSchema,
   membershipPeriod,
   membershipTypePatchSchema,
@@ -182,6 +184,113 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     },
   );
 
+  /**
+   * Members who may be the same person (same name once accents and case are ignored, or the same
+   * phone number): a warning while a card is being filled in, never a refusal.
+   */
+  app.get(
+    '/members/duplicates',
+    {
+      ...adherents,
+      schema: {
+        querystring: z.object({
+          firstName: z.string().max(100).default(''),
+          lastName: z.string().max(100).default(''),
+          phone: z.string().max(30).optional(),
+          exceptId: z.string().uuid().optional(),
+        }),
+      },
+    },
+    async (req) => {
+      const { firstName, lastName, phone, exceptId } = req.query;
+      if (!firstName.trim() && !phone) return [];
+      const rows = await db
+        .select({
+          id: member.id,
+          number: member.number,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          phone: member.phone,
+          email: member.email,
+          status: member.status,
+        })
+        .from(member)
+        .where(ne(member.status, 'ARCHIVED'));
+      return memberDuplicates(
+        { id: exceptId, firstName, lastName, phone: phone ?? null, email: null },
+        rows,
+      )
+        .slice(0, 5)
+        .map((m) => ({ id: m.id, number: m.number, firstName: m.firstName, lastName: m.lastName }));
+    },
+  );
+
+  /** R-EVO-44: the member list with the consents (image, newsletter, ticket e-mails), in Excel. */
+  app.get(
+    '/members.xlsx',
+    { ...adherents, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const rows = await db
+        .select({
+          number: member.number,
+          lastName: member.lastName,
+          firstName: member.firstName,
+          email: member.email,
+          phone: member.phone,
+          status: member.status,
+          household: household.number,
+          imageConsentAt: member.imageConsentAt,
+          newsletterOptInAt: member.newsletterOptInAt,
+          ticketEmailOptOut: member.ticketEmailOptOut,
+          balance: householdBalance.balance,
+          membershipEnd: sql<
+            string | null
+          >`(select max(end_date) from app.membership x where x.household_id = ${member.householdId} and x.cancelled_at is null)`,
+        })
+        .from(member)
+        .leftJoin(household, eq(household.id, member.householdId))
+        .leftJoin(householdBalance, eq(householdBalance.householdId, member.householdId))
+        .where(ne(member.status, 'ARCHIVED'))
+        .orderBy(asc(member.lastName), asc(member.firstName));
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Adhérents');
+      ws.columns = [
+        { header: 'N°', key: 'number', width: 8 },
+        { header: 'Nom', key: 'lastName', width: 22 },
+        { header: 'Prénom', key: 'firstName', width: 18 },
+        { header: 'Courriel', key: 'email', width: 30 },
+        { header: 'Téléphone', key: 'phone', width: 16 },
+        { header: 'Statut', key: 'status', width: 12 },
+        { header: 'Foyer', key: 'household', width: 8 },
+        { header: 'Fin d’adhésion', key: 'membershipEnd', width: 14 },
+        { header: 'Cagnotte', key: 'balance', width: 12, style: { numFmt: '#,##0.00 €' } },
+        { header: 'Droit à l’image', key: 'image', width: 16 },
+        { header: 'Lettre d’information', key: 'newsletter', width: 18 },
+        { header: 'Tickets par courriel', key: 'tickets', width: 18 },
+      ];
+      ws.getRow(1).font = { bold: true };
+      for (const r of rows)
+        ws.addRow({
+          ...r,
+          balance: r.balance === null ? null : Number(r.balance),
+          image: r.imageConsentAt ? `Oui (${toParisDate(r.imageConsentAt)})` : 'Non renseigné',
+          newsletter: r.newsletterOptInAt ? 'Oui' : 'Non',
+          tickets: r.ticketEmailOptOut ? 'Non' : r.email ? 'Oui' : '—',
+        });
+      const buf = await wb.xlsx.writeBuffer();
+      // Personal data of every member: who took it is kept.
+      await audit(db, req, {
+        action: 'member.export_all',
+        entity: 'member',
+        after: { rows: rows.length },
+      });
+      return reply
+        .header('content-disposition', 'attachment; filename="adherents.xlsx"')
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(Buffer.from(buf));
+    },
+  );
+
   app.get('/members/:id', { ...adherents, schema: idParams }, async (req) => {
     const m = await db.query.member.findFirst({ where: eq(member.id, req.params.id) });
     if (!m) throw notFound('Membre introuvable.');
@@ -193,6 +302,16 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     return {
       ...rest,
       newsletter: m.newsletterOptInAt !== null,
+      householdBalance: m.householdId
+        ? ((
+            await db
+              .select({ balance: householdBalance.balance })
+              .from(householdBalance)
+              .where(eq(householdBalance.householdId, m.householdId))
+          )[0]?.balance ?? '0.00')
+        : null,
+      imageConsent: m.imageConsentAt !== null,
+      imageConsentAt: m.imageConsentAt?.toISOString() ?? null,
       hasPassword: passwordHash !== null,
       hasQr: qrTokenHash !== null,
       roles: roles.map((r) => r.code),
@@ -203,7 +322,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   });
 
   app.post('/members', { ...adherents, schema: { body: memberCreateSchema } }, async (req) => {
-    const { householdId, newsletter, ...fields } = req.body;
+    const { householdId, newsletter, imageConsent, ...fields } = req.body;
     const token = newQrToken();
     const created = await db.transaction(async (tx) => {
       await assertUniqueContacts(tx, fields.username, fields.email, null);
@@ -221,6 +340,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           ...fields,
           householdId: hid,
           newsletterOptInAt: newsletter ? new Date() : null,
+          imageConsentAt: imageConsent ? new Date() : null,
           qrTokenHash: await sha256Hex(token),
         })
         .returning();
@@ -247,7 +367,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     '/members/:id',
     { ...adherents, schema: { ...idParams, body: memberPatchSchema } },
     async (req) => {
-      const { updatedAt, newsletter, ...fields } = req.body;
+      const { updatedAt, newsletter, imageConsent, ...fields } = req.body;
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select()
@@ -261,6 +381,10 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         // R-MBR-08: consent is dated when given, cleared when withdrawn.
         if (newsletter !== undefined && newsletter !== (before.newsletterOptInAt !== null)) {
           set.newsletterOptInAt = newsletter ? new Date() : null;
+        }
+        // R-EVO-44: same for the image consent.
+        if (imageConsent !== undefined && imageConsent !== (before.imageConsentAt !== null)) {
+          set.imageConsentAt = imageConsent ? new Date() : null;
         }
         if (fields.householdId && fields.householdId !== before.householdId) {
           if (

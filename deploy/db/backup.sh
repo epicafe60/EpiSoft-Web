@@ -1,9 +1,52 @@
 #!/bin/bash
 # Nightly dump of the EpiSoft-Web PostgreSQL database (custom format, compressed).
-# Keeps 14 daily dumps in /opt/episoft-web/db/backups. Off-site copy: to be added (see spec §5.6).
-set -euo pipefail
-DIR=/opt/episoft-web/db/backups
+#
+#   1. dump, 2. check that the dump can be read back, 3. checksum, 4. optional off-site copy,
+#   5. tell the application (Surveillance › Sauvegardes), 6. keep the last N days.
+#
+# A backup nobody checks is a hope, not a backup: the script fails loudly (exit 1) and reports
+# the failure to the application, which then shows it in « À surveiller » and e-mails the admins.
+#
+# Settings (see lib.sh for PG_MODE and the settings file):
+#   BACKUP_API_URL        where the application listens, e.g. http://127.0.0.1:3000
+#   BACKUP_REPORT_TOKEN   same value as in the API environment (at least 16 characters)
+#   BACKUP_RSYNC_DEST     e.g. user@other-machine:/backups/episoft/   (off-site copy with rsync)
+#   BACKUP_RCLONE_DEST    e.g. mydrive:episoft-backups              (off-site copy with rclone)
+#   BACKUP_KEEP_DAYS      default 14
+set -uo pipefail
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "$0")" && pwd)/lib.sh"
+
+KEEP="${BACKUP_KEEP_DAYS:-14}"
 STAMP=$(date +%Y-%m-%d_%H%M)
-docker exec episoft-web-postgres pg_dump -U postgres -d episoft -Fc -f "/backups/episoft_$STAMP.dump"
-find "$DIR" -name 'episoft_*.dump' -mtime +14 -delete
-echo "Backup written: $DIR/episoft_$STAMP.dump"
+NAME="episoft_$STAMP.dump"
+FILE="$DIR/$NAME"
+
+fail() {
+  echo "BACKUP FAILED: $1" >&2
+  report BACKUP false null "" false false "$1"
+  exit 1
+}
+
+mkdir -p "$DIR"
+pg pg_dump -U postgres -d "$LIVE_DB" -Fc -f "$PG_DIR/$NAME" || fail "pg_dump a échoué"
+[ -s "$FILE" ] || fail "le fichier de sauvegarde est vide ou absent"
+
+# The dump must be readable: pg_restore --list reads its table of contents.
+ENTRIES=$(pg pg_restore -l "$PG_DIR/$NAME" | grep -vc '^;') || true
+[ "${ENTRIES:-0}" -gt 20 ] || fail "la sauvegarde est illisible (${ENTRIES:-0} éléments)"
+SIZE=$(wc -c <"$FILE" | tr -d ' ')
+SUM=$(sha256sum "$FILE" | cut -d' ' -f1)
+echo "$SUM  $NAME" >"$FILE.sha256"
+
+OFFSITE=false
+if [ -n "${BACKUP_RSYNC_DEST:-}" ]; then
+  rsync -a "$FILE" "$FILE.sha256" "$BACKUP_RSYNC_DEST" && OFFSITE=true || fail "la copie rsync a échoué"
+elif [ -n "${BACKUP_RCLONE_DEST:-}" ]; then
+  rclone copy "$FILE" "$BACKUP_RCLONE_DEST" && rclone copy "$FILE.sha256" "$BACKUP_RCLONE_DEST" &&
+    OFFSITE=true || fail "la copie rclone a échoué"
+fi
+
+find "$DIR" -name 'episoft_*.dump*' -mtime +"$KEEP" -delete
+echo "Backup written: $FILE ($SIZE bytes, $ENTRIES entries, sha256 $SUM, off-site: $OFFSITE)"
+report BACKUP true "$SIZE" "$SUM" true "$OFFSITE" "$ENTRIES éléments"

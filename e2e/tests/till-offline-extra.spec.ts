@@ -43,6 +43,7 @@ async function scan(page: Page, code: string) {
 async function payCash(page: Page) {
   await page.getByRole('button', { name: 'Encaisser' }).click();
   const dialog = page.getByRole('dialog', { name: 'Règlement' });
+  await dialog.getByRole('radio', { name: 'Espèces' }).click();
   await dialog.getByRole('button', { name: 'Ajouter' }).click();
   await dialog.getByRole('button', { name: 'Valider le ticket' }).click();
   await expect(dialog).toBeHidden();

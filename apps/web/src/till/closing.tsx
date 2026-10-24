@@ -3,8 +3,10 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Printer, Send } from 'lucide-react';
 import {
   centsToDecimal,
+  cashGapNeedsComment,
   closing,
   countedCashCents,
+  DEFAULT_THRESHOLDS,
   decimalToCents,
   DENOMINATIONS,
   formatEuro,
@@ -19,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/inputs';
+import { Dialog } from '@/components/ui/dialog';
 import { setMeta } from './db';
 import { useTill } from './context';
 
@@ -37,6 +40,8 @@ interface Summary {
   cashOther: string;
   chequesComputed: string;
   cardComputed: string;
+  devices?: string[];
+  byCashier?: { name: string; salesCount: number; total: string }[];
 }
 
 interface ClosedReport {
@@ -83,7 +88,7 @@ function ClosingForm({
   session: { id: string; openedAt: string; openingFloat: string };
   onClosed: (r: ClosedReport) => void;
 }) {
-  const { sync, pendingCount, engine } = useTill();
+  const { sync, pendingCount, engine, settings } = useTill();
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [deposit, setDeposit] = useState('');
   const [chequesCount, setChequesCount] = useState('');
@@ -91,6 +96,7 @@ function ClosingForm({
   const [card, setCard] = useState('');
   const [comment, setComment] = useState('');
   const [force, setForce] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const summary = useQuery({
     queryKey: ['session-summary', session.id, pendingCount],
@@ -113,6 +119,13 @@ function ClosingForm({
       })
     : null;
 
+  // A gap above the threshold, or a closing with tickets not sent, must be explained.
+  const gapNeedsComment = result
+    ? cashGapNeedsComment(result.differenceCents, settings?.thresholds ?? DEFAULT_THRESHOLDS)
+    : false;
+  const needsComment = gapNeedsComment || (pendingCount > 0 && force);
+  const commentMissing = needsComment && comment.trim().length < 3;
+
   const close = useMutation({
     mutationFn: () =>
       api.post<ClosedReport>(`/pos/sessions/${session.id}/close`, {
@@ -133,7 +146,8 @@ function ClosingForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (pendingCount > 0 && !force) return;
-    close.mutate();
+    // R-EVO-05: the count is shown again and has to be confirmed before anything is saved.
+    setConfirming(true);
   };
 
   return (
@@ -142,9 +156,7 @@ function ClosingForm({
         Clôture de la session ouverte le {formatDateTime(session.openedAt)}
       </h1>
       {!sync.online ? (
-        <Alert>
-          La clôture nécessite le réseau : elle calcule les totaux sur le serveur (R-OFF-07).
-        </Alert>
+        <Alert>La clôture nécessite le réseau : elle calcule les totaux sur le serveur.</Alert>
       ) : null}
       {pendingCount > 0 ? (
         <Alert className="flex flex-wrap items-center justify-between gap-2">
@@ -206,6 +218,21 @@ function ClosingForm({
                   label="Encaissements hors ventes en espèces"
                   value={formatEuro(summary.data.cashOther)}
                 />
+                {summary.data.devices && summary.data.devices.length > 1 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Session partagée : ventes de {summary.data.devices.join(', ')} (un seul tiroir,
+                    une seule clôture). Vérifiez que chaque poste a tout envoyé.
+                  </p>
+                ) : null}
+                {summary.data.byCashier && summary.data.byCashier.length > 1
+                  ? summary.data.byCashier.map((c) => (
+                      <Row
+                        key={c.name}
+                        label={`Ventes de ${c.name} (${c.salesCount} ticket(s))`}
+                        value={formatEuro(c.total)}
+                      />
+                    ))
+                  : null}
                 <Row label="Espèces théoriques" value={eur(result.expectedCashCents)} strong />
                 <Row label="Espèces comptées" value={eur(counted)} />
                 <Row
@@ -269,7 +296,14 @@ function ClosingForm({
                     )}
                   </Field>
                 </div>
-                <Field label="Commentaire">
+                {needsComment ? (
+                  <Alert variant={commentMissing ? 'error' : 'info'}>
+                    {gapNeedsComment
+                      ? `Il y a un écart de ${eur(result.differenceCents)} dans le tiroir : recomptez, puis expliquez-le ci-dessous (obligatoire).`
+                      : 'Vous clôturez alors que des tickets ne sont pas envoyés : dites pourquoi ci-dessous (obligatoire).'}
+                  </Alert>
+                ) : null}
+                <Field label={needsComment ? 'Commentaire (obligatoire)' : 'Commentaire'}>
                   {(p) => (
                     <Textarea {...p} value={comment} onChange={(e) => setComment(e.target.value)} />
                   )}
@@ -291,7 +325,10 @@ function ClosingForm({
                   type="submit"
                   size="lg"
                   disabled={
-                    close.isPending || (pendingCount > 0 && !force) || result.nextFloatCents < 0
+                    close.isPending ||
+                    (pendingCount > 0 && !force) ||
+                    result.nextFloatCents < 0 ||
+                    commentMissing
                   }
                 >
                   Clôturer la session
@@ -300,6 +337,38 @@ function ClosingForm({
             </Card>
           </div>
         </form>
+      ) : null}
+      {summary.data && result ? (
+        <Dialog
+          open={confirming}
+          onClose={() => setConfirming(false)}
+          title="Confirmer la clôture"
+          description="Vérifiez le comptage : la clôture ne se corrige ensuite qu’avec un responsable."
+        >
+          <div className="grid gap-4">
+            <div className="grid gap-1 text-sm">
+              <Row label="Espèces théoriques" value={eur(result.expectedCashCents)} />
+              <Row label="Espèces comptées" value={eur(counted)} strong />
+              <Row
+                label="Écart"
+                value={eur(result.differenceCents)}
+                strong
+                className={result.differenceCents === 0 ? 'text-success' : 'text-destructive'}
+              />
+              <Row label="Dépôt en banque" value={eur(parseAmountToCents(deposit || '0') ?? 0)} />
+              <Row label="Fond de caisse suivant" value={eur(result.nextFloatCents)} />
+            </div>
+            {close.error ? <Alert>{close.error.message}</Alert> : null}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirming(false)}>
+                Corriger le comptage
+              </Button>
+              <Button onClick={() => close.mutate()} disabled={close.isPending}>
+                Confirmer la clôture
+              </Button>
+            </div>
+          </div>
+        </Dialog>
       ) : null}
     </div>
   );

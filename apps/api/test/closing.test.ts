@@ -135,6 +135,16 @@ describe('year-end closing (R-CPT-18)', () => {
     expect(ran!.date).toBe('2027-01-01');
     expect(ran!.status).toBe('VALIDATED');
 
+    // R-EVO-51: the opening balances of the new year equal the closing of the previous one.
+    const opening = (
+      await get(`/api/v1/fiscal-years/${done.json().nextFiscalYearId}/opening-check`)
+    ).json();
+    expect(opening).toMatchObject({ ok: true, differences: 0, previousStatus: 'CLOSED' });
+    expect(opening.rows.find((r: { number: string }) => r.number === '512001')).toMatchObject({
+      closing: '600.00',
+      opening: '600.00',
+    });
+
     // the year is locked and cannot be closed twice
     expect((await post(`/api/v1/fiscal-years/${fy}/close`, { confirm: true })).statusCode).toBe(
       409,

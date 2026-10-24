@@ -1,7 +1,7 @@
-import { hasAnyRole } from '@episoft/shared';
+import { hasAnyRole, sellsBelowCost } from '@episoft/shared';
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useDeferredValue, useEffect, useState, type FormEvent } from 'react';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ImageUp } from 'lucide-react';
 import {
@@ -181,6 +181,16 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
   });
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
+  // A product with almost the same name may already exist: say so before it is created twice.
+  const typedName = useDeferredValue(form.name.trim());
+  const similar = useQuery({
+    queryKey: ['similar-products', typedName, product?.id ?? ''],
+    queryFn: () =>
+      api.get<{ id: string; code: string; name: string; status: string }[]>(
+        `/products/similar?${new URLSearchParams({ name: typedName, ...(product ? { exceptId: product.id } : {}) })}`,
+      ),
+    enabled: typedName.length >= 4 && (!product || typedName !== product.name),
+  });
 
   // R-PRD-01: the code is proposed from the shelf for a new product.
   const nextCode = useQuery({
@@ -244,6 +254,8 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
         )
       : null;
   const margin = sale && incl ? ((sale - Math.round(Number(incl) * 100)) / sale) * 100 : null;
+  const belowCost =
+    sale !== null && incl !== null && sellsBelowCost(sale, Math.round(Number(incl) * 100));
 
   const text = (
     k: keyof FormState,
@@ -314,6 +326,21 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
             </CardHeader>
             <CardContent className="grid gap-4">
               {text('name', 'Nom')}
+              {similar.data?.length ? (
+                <Alert variant="info">
+                  Un produit au nom très proche existe déjà :{' '}
+                  {similar.data.map((s, i) => (
+                    <span key={s.id}>
+                      {i ? ', ' : ''}
+                      <Link to="/catalogue/$id" params={{ id: s.id }} className="underline">
+                        {s.name} ({s.code})
+                      </Link>
+                      {s.status === 'INACTIVE' ? ' — désactivé' : ''}
+                    </span>
+                  ))}
+                  . Vérifiez que ce n’est pas un doublon.
+                </Alert>
+              ) : null}
               <Field label="Description" error={errors.description}>
                 {(p) => (
                   <Textarea
@@ -452,6 +479,12 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
                   ? `Taux de marque : ${margin.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % (Q2, définition à valider).`
                   : ''}
               </p>
+              {belowCost ? (
+                <Alert>
+                  Le prix de vente est inférieur au prix d’achat TTC : chaque vente fera perdre de
+                  l’argent. Vérifiez les deux prix.
+                </Alert>
+              ) : null}
               <div className="grid gap-4 sm:grid-cols-3">
                 {text('minStock', 'Stock minimum', { inputMode: 'decimal' })}
                 {select(

@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { confirmNow } from '@/components/confirm';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BadgePlus, FileSpreadsheet, Mail, Minus, Plus } from 'lucide-react';
@@ -9,12 +10,17 @@ import {
   MEMBER_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   WALLET_ENTRY_KIND_LABELS,
+  centsToDecimal,
+  parseAmountToCents,
+  walletMoveNeedsConfirm,
   type MemberPaymentMethod,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { useThresholds } from '@/lib/thresholds';
 import { euro, formatDate, todayIso } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/confirm';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
@@ -50,6 +56,7 @@ function ActionDialog({
   description,
   submitLabel,
   onSubmit,
+  confirmBefore,
   children,
 }: {
   open: boolean;
@@ -58,6 +65,8 @@ function ActionDialog({
   description?: string;
   submitLabel: string;
   onSubmit: () => Promise<unknown>;
+  /** Asked before sending; answering no leaves the window open, nothing is saved. */
+  confirmBefore?: () => Promise<boolean>;
   children: (errors: Record<string, string>) => ReactNode;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -67,6 +76,7 @@ function ActionDialog({
     e.preventDefault();
     setPending(true);
     try {
+      if (confirmBefore && !(await confirmBefore())) return;
       await onSubmit();
       setErrors({});
       setError(null);
@@ -118,6 +128,9 @@ export function HouseholdPage() {
   });
   const [dialog, setDialog] = useState<'topup' | 'correction' | 'membership' | 'info' | null>(null);
   const [saleId, setSaleId] = useState<string | null>(null);
+
+  const confirm = useConfirm();
+  const thresholds = useThresholds();
 
   // Dialog fields
   const [amount, setAmount] = useState('');
@@ -360,9 +373,15 @@ export function HouseholdPage() {
                         <button
                           type="button"
                           className="ml-2 text-xs text-destructive hover:underline"
-                          onClick={() => {
+                          onClick={async () => {
                             if (
-                              window.confirm('Annuler ce versement saisi aujourd’hui (R-CAG-08) ?')
+                              await confirmNow({
+                                title: 'Annuler ce versement ?',
+                                message:
+                                  'Le versement saisi aujourd’hui sera annulé et la cagnotte diminuée d’autant.',
+                                confirmLabel: 'Annuler le versement',
+                                destructive: true,
+                              })
                             )
                               cancelTopup.mutate(w.id);
                           }}
@@ -470,6 +489,19 @@ export function HouseholdPage() {
         onClose={close}
         title="Versement sur la cagnotte"
         submitLabel="Enregistrer le versement"
+        confirmBefore={async () => {
+          const cents = parseAmountToCents(amount) ?? 0;
+          if (!walletMoveNeedsConfirm('TOPUP', cents, thresholds)) return true;
+          return confirm({
+            title: 'Gros versement : vérifiez le montant',
+            message: `Vous allez créditer la cagnotte de ${euro(centsToDecimal(cents))}.`,
+            impact: [
+              `Nouveau solde : ${euro(centsToDecimal(Math.round(Number(h.balance) * 100) + cents))}.`,
+              'Un versement saisi aujourd’hui peut être annulé le jour même seulement.',
+            ],
+            confirmLabel: 'Enregistrer le versement',
+          });
+        }}
         onSubmit={() =>
           api
             .post(`/households/${id}/wallet/topup`, {
@@ -523,7 +555,7 @@ export function HouseholdPage() {
                 onChange={(e) => setReceipt(e.target.checked)}
               />
               <Label htmlFor="receipt" className="font-normal">
-                Envoyer le reçu par courriel (R-CAG-06)
+                Envoyer le reçu par courriel
               </Label>
             </div>
           </>
@@ -536,6 +568,19 @@ export function HouseholdPage() {
         title="Correction de cagnotte"
         description="Montant positif pour créditer, négatif pour débiter. Le motif est obligatoire et la correction est journalisée."
         submitLabel="Enregistrer la correction"
+        confirmBefore={async () => {
+          const cents = parseAmountToCents(amount) ?? 0;
+          if (!walletMoveNeedsConfirm('CORRECTION', cents, thresholds)) return true;
+          return confirm({
+            title: 'Grosse correction de cagnotte',
+            message: `Une correction de ${euro(centsToDecimal(cents))} modifie l’argent du foyer sans pièce comptable. Elle est journalisée avec votre nom et le motif : « ${comment.trim() || 'sans motif'} ».`,
+            impact: [
+              `Nouveau solde : ${euro(centsToDecimal(Math.round(Number(h.balance) * 100) + cents))}.`,
+            ],
+            confirmLabel: 'Enregistrer la correction',
+            destructive: true,
+          });
+        }}
         onSubmit={() =>
           api.post(`/households/${id}/wallet/correction`, { amount, comment }).then(refresh)
         }
@@ -641,7 +686,7 @@ export function HouseholdPage() {
             </Field>
             <Field
               label="Référence de virement"
-              hint="Sert à affecter automatiquement les virements reçus (R-MBR-04)."
+              hint="Sert à affecter automatiquement les virements reçus."
               error={errors.transferReference}
             >
               {(p) => (

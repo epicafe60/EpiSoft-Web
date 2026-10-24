@@ -27,6 +27,8 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost'),
+  /** Shared secret of the backup scripts, which report their result to the API (optional). */
+  BACKUP_REPORT_TOKEN: z.string().min(16).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

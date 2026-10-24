@@ -58,7 +58,7 @@ export function BatchesCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Dates limites (R-STK-07)</CardTitle>
+        <CardTitle className="text-base">Dates limites</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
         {list.error ? <QueryError error={list.error} /> : null}

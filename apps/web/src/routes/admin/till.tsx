@@ -8,6 +8,7 @@ import {
   type PaymentMethod,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { confirmNow, promptNow } from '@/components/confirm';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -186,12 +187,16 @@ export function TillAdminPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => {
-                        const comment = window.prompt(
-                          'Clôturer cette session sans comptage (le fond de caisse attendu est retenu). Motif :',
-                        );
-                        if (comment && comment.trim().length >= 3)
-                          forceClose.mutate({ id: s.id, comment: comment.trim() });
+                      onClick={async () => {
+                        const comment = await promptNow({
+                          title: 'Clôturer sans comptage',
+                          message:
+                            'La session sera clôturée sans compter le tiroir : le fond de caisse attendu est retenu. Le motif est conservé dans le journal.',
+                          input: { label: 'Motif', minLength: 3 },
+                          confirmLabel: 'Clôturer la session',
+                          destructive: true,
+                        });
+                        if (comment) forceClose.mutate({ id: s.id, comment });
                       }}
                     >
                       <Lock /> Clôturer
@@ -201,11 +206,16 @@ export function TillAdminPage() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => {
+                      onClick={async () => {
                         if (
-                          window.confirm(
-                            'Rouvrir cette session ? Le comptage sera supprimé (action journalisée, R-SES-03).',
-                          )
+                          await confirmNow({
+                            title: 'Rouvrir cette session ?',
+                            message:
+                              'Le comptage de la clôture sera supprimé. L’action est journalisée.',
+                            impact: ['La caisse pourra de nouveau y encaisser des ventes.'],
+                            confirmLabel: 'Rouvrir la session',
+                            destructive: true,
+                          })
                         )
                           reopen.mutate(s.id);
                       }}

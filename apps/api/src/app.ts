@@ -39,6 +39,8 @@ import { exportRoutes } from './modules/stats/export';
 import { savedReportRoutes } from './modules/stats/saved-reports';
 import { importRoutes } from './modules/stats/imports';
 import { integrityRoutes } from './modules/admin/integrity';
+import { monitoringRoutes } from './modules/admin/monitoring';
+import { walletReportRoutes } from './modules/admin/wallet-report';
 import { selfRoutes } from './modules/members/self';
 import { reviewRoutes } from './modules/preorders/reviews';
 import { favoriteRoutes } from './modules/preorders/favorites';
@@ -54,7 +56,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  await app.register(errors);
+  await app.register(errors, { db, config });
   await app.register(helmet, {
     // The SPA is served from the same origin; inline styles are needed by some UI components.
     contentSecurityPolicy: {
@@ -103,6 +105,8 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(savedReportRoutes, { db, config });
       await api.register(importRoutes, { db, config });
       await api.register(integrityRoutes, { db, config });
+      await api.register(walletReportRoutes, { db, config });
+      await api.register(monitoringRoutes, { db, config });
       await api.register(selfRoutes, { db, config });
       await api.register(reviewRoutes, { db, config });
       await api.register(favoriteRoutes, { db, config });

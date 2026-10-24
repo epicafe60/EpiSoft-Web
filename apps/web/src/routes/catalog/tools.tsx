@@ -8,14 +8,17 @@ import {
   inclFromExcl4,
   margin,
   parseAmountToCents,
+  bulkPriceImpact,
   parsePrice4,
   parseQtyToMilli,
   VAT_RATES,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { useThresholds } from '@/lib/thresholds';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useConfirm } from '@/components/confirm';
 import { Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Alert, Checkbox, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
@@ -34,6 +37,7 @@ export function LabelsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [perPage, setPerPage] = useState<24 | 40>(24);
   const [markDone, setMarkDone] = useState(true);
+  const [barcode, setBarcode] = useState(true);
   useEffect(() => setSelected((data ?? []).map((p) => p.id)), [data]);
   const print = useMutation({
     mutationFn: async () => {
@@ -41,7 +45,7 @@ export function LabelsPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json', [CSRF_HEADER]: '1' },
-        body: JSON.stringify({ productIds: selected, perPage, markDone }),
+        body: JSON.stringify({ productIds: selected, perPage, markDone, barcode }),
       });
       if (!res.ok) throw new Error('Génération impossible.');
       window.open(URL.createObjectURL(await res.blob()), '_blank');
@@ -52,7 +56,7 @@ export function LabelsPage() {
     <>
       <PageHeader
         title="Étiquettes à imprimer"
-        description="Produits créés, dont le prix a changé ou demandés (R-PRD-06)."
+        description="Produits créés, dont le prix a changé ou demandés."
       />
       {error ? <QueryError error={error} /> : null}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -69,6 +73,13 @@ export function LabelsPage() {
           <Checkbox id="done" checked={markDone} onChange={(e) => setMarkDone(e.target.checked)} />
           <Label htmlFor="done" className="font-normal">
             Retirer de la file après impression
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox id="barcode" checked={barcode} onChange={(e) => setBarcode(e.target.checked)} />
+          <Label htmlFor="barcode" className="font-normal">
+            Avec code-barres (les pastilles rouge « local » et verte « bio » sont toujours
+            imprimées)
           </Label>
         </div>
         <Button onClick={() => print.mutate()} disabled={!selected.length || print.isPending}>
@@ -172,11 +183,56 @@ export function BulkPricesPage() {
   });
   const set = (i: number, patch: Partial<(typeof rows)[number]>) =>
     setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const confirm = useConfirm();
+  const thresholds = useThresholds();
+  /** A grid changes many prices at once: show what it will do before it does it. */
+  const confirmApply = async () => {
+    const impact = bulkPriceImpact(
+      changed.map((r) => {
+        const o = grid.data?.find((g) => g.productId === r.productId);
+        return {
+          oldSaleCents: o ? parseAmountToCents(o.salePrice) : null,
+          newSaleCents: parseAmountToCents(r.pv) ?? 0,
+          newPurchase4: r.pa ? parsePrice4(r.pa) : null,
+          vatRate: r.vatRate,
+          wasActive: o ? o.status !== 'INACTIVE' : true,
+          active: r.active,
+        };
+      }),
+      thresholds,
+    );
+    const lines = [`${impact.count} produit(s) seront modifiés.`];
+    if (impact.avgSalePct !== null)
+      lines.push(
+        `Variation moyenne du prix de vente : ${impact.avgSalePct.toFixed(1).replace('.', ',')} % (la plus forte : ${impact.maxSalePct!.toFixed(0)} %).`,
+      );
+    if (impact.bigJumps)
+      lines.push(
+        `${impact.bigJumps} prix de vente changent de plus de moitié ou presque : vérifiez-les.`,
+      );
+    if (impact.belowCost)
+      lines.push(`${impact.belowCost} produit(s) seront vendus moins cher que leur prix d’achat.`);
+    if (impact.saleZero)
+      lines.push(`${impact.saleZero} produit(s) auront un prix de vente de 0 €.`);
+    if (impact.deactivated)
+      lines.push(`${impact.deactivated} produit(s) seront désactivés (plus vendables en caisse).`);
+    const risky = impact.bigJumps + impact.belowCost + impact.saleZero > 0;
+    const ok = await confirm({
+      title: 'Appliquer ces prix ?',
+      message: risky
+        ? 'Certains changements sortent de l’ordinaire. Relisez-les avant de valider.'
+        : 'Les nouveaux prix s’appliquent tout de suite en caisse, et les étiquettes à imprimer sont signalées.',
+      impact: lines,
+      confirmLabel: 'Appliquer les prix',
+      destructive: risky,
+    });
+    if (ok) apply.mutate();
+  };
   return (
     <>
       <PageHeader
         title="Mise à jour des prix"
-        description="Grille d’un fournisseur : PA HT, TVA, PV et activation (R-PRD-08)."
+        description="Grille d’un fournisseur : PA HT, TVA, PV et activation."
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Select
@@ -193,7 +249,7 @@ export function BulkPricesPage() {
           ))}
         </Select>
         {changed.length ? (
-          <Button onClick={() => apply.mutate()} disabled={apply.isPending}>
+          <Button onClick={() => void confirmApply()} disabled={apply.isPending}>
             Valider {changed.length} modification(s)
           </Button>
         ) : null}
@@ -328,7 +384,7 @@ export function ShelvesPage() {
     <>
       <PageHeader
         title="Univers et rayons"
-        description="Le code produit vaut univers + rayon + séquence (R-PRD-01, R-PRD-09)."
+        description="Le code produit vaut univers + rayon + séquence."
       />
       {addShelf.error || addUniverse.error ? (
         <Alert className="mb-4">{(addShelf.error ?? addUniverse.error)!.message}</Alert>

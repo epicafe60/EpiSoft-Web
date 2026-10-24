@@ -6,6 +6,7 @@ import { Alert } from '@/components/ui/form';
 import { MODULE_ICONS, PageHeader } from './shell';
 import { MODULE_INFO } from './module-placeholder';
 import { Dashboard } from './dashboard';
+import { AttentionBlock } from '@/components/attention-block';
 
 export function HomePage() {
   const me = useMe();
@@ -13,6 +14,7 @@ export function HomePage() {
   return (
     <>
       <PageHeader title={`Bonjour ${me.firstName}`} description="Choisissez un module." />
+      <AttentionBlock />
       {me.shopEnabled !== false ? (
         <Link to="/boutique" className="mb-4 block rounded-lg focus-visible:outline-2">
           <Card className="transition-colors hover:border-primary/50 hover:bg-accent/40">

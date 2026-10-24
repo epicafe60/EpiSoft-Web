@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { parseAmountToCents, centsToDecimal } from './money';
 import { DEFAULT_ACCOUNTS } from './accounting';
+import { DEFAULT_THRESHOLDS } from './controls';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
 // Lot 0 covers the general settings; later lots add their keys here.
@@ -54,6 +55,8 @@ export const settingSchemas = {
     discountsEnabled: z.boolean(),
     /** R-ADH-03: an expired membership blocks the sale instead of only warning. */
     membershipExpiredBlocking: z.boolean(),
+    /** R-EVO-01: a member or a passing membership is required before the first line. */
+    requireMemberFirst: z.boolean().default(true),
   }),
   /** R-VTE-04: in-store scale labels (prefix 20–29, 5-digit PLU, 5-digit value). */
   'pos.scaleBarcodes': z.object({
@@ -112,6 +115,18 @@ export const settingSchemas = {
       'Courriel invalide.',
     ),
   }),
+  /** Alert thresholds: what the till, the API and the daily check call « unusual ». */
+  'controls.thresholds': z.object(
+    Object.fromEntries(
+      Object.keys(DEFAULT_THRESHOLDS).map((k) => [
+        k,
+        z
+          .number({ invalid_type_error: 'Nombre attendu.' })
+          .min(0, 'Pas de valeur négative.')
+          .max(100000),
+      ]),
+    ) as Record<keyof typeof DEFAULT_THRESHOLDS, z.ZodNumber>,
+  ),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -138,6 +153,7 @@ export const SETTING_DEFAULTS: Settings = {
     allowTransfer: false,
     discountsEnabled: false,
     membershipExpiredBlocking: false,
+    requireMemberFirst: true,
   },
   'pos.treasurerEmail': { email: null },
   'shop.enabled': { enabled: true },
@@ -149,6 +165,7 @@ export const SETTING_DEFAULTS: Settings = {
   'catalog.pricing': { targetMarkupPct: 25, rounding: 5 },
   'labels.layout': { perPage: 24 },
   'pos.scaleBarcodes': { enabled: false, valueKind: 'PRICE' },
+  'controls.thresholds': { ...DEFAULT_THRESHOLDS },
 };
 
 export function isSettingKey(key: string): key is SettingKey {

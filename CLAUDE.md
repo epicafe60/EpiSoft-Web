@@ -47,10 +47,12 @@ Rewrite of **EpiSoft**, the management suite of the Epicafé de Montjavoult asso
 - Connection settings are in `C:\Datas\Dev\Episoft\EpiSoft.config`. Read that file, never write to it.
 - `tools/export_excel.py` exports all legacy tables to Excel, read-only, into `exports/`.
 
-## Target server (later, not yet)
+## Production server (live since 2026-10-04)
 
-- The MinisForum, Debian 13, at `192.168.1.10`. **It also hosts the production MariaDB** (port 6382, FTP on 21, `epicafe.ddns.net`). Anything installed there must stay isolated from it.
-- `deploy/db/setup.sh` runs a check-only pass by default and installs with `--install`.
+- The MinisForum, Debian 13, at `192.168.1.10`, public name `epicafe.ddns.net` (https). **It also hosts the production MariaDB** (port 6382, FTP on 21). Anything installed there must stay isolated from it.
+- EpiSoft-Web runs **natively, not in Docker**: systemd unit `episoft-web`, PostgreSQL 17 installed on the machine, code in `/opt/episoft-web/src`, settings in `/etc/episoft/`. The Docker files in `docker/` and `deploy/db/compose.yml` are for local development.
+- Backups: `deploy/db/backup.sh` and `restore-test.sh` with `PG_MODE=native` on the server (see `docs/maintenance.md`).
+- Every action on the server (deploy, restart, even a database read) needs the user's explicit go-ahead, each time. Database reads are done in a read-only transaction.
 
 ## Roadmap (spec §10)
 

@@ -39,7 +39,7 @@ export function LoginPage() {
     <PublicLayout title="Connexion" description="Identifiez-vous pour accéder à EpiSoft.">
       <form onSubmit={submit} className="grid gap-4" noValidate>
         {error ? <Alert>{error}</Alert> : null}
-        <Field label="Identifiant">
+        <Field label="Identifiant ou courriel">
           {(p) => (
             <Input
               {...p}

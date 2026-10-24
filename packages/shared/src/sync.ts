@@ -197,6 +197,14 @@ export interface TillSettings {
   allowTransfer: boolean;
   discountsEnabled: boolean;
   membershipExpiredBlocking: boolean;
+  /** R-EVO-01: absent in an old snapshot, which counts as true. */
+  requireMemberFirst?: boolean;
+  /** R-EVO-30: an inventory freezes the sales; absent in an old snapshot. */
+  salesFrozen?: boolean;
+  /** R-EVO-06: every session open in the shop, to join one instead of opening another drawer. */
+  /** Alert thresholds of the administration (absent in an old snapshot: the defaults apply). */
+  thresholds?: import('./controls').Thresholds;
+  openSessions?: { id: string; openedAt: string; openingFloat: string; deviceName: string }[];
   /** R-VTE-04: null when scale labels are not decoded. */
   scaleBarcodes: 'PRICE' | 'WEIGHT' | null;
   associationName: string;

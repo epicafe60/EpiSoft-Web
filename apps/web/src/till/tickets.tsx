@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Ban, CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { Ban, CheckCircle2, Clock, RotateCcw, XCircle } from 'lucide-react';
 import {
   formatEuro,
   formatQty,
@@ -10,6 +11,7 @@ import {
   type SyncOp,
 } from '@episoft/shared';
 import { formatDateTime } from '@/lib/utils';
+import { confirmNow } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
@@ -18,6 +20,8 @@ import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 import { tillDb, type OutboxEntry } from './db';
 import { useTill } from './context';
 import { enqueue } from './sync';
+import { draftFromSale } from './drafts';
+import { linesFromSale } from './logic';
 
 type SaleEntry = OutboxEntry & { op: Extract<SyncOp, { kind: 'SALE' }> };
 
@@ -33,7 +37,7 @@ function Status({ e }: { e: OutboxEntry }) {
     return (
       <Badge variant="destructive">
         <XCircle className="mr-1 size-3" />
-        Refusé
+        {e.acknowledged ? 'Refusé (classé)' : 'Refusé'}
       </Badge>
     );
   return (
@@ -51,6 +55,7 @@ export function TicketsPage() {
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const [selected, setSelected] = useState<SaleEntry | null>(null);
   const [reason, setReason] = useState('');
+  const navigate = useNavigate();
 
   const sessionId = meta.session?.id;
   const sales = (entries ?? []).filter(
@@ -61,7 +66,9 @@ export function TicketsPage() {
       e.op.kind === 'SALE_CANCEL' && e.status !== 'REJECTED' ? [e.op.payload.saleId] : [],
     ),
   );
-  const others = (entries ?? []).filter((e) => e.op.kind !== 'SALE' && e.status === 'REJECTED');
+  const others = (entries ?? []).filter(
+    (e) => e.op.kind !== 'SALE' && e.status === 'REJECTED' && !e.acknowledged,
+  );
   const nameOf = (id: string | null) => {
     const m = (members ?? []).find((x) => x.id === id);
     return m ? `${m.firstName} ${m.lastName}` : 'Sans adhérent';
@@ -86,6 +93,17 @@ export function TicketsPage() {
     [members, entries],
   );
   const sort = useSort(sales, accessors);
+  /** A refused ticket goes back into a new draft, to be checked and paid again. */
+  const reenter = async (s: SaleEntry) => {
+    await draftFromSale(linesFromSale(s.op.payload), s.op.payload.memberId);
+    await tillDb.outbox.update(s.id, { acknowledged: true });
+    setSelected(null);
+    await navigate({ to: '/caisse' });
+  };
+  const putAside = async (s: SaleEntry) => {
+    await tillDb.outbox.update(s.id, { acknowledged: true });
+    setSelected(null);
+  };
   if (!entries || !members) return <p className="p-6 text-muted-foreground">Chargement…</p>;
 
   const cancel = async (s: SaleEntry) => {
@@ -114,8 +132,15 @@ export function TicketsPage() {
       {others.length ? (
         <Alert>
           {others.map((o) => (
-            <span key={o.id} className="block">
+            <span key={o.id} className="flex flex-wrap items-center gap-2">
               Opération refusée ({o.kind}) : {o.lastError}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void tillDb.outbox.update(o.id, { acknowledged: true })}
+              >
+                Classer
+              </Button>
             </span>
           ))}
         </Alert>
@@ -216,6 +241,25 @@ export function TicketsPage() {
                 .join(' · ')}
             </p>
             <p className="text-base font-semibold">Total {formatEuro(selected.op.payload.total)}</p>
+            {selected.status === 'REJECTED' ? (
+              <div className="grid gap-2 rounded-md border border-destructive/40 p-3">
+                <p className="font-medium text-destructive">
+                  Ce ticket n’a pas été enregistré : {selected.lastError}
+                </p>
+                <p className="text-muted-foreground">
+                  Le stock et la cagnotte n’ont pas bougé. Ressaisissez-le pour l’encaisser à
+                  nouveau, ou classez-le si le client est déjà passé en caisse autrement.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => void reenter(selected)}>
+                    <RotateCcw /> Ressaisir ce ticket
+                  </Button>
+                  <Button variant="outline" onClick={() => void putAside(selected)}>
+                    Classer sans suite
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             {!cancelled.has(selected.id) && selected.status !== 'REJECTED' ? (
               <div className="grid gap-2 rounded-md border p-3">
                 <Field label="Motif de l’annulation">
@@ -225,11 +269,16 @@ export function TicketsPage() {
                 </Field>
                 <Button
                   variant="destructive"
-                  onClick={() => {
+                  onClick={async () => {
                     if (
-                      window.confirm(
-                        'Annuler ce ticket ? Un ticket d’annulation inverse le stock et la cagnotte (R-VTE-12).',
-                      )
+                      await confirmNow({
+                        title: 'Annuler ce ticket ?',
+                        message:
+                          'Un ticket d’annulation est créé : il remet le stock et la cagnotte comme avant la vente.',
+                        confirmLabel: 'Annuler le ticket',
+                        cancelLabel: 'Garder le ticket',
+                        destructive: true,
+                      })
                     )
                       void cancel(selected);
                   }}

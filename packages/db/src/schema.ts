@@ -109,6 +109,10 @@ export const member = app.table(
     status: memberStatus('status').notNull().default('NEW'),
     publicVisible: boolean('public_visible').notNull().default(false),
     newsletterOptInAt: tz('newsletter_opt_in_at'),
+    /** R-EVO-40: the member asked not to receive the ticket e-mails. */
+    ticketEmailOptOut: boolean('ticket_email_opt_out').notNull().default(false),
+    /** R-EVO-44: when the member agreed to the use of their image (null: not given). */
+    imageConsentAt: tz('image_consent_at'),
     username: text('username'),
     passwordHash: text('password_hash'),
     qrTokenHash: text('qr_token_hash'),
@@ -650,6 +654,8 @@ export const sale = app.table(
     emailSentAt: tz('email_sent_at'),
     /** R-SYNC-04 warnings recorded when the sale was accepted. */
     warnings: jsonb('warnings'),
+    /** A manager looked at the warnings of this ticket (it no longer shows in « À surveiller »). */
+    warningsReviewedAt: tz('warnings_reviewed_at'),
     createdAt: createdAt(),
     legacyRef: text('legacy_ref').unique(),
   },
@@ -924,6 +930,8 @@ export const inventorySession = app.table('inventory_session', {
   validatedAt: tz('validated_at'),
   validatedBy: uuid('validated_by').references(() => member.id, { onDelete: 'set null' }),
   zeroUncounted: boolean('zero_uncounted').notNull().default(false),
+  /** R-EVO-30: the till refuses new sales while this session is open. */
+  freezeSales: boolean('freeze_sales').notNull().default(false),
   legacyDate: date('legacy_date').unique(),
 });
 
@@ -1469,4 +1477,82 @@ export const productFavorite = app.table(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.memberId, t.productId] })],
+);
+
+// --- Protections and monitoring (docs/evols, plan « protections ») ----------------------------
+
+/**
+ * An operation a till sent and the server refused (never recorded as a sale). Kept so that
+ * nothing is lost silently: an administrator sees it, the cashier can enter the ticket again.
+ */
+export const syncRejection = app.table(
+  'sync_rejection',
+  {
+    id: id(),
+    deviceId: uuid('device_id').references(() => posDevice.id, { onDelete: 'set null' }),
+    opId: text('op_id').notNull(),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').notNull(),
+    reason: text('reason').notNull(),
+    at: tz('at').notNull().defaultNow(),
+    acknowledgedAt: tz('acknowledged_at'),
+    acknowledgedBy: uuid('acknowledged_by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [uniqueIndex('sync_rejection_op_uq').on(t.opId), index('sync_rejection_at_idx').on(t.at)],
+);
+
+/** One row per run of the integrity checks: history and trend, not only the last result. */
+export const integrityRun = app.table('integrity_run', {
+  id: id(),
+  at: tz('at').notNull().defaultNow(),
+  errors: integer('errors').notNull(),
+  warnings: integer('warnings').notNull(),
+  durationMs: integer('duration_ms').notNull(),
+  /** Check id → number of offending rows (only the failing ones). */
+  failing: jsonb('failing').notNull(),
+});
+
+/** Unexpected server errors, grouped by fingerprint, with the reference given to the user. */
+export const errorLog = app.table(
+  'error_log',
+  {
+    id: id(),
+    fingerprint: text('fingerprint').notNull(),
+    message: text('message').notNull(),
+    route: text('route'),
+    count: integer('count').notNull().default(1),
+    firstAt: tz('first_at').notNull().defaultNow(),
+    lastAt: tz('last_at').notNull().defaultNow(),
+    lastRef: text('last_ref').notNull(),
+    lastMemberId: uuid('last_member_id').references(() => member.id, { onDelete: 'set null' }),
+    notifiedAt: tz('notified_at'),
+    acknowledgedAt: tz('acknowledged_at'),
+  },
+  (t) => [uniqueIndex('error_log_fingerprint_uq').on(t.fingerprint)],
+);
+
+/** Reports sent by the backup scripts (dump, restore test). */
+export const backupRun = app.table('backup_run', {
+  id: id(),
+  kind: text('kind').notNull(), // BACKUP | RESTORE_TEST
+  ok: boolean('ok').notNull(),
+  sizeBytes: integer('size_bytes'),
+  checksum: text('checksum'),
+  verified: boolean('verified').notNull().default(false),
+  offsite: boolean('offsite').notNull().default(false),
+  detail: text('detail'),
+  at: tz('at').notNull().defaultNow(),
+});
+
+/** Balance of every household at the end of each day, to detect an unexplained drift. */
+export const walletSnapshot = app.table(
+  'wallet_snapshot',
+  {
+    day: date('day').notNull(),
+    householdId: uuid('household_id')
+      .notNull()
+      .references(() => household.id, { onDelete: 'cascade' }),
+    balance: money('balance').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.householdId] })],
 );

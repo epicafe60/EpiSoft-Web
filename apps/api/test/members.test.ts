@@ -1,3 +1,4 @@
+import ExcelJS from 'exceljs';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -330,5 +331,62 @@ describe('catalogue (R-PRD-01, R-PRD-05, R-PRD-06)', () => {
     const img = await get(`/api/v1/media/${up.json().imageId}`);
     expect(img.headers['content-type']).toBe('image/png');
     expect(img.rawPayload.equals(png)).toBe(true);
+  });
+});
+
+describe('R-EVO-44 / R-EVO-40 consents on the member sheet', () => {
+  const post = (payload: object) =>
+    t.app.inject({ method: 'POST', url: '/api/v1/members', headers, payload });
+  const read = async (id: string) =>
+    (await t.app.inject({ url: `/api/v1/members/${id}`, headers })).json();
+
+  it('dates the image consent when given, clears it when withdrawn, and keeps the ticket opt-out', async () => {
+    const created = await post({ ...newMember, imageConsent: true, ticketEmailOptOut: true });
+    expect(created.statusCode, created.body).toBe(200);
+    const { id } = created.json() as { id: string };
+    const m = await read(id);
+    expect(m).toMatchObject({ imageConsent: true, ticketEmailOptOut: true });
+    expect(m.imageConsentAt).toBeTruthy();
+
+    const patch = await t.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/members/${id}`,
+      headers,
+      payload: { updatedAt: m.updatedAt, imageConsent: false, ticketEmailOptOut: false },
+    });
+    expect(patch.statusCode, patch.body).toBe(200);
+    expect(await read(id)).toMatchObject({
+      imageConsent: false,
+      imageConsentAt: null,
+      ticketEmailOptOut: false,
+    });
+  });
+
+  it('is not consenting by default, and says so in the Excel export', async () => {
+    const a = (await post({ ...newMember, email: 'a@example.org' })).json() as { id: string };
+    await post({
+      ...newMember,
+      lastName: 'Martin',
+      email: 'b@example.org',
+      imageConsent: true,
+    });
+    expect(await read(a.id)).toMatchObject({ imageConsent: false, ticketEmailOptOut: false });
+
+    const res = await t.app.inject({ url: '/api/v1/members.xlsx', headers });
+    expect(res.statusCode).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.rawPayload as unknown as ArrayBuffer);
+    const ws = wb.getWorksheet('Adhérents')!;
+    const header = (ws.getRow(1).values as string[]).slice(1);
+    const col = header.indexOf('Droit à l’image') + 1;
+    const nameCol = header.indexOf('Nom') + 1;
+    const byName = Object.fromEntries(
+      Array.from({ length: ws.rowCount - 1 }, (_, i) => ws.getRow(i + 2)).map((r) => [
+        String(r.getCell(nameCol).value),
+        String(r.getCell(col).value),
+      ]),
+    );
+    expect(byName.Dupont).toBe('Non renseigné');
+    expect(byName.Martin).toMatch(/^Oui \(\d{4}-\d{2}-\d{2}\)$/);
   });
 });

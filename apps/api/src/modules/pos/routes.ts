@@ -16,6 +16,7 @@ import {
 import {
   centsToDecimal,
   closing,
+  cashGapNeedsComment,
   countedCashCents,
   decimalToCents,
   DENOMINATIONS,
@@ -34,7 +35,7 @@ import { closingPdf } from './closing-pdf';
 import { generateSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
-import { processOps, Rejected } from './sync-service';
+import { NotYet, processOps, Rejected } from './sync-service';
 
 const amount = z
   .string()
@@ -132,14 +133,25 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     async (req) => buildSnapshot(db, req.query.since ? new Date(req.query.since) : null),
   );
 
-  app.post('/sync/push', { ...cashier, schema: { body: syncPushSchema } }, async (req) => {
-    try {
-      return { results: await processOps(db, req, config, req.body.deviceId, req.body.ops) };
-    } catch (e) {
-      if (e instanceof Rejected) throw badRequest(e.message);
-      throw e;
-    }
-  });
+  // Tills share one address: generous, but a stuck loop is stopped.
+  app.post(
+    '/sync/push',
+    {
+      ...cashier,
+      schema: { body: syncPushSchema },
+      config: { rateLimit: { max: 600, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      try {
+        return { results: await processOps(db, req, config, req.body.deviceId, req.body.ops) };
+      } catch (e) {
+        if (e instanceof Rejected) throw badRequest(e.message);
+        // A cancellation ahead of its ticket: the till sends it again.
+        if (e instanceof NotYet) throw conflict(e.message);
+        throw e;
+      }
+    },
+  );
 
   // --- Sessions (§4.5) --------------------------------------------------------------
 
@@ -238,6 +250,20 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
       });
       if (result.nextFloatCents < 0)
         throw badRequest('Le dépôt en banque dépasse les espèces comptées.');
+      // An unexplained gap, or a closing that goes ahead with tickets not yet sent, needs a reason
+      // written down: the treasurer reads it in the closing report.
+      const reason = (b.comment ?? '').trim();
+      if (!administrative) {
+        const thresholds = (await loadSettings(tx))['controls.thresholds'];
+        if (cashGapNeedsComment(result.differenceCents, thresholds) && reason.length < 3)
+          throw badRequest(
+            `Écart de caisse de ${centsToDecimal(result.differenceCents)} € : expliquez-le dans le commentaire avant de clôturer.`,
+          );
+        if (b.forced && reason.length < 3)
+          throw badRequest(
+            'Des tickets de ce poste n’ont pas été envoyés : indiquez dans le commentaire pourquoi vous clôturez quand même.',
+          );
+      }
       const values = {
         sessionId: s.id,
         denominations: b.denominations,
@@ -335,7 +361,8 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
 
   app.post(
     '/pos/sessions/:id/reopen',
-    { preHandler: app.requireRoles('ADMIN'), schema: sessionParams },
+    // R-EVO-05: the treasury team can undo a closing too, until its entry is validated.
+    { preHandler: app.requireRoles('ADMIN', 'COMPTA'), schema: sessionParams },
     async (req) => {
       await db.transaction(async (tx) => {
         const [s] = await tx

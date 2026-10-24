@@ -27,6 +27,16 @@ export async function newDraft(): Promise<Draft> {
   return d;
 }
 
+/** A new ticket pre-filled with the lines (and member) of a refused one. */
+export async function draftFromSale(
+  lines: Draft['lines'],
+  memberId: string | null,
+): Promise<Draft> {
+  const d = await newDraft();
+  await updateDraft(d.id, () => ({ lines, memberId }));
+  return { ...d, lines, memberId };
+}
+
 export async function updateDraft(id: string, change: (d: Draft) => Partial<Draft>): Promise<void> {
   await tillDb.transaction('rw', tillDb.drafts, async () => {
     const d = await tillDb.drafts.get(id);

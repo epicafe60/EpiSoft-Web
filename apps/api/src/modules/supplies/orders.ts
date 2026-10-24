@@ -5,12 +5,15 @@ import { z } from 'zod';
 import {
   goodsReceipt,
   goodsReceiptLine,
+  invoiceReceipt,
+  member,
   priceHistory,
   product,
   productBatch,
   purchaseOrder,
   purchaseOrderLine,
   supplier,
+  supplierInvoice,
   type Db,
   type Tx,
 } from '@episoft/db';
@@ -27,6 +30,8 @@ import {
   parsePrice4,
   parseQtyToMilli,
   price4ToDecimal,
+  purchasePriceFlag,
+  receiptCorrectionSchema,
   receiptSchema,
   suggestedOrderQtyMilli,
   formatQty,
@@ -128,6 +133,7 @@ export async function orderDetail(db: Db | Tx, id: string) {
       unitPriceExcl: purchaseOrderLine.unitPriceExcl,
       vatRate: purchaseOrderLine.vatRate,
       salePrice: product.salePrice,
+      purchasePriceExcl: product.purchasePriceExcl,
       stockQty: product.stockQty,
     })
     .from(purchaseOrderLine)
@@ -135,8 +141,15 @@ export async function orderDetail(db: Db | Tx, id: string) {
     .where(eq(purchaseOrderLine.orderId, id))
     .orderBy(purchaseOrderLine.lineNo);
   const receipts = await db
-    .select()
+    .select({
+      id: goodsReceipt.id,
+      number: goodsReceipt.number,
+      date: goodsReceipt.date,
+      byFirst: member.firstName,
+      byLast: member.lastName,
+    })
     .from(goodsReceipt)
+    .leftJoin(member, eq(member.id, goodsReceipt.receivedBy))
     .where(eq(goodsReceipt.orderId, id))
     .orderBy(goodsReceipt.date);
   return {
@@ -164,7 +177,13 @@ export async function orderDetail(db: Db | Tx, id: string) {
       });
       return { ...l, totalExcl: centsToDecimal(t.exclCents) };
     }),
-    receipts: receipts.map((r) => ({ id: r.id, number: r.number, date: r.date })),
+    // R-EVO-11: who keyed in the received quantities.
+    receipts: receipts.map((r) => ({
+      id: r.id,
+      number: r.number,
+      date: r.date,
+      receivedByName: r.byFirst ? `${r.byFirst} ${r.byLast}` : null,
+    })),
   };
 }
 
@@ -248,7 +267,9 @@ export async function recordReceipt(
   tx: Tx,
   input: ReceiptInput,
   by: string,
-): Promise<{ id: string; number: string }> {
+): Promise<{ id: string; number: string; warnings: string[] }> {
+  const thresholds = (await loadSettings(tx))['controls.thresholds'];
+  const warnings: string[] = [];
   const year = parisYear(new Date(`${input.date}T12:00:00Z`));
   const number = formatDocNumber('RC', year, await nextNumber(tx, `receipt:${year}`));
   const [r] = await tx
@@ -275,6 +296,18 @@ export async function recordReceipt(
   for (const [i, l] of input.lines.entries()) {
     const p = byId.get(l.productId);
     if (!p) throw badRequest('Produit inconnu.');
+    // The purchase price is about to be replaced: say so when it jumps, or when it is 0.
+    const nextPrice4 = parsePrice4(l.unitPriceExcl)!;
+    if (nextPrice4 === 0) warnings.push(`${p.name} : prix d’achat à 0 €.`);
+    const flag = purchasePriceFlag(
+      p.purchasePriceExcl === null ? null : parsePrice4(p.purchasePriceExcl),
+      nextPrice4,
+      thresholds,
+    );
+    if (flag.flagged)
+      warnings.push(
+        `${p.name} : prix d’achat ${p.purchasePriceExcl} → ${l.unitPriceExcl} (${flag.pct! > 0 ? '+' : ''}${Math.round(flag.pct!)} %).`,
+      );
     if (l.orderLineId) {
       const [ol] = await tx
         .select()
@@ -282,6 +315,11 @@ export async function recordReceipt(
         .where(eq(purchaseOrderLine.id, l.orderLineId));
       if (!ol || ol.orderId !== input.orderId || ol.productId !== l.productId)
         throw badRequest('Ligne de commande incohérente.');
+      if (
+        parseQtyToMilli(ol.qtyReceived)! + parseQtyToMilli(l.qty)! >
+        parseQtyToMilli(ol.qtyOrdered)!
+      )
+        warnings.push(`${p.name} : reçu plus que commandé (${ol.qtyOrdered} commandé).`);
       await tx
         .update(purchaseOrderLine)
         .set({ qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${l.qty}::numeric` })
@@ -352,7 +390,7 @@ export async function recordReceipt(
     const status = input.closeOrder ? 'CLOSED' : complete ? 'RECEIVED' : 'PARTIAL';
     await tx.update(purchaseOrder).set({ status }).where(eq(purchaseOrder.id, input.orderId));
   }
-  return { id: r!.id, number };
+  return { id: r!.id, number, warnings };
 }
 
 export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
@@ -500,6 +538,51 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     return o;
   });
 
+  /**
+   * R-EVO-10: every active reference of the order's supplier, with its stock, minimum stock and
+   * the suggested quantity, to order from the full list and not only from what is under the minimum.
+   */
+  app.get(
+    '/purchase-orders/:id/supplier-products',
+    { ...readers, schema: idParams },
+    async (req) => {
+      const [o] = await db.select().from(purchaseOrder).where(eq(purchaseOrder.id, req.params.id));
+      if (!o) throw notFound('Commande introuvable.');
+      const prods = await db
+        .select()
+        .from(product)
+        .where(
+          and(
+            eq(product.supplierId, o.supplierId),
+            inArray(product.status, ['ACTIVE', 'ON_ORDER']),
+            eq(product.kind, 'GOODS'),
+          ),
+        )
+        .orderBy(asc(product.name));
+      const reserved = await reservedByProduct(
+        db,
+        prods.map((p) => p.id),
+      );
+      return prods.map((p) => ({
+        productId: p.id,
+        code: p.code,
+        name: p.name,
+        unit: p.unit,
+        stockQty: p.stockQty,
+        minStock: p.minStock,
+        purchasePriceExcl: p.purchasePriceExcl ?? '0',
+        vatRate: p.vatRate,
+        suggestedQty: milliToDecimal(
+          suggestedOrderQtyMilli(
+            p.minStock === null ? null : parseQtyToMilli(p.minStock),
+            parseQtyToMilli(p.stockQty)!,
+            reserved.get(p.id) ?? 0,
+          ),
+        ),
+      }));
+    },
+  );
+
   /** Lines, date and comment of a draft (R-CMD-02, R-CMD-07). */
   app.put(
     '/purchase-orders/:id',
@@ -539,8 +622,9 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         .where(eq(purchaseOrder.id, req.params.id))
         .for('update');
       if (!o) throw notFound('Commande introuvable.');
-      if (o.status !== 'DRAFT')
-        throw conflict('Seule une commande en brouillon peut être supprimée (R-CMD-07).');
+      // R-EVO-12: a cancelled order (never received) can be deleted too.
+      if (o.status !== 'DRAFT' && o.status !== 'CANCELLED')
+        throw conflict('Seule une commande en brouillon ou annulée peut être supprimée.');
       await tx.delete(purchaseOrder).where(eq(purchaseOrder.id, o.id));
       await audit(tx, req, {
         action: 'order.delete',
@@ -652,7 +736,12 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           action: 'receipt.create',
           entity: 'purchase_order',
           entityId: o.id,
-          after: { receipt: r.number, lines: req.body.lines.length, close: req.body.closeOrder },
+          after: {
+            receipt: r.number,
+            lines: req.body.lines.length,
+            close: req.body.closeOrder,
+            warnings: r.warnings,
+          },
         });
         return r;
       }),
@@ -700,9 +789,119 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           action: 'receipt.create',
           entity: 'supplier',
           entityId: req.body.supplierId,
-          after: { receipt: r.number },
+          after: { receipt: r.number, warnings: r.warnings },
         });
         return r;
+      }),
+  );
+
+  /**
+   * R-EVO-11: a manager corrects the quantities and prices of a validated receipt. The stock
+   * follows through a CORRECTION movement, the order lines are recounted, the change is audited.
+   * Refused once an invoice that includes this receipt is paid.
+   */
+  app.post(
+    '/receipts/:id/correct',
+    { ...appros, schema: { ...idParams, body: receiptCorrectionSchema } },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const [r] = await tx
+          .select()
+          .from(goodsReceipt)
+          .where(eq(goodsReceipt.id, req.params.id))
+          .for('update');
+        if (!r) throw notFound('Réception introuvable.');
+        const [paid] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(invoiceReceipt)
+          .innerJoin(supplierInvoice, eq(supplierInvoice.id, invoiceReceipt.invoiceId))
+          .where(and(eq(invoiceReceipt.receiptId, r.id), eq(supplierInvoice.status, 'PAID')));
+        if (paid!.n > 0)
+          throw conflict('Une facture réglée inclut cette réception : elle n’est plus modifiable.');
+        const lines = await tx
+          .select()
+          .from(goodsReceiptLine)
+          .where(eq(goodsReceiptLine.receiptId, r.id));
+        const changes: { lineId: string; before: object; after: object }[] = [];
+        for (const c of req.body.lines) {
+          const l = lines.find((x) => x.id === c.lineId);
+          if (!l) throw badRequest('Ligne de réception inconnue.');
+          const deltaMilli = parseQtyToMilli(c.qty)! - parseQtyToMilli(l.qty)!;
+          const priceChanged = parsePrice4(c.unitPriceExcl) !== parsePrice4(l.unitPriceExcl);
+          if (deltaMilli === 0 && !priceChanged) continue;
+          const [p] = await tx.select().from(product).where(eq(product.id, l.productId));
+          if (!p) throw badRequest('Produit inconnu.');
+          await tx
+            .update(goodsReceiptLine)
+            .set({ qty: c.qty, unitPriceExcl: c.unitPriceExcl })
+            .where(eq(goodsReceiptLine.id, l.id));
+          if (p.kind === 'GOODS' && deltaMilli !== 0)
+            await recordMovement(tx, {
+              productId: p.id,
+              qtyMilli: deltaMilli,
+              kind: 'CORRECTION',
+              unitCost: c.unitPriceExcl,
+              sourceType: 'receipt',
+              sourceId: r.id,
+              comment: `Correction de la réception ${r.number}`,
+              by: req.user!.id,
+            });
+          if (l.orderLineId && deltaMilli !== 0)
+            await tx
+              .update(purchaseOrderLine)
+              .set({
+                qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${milliToDecimal(deltaMilli)}::numeric`,
+              })
+              .where(eq(purchaseOrderLine.id, l.orderLineId));
+          // The purchase price of the product follows if nothing changed it since the receipt.
+          if (
+            priceChanged &&
+            parsePrice4(p.purchasePriceExcl ?? '0') === parsePrice4(l.unitPriceExcl)
+          ) {
+            const incl = price4ToDecimal(inclFromExcl4(parsePrice4(c.unitPriceExcl)!, p.vatRate));
+            const [after] = await tx
+              .update(product)
+              .set({ purchasePriceExcl: c.unitPriceExcl, purchasePriceIncl: incl })
+              .where(eq(product.id, p.id))
+              .returning();
+            await tx.insert(priceHistory).values({
+              productId: p.id,
+              purchasePriceExcl: after!.purchasePriceExcl,
+              purchasePriceIncl: after!.purchasePriceIncl,
+              salePrice: after!.salePrice,
+              source: 'RECEIPT',
+              by: req.user!.id,
+            });
+          }
+          changes.push({
+            lineId: l.id,
+            before: { qty: l.qty, unitPriceExcl: l.unitPriceExcl },
+            after: { qty: c.qty, unitPriceExcl: c.unitPriceExcl },
+          });
+        }
+        if (r.orderId) {
+          const [o] = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.id, r.orderId));
+          if (o && (o.status === 'PARTIAL' || o.status === 'RECEIVED')) {
+            const ols = await tx
+              .select()
+              .from(purchaseOrderLine)
+              .where(eq(purchaseOrderLine.orderId, o.id));
+            const complete = ols.every(
+              (ol) => parseQtyToMilli(ol.qtyReceived)! >= parseQtyToMilli(ol.qtyOrdered)!,
+            );
+            await tx
+              .update(purchaseOrder)
+              .set({ status: complete ? 'RECEIVED' : 'PARTIAL' })
+              .where(eq(purchaseOrder.id, o.id));
+          }
+        }
+        await audit(tx, req, {
+          action: 'receipt.correct',
+          entity: 'goods_receipt',
+          entityId: r.id,
+          after: { number: r.number, comment: req.body.comment ?? null, changes },
+        });
+        return { id: r.id, changed: changes.length };
       }),
   );
 
@@ -730,8 +929,16 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         vatRate: l.vatRate,
       })),
     );
+    // R-EVO-11: who keyed the quantities in.
+    const by = r.receivedBy
+      ? await db.query.member.findFirst({
+          where: eq(member.id, r.receivedBy),
+          columns: { firstName: true, lastName: true },
+        })
+      : null;
     return {
       ...r,
+      receivedByName: by ? `${by.firstName} ${by.lastName}` : null,
       createdAt: r.createdAt.toISOString(),
       lines,
       totalExcl: centsToDecimal(t.exclCents),

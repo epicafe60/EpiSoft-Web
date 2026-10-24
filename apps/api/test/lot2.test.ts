@@ -407,5 +407,19 @@ describe('catalogue administration (R-PRD-06, R-PRD-08)', () => {
     expect((await t.db.select().from(product).where(eq(product.id, p1.id)))[0]!.labelPending).toBe(
       false,
     );
+
+    // R-EVO-07: no barcode, with the red (local) and green (organic) dots.
+    await t.db
+      .update(product)
+      .set({ qualities: ['LOCAL', 'ORGANIC'] })
+      .where(eq(product.id, p1.id));
+    const bare = await post('/api/v1/products/labels/pdf', {
+      productIds: [p1.id],
+      barcode: false,
+    });
+    expect(bare.statusCode).toBe(200);
+    expect(bare.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+    const full = await post('/api/v1/products/labels/pdf', { productIds: [p1.id] });
+    expect(bare.rawPayload.length).toBeLessThan(full.rawPayload.length);
   });
 });

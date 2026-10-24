@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Trash2 } from 'lucide-react';
 import {
   applyPayment,
+  canAddPayment,
+  DEFAULT_THRESHOLDS,
   centsToDecimal,
   formatEuro,
   parseAmountToCents,
@@ -48,10 +50,10 @@ export function PaymentDialog({
   const me = useMe();
   const { settings, balanceCents } = useTill();
   const [payments, setPayments] = useState<PaymentDraft[]>([]);
-  const [method, setMethod] = useState<PaymentMethod>('CASH');
+  const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [emailReceipt, setEmailReceipt] = useState(false);
+  const [changeChecked, setChangeChecked] = useState(false);
   const [force, setForce] = useState(false);
   const [saving, setSaving] = useState(false);
   const amountRef = useRef<HTMLInputElement>(null);
@@ -59,6 +61,8 @@ export function PaymentDialog({
   const state = paymentState(totalCents, payments);
   const change = payments.reduce((s, p) => s + (p.changeCents ?? 0), 0);
   const householdId = member?.householdId ?? null;
+  const changeHigh =
+    change > Math.round((settings?.thresholds ?? DEFAULT_THRESHOLDS).changeAmount * 100);
   const balance = householdId ? balanceCents(householdId) : null;
   const walletUsed = payments
     .filter((p) => p.method === 'WALLET')
@@ -69,11 +73,11 @@ export function PaymentDialog({
   useEffect(() => {
     if (open) {
       setPayments([]);
-      setMethod('CASH');
+      setMethod(null); // R-EVO-02: no method is preselected
       setInput(centsToDecimal(totalCents).replace('.', ','));
       setError(null);
-      setEmailReceipt(false);
       setForce(false);
+      setChangeChecked(false);
     }
   }, [open, totalCents]);
 
@@ -95,10 +99,12 @@ export function PaymentDialog({
   const add = (e?: FormEvent) => {
     e?.preventDefault();
     setError(null);
+    if (!method || !canAddPayment(method, state.remainingCents))
+      return setError('Choisissez un mode de règlement.');
     const typed = parseAmountToCents(input);
     if (typed === null || typed <= 0) return setError('Montant invalide.');
     if (method === 'WALLET') {
-      if (!householdId) return setError('Le paiement par cagnotte exige un adhérent (R-VTE-02).');
+      if (!householdId) return setError('Le paiement par cagnotte exige un adhérent.');
       const { amountCents } = applyPayment(state.remainingCents, method, typed);
       if (
         balance !== null &&
@@ -127,7 +133,8 @@ export function PaymentDialog({
     try {
       await onConfirm({
         payments,
-        emailReceipt,
+        // R-EVO-40: the server sends the ticket by itself; the flag is kept for old tills.
+        emailReceipt: false,
         overdraftForcedBy: force && canForce ? me.id : null,
       });
     } finally {
@@ -206,13 +213,14 @@ export function PaymentDialog({
               <Input
                 ref={amountRef}
                 aria-label={method === 'CASH' ? 'Montant remis' : 'Montant'}
+                disabled={!method}
                 inputMode="decimal"
                 className="h-11 text-lg"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 autoFocus
               />
-              <Button type="submit" size="lg">
+              <Button type="submit" size="lg" disabled={!method}>
                 Ajouter
               </Button>
             </div>
@@ -220,7 +228,7 @@ export function PaymentDialog({
               <div className="flex items-center gap-2">
                 <Checkbox id="force" checked={force} onChange={(e) => setForce(e.target.checked)} />
                 <Label htmlFor="force" className="font-normal">
-                  Forcer le découvert (journalisé, R-CAG-04)
+                  Forcer le découvert (journalisé)
                 </Label>
               </div>
             ) : null}
@@ -255,6 +263,25 @@ export function PaymentDialog({
           </ul>
         ) : null}
 
+        {changeHigh ? (
+          <div className="grid gap-2 rounded-md border border-warning bg-warning/10 p-3 text-sm">
+            <p className="font-medium">
+              La monnaie à rendre est élevée ({eur(change)}). Vérifiez la somme remise par le
+              client.
+            </p>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="change-checked"
+                checked={changeChecked}
+                onChange={(e) => setChangeChecked(e.target.checked)}
+              />
+              <Label htmlFor="change-checked" className="font-normal">
+                J’ai vérifié la somme remise et la monnaie
+              </Label>
+            </div>
+          </div>
+        ) : null}
+
         {change > 0 ? (
           <div className="grid gap-2 rounded-md bg-warning/15 p-3">
             <p className="text-lg font-semibold">
@@ -268,7 +295,7 @@ export function PaymentDialog({
                   onChange={(e) => toggleChangeToWallet(e.target.checked)}
                 />
                 <Label htmlFor="ctw" className="font-normal">
-                  Verser la monnaie ({eur(change)}) sur la cagnotte (R-CAG-05)
+                  Verser la monnaie ({eur(change)}) sur la cagnotte
                 </Label>
               </div>
             ) : null}
@@ -276,23 +303,21 @@ export function PaymentDialog({
         ) : null}
 
         {member?.hasEmail ? (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="mail"
-              checked={emailReceipt}
-              onChange={(e) => setEmailReceipt(e.target.checked)}
-            />
-            <Label htmlFor="mail" className="font-normal">
-              Envoyer le ticket par courriel
-            </Label>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Le ticket sera envoyé par courriel à {member.firstName} {member.lastName}, avec le solde
+            de la cagnotte avant et après.
+          </p>
         ) : null}
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Retour au ticket
           </Button>
-          <Button size="lg" onClick={confirm} disabled={!state.settled || saving}>
+          <Button
+            size="lg"
+            onClick={confirm}
+            disabled={!state.settled || saving || (changeHigh && !changeChecked)}
+          >
             Valider le ticket
           </Button>
         </div>

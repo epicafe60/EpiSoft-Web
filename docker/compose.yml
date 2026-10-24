@@ -19,6 +19,14 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     env_file: .env
+    ports:
+      # The server itself only (backup scripts report here); the public door is Caddy.
+      - "127.0.0.1:3000:3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     environment:
       DATABASE_URL: postgres://episoft_app:${EPISOFT_APP_PASSWORD:?set in docker/.env}@postgres:5432/episoft
     depends_on:
@@ -28,6 +36,11 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

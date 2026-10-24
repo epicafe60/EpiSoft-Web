@@ -1,5 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useState } from 'react';
+import { DEFAULT_THRESHOLDS, tillHealth } from '@episoft/shared';
 import { ArrowLeft, CloudOff, LogIn, RefreshCw, Wifi } from 'lucide-react';
 import { useMe } from '@/lib/auth';
 import { formatDateTime } from '@/lib/utils';
@@ -28,7 +30,13 @@ function StatusIndicator() {
         {pendingCount ? `${pendingCount} en attente d’envoi` : 'Tout est envoyé'}
       </span>
       {rejectedCount ? (
-        <span className="font-medium text-destructive">{rejectedCount} refusé(s)</span>
+        <Link
+          to="/caisse/tickets"
+          className="font-medium text-destructive underline"
+          title="Voir les tickets refusés"
+        >
+          {rejectedCount} refusé(s) : voir
+        </Link>
       ) : null}
       <span className="hidden text-muted-foreground lg:inline">
         · synchro {meta.lastSnapshotAt ? formatDateTime(meta.lastSnapshotAt) : 'jamais'}
@@ -56,6 +64,40 @@ function CashierName() {
     ? `${cashier.firstName} ${cashier.lastName}`
     : `${me.firstName} ${me.lastName}`;
   return <span className="truncate">Caissier : {name}</span>;
+}
+
+/** What has been waiting too long: offline, old data, tickets not sent, a session left open. */
+function HealthBanners() {
+  const { meta, sync, settings } = useTill();
+  const oldest = useLiveQuery(
+    async () => (await tillDb.outbox.filter((o) => o.status === 'PENDING').sortBy('createdAt'))[0],
+    [],
+  );
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const warnings = tillHealth(
+    now,
+    {
+      online: sync.online,
+      lastContactAt: meta.lastSnapshotAt,
+      oldestPendingAt: oldest?.createdAt ?? null,
+      sessionOpenedAt: meta.session?.openedAt ?? null,
+    },
+    settings?.thresholds ?? DEFAULT_THRESHOLDS,
+  );
+  if (!warnings.length) return null;
+  return (
+    <div role="status" className="grid gap-px bg-warning/30">
+      {warnings.map((w) => (
+        <p key={w.code} className="bg-warning/15 px-4 py-1.5 text-sm">
+          {w.message}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 function TillHeader() {
@@ -90,8 +132,16 @@ function TillHeader() {
           <CashierName />
         </span>
         <StatusIndicator />
+        <Link
+          to="/aide"
+          className="text-sm text-muted-foreground underline hover:text-foreground"
+          title="Que faire si…"
+        >
+          Aide
+        </Link>
         <ThemeToggle />
       </header>
+      <HealthBanners />
       {sync.authRequired ? (
         <div
           role="alert"

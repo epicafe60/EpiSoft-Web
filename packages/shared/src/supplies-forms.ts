@@ -131,6 +131,22 @@ export const receiptSchema = z.object({
   newSalePrices: z.record(z.string().uuid(), amountInput).default({}),
 });
 
+/** R-EVO-11: quantities and prices of a validated receipt, corrected by a manager. */
+export const receiptCorrectionSchema = z.object({
+  comment: text(500).optional(),
+  lines: z
+    .array(
+      z.object({
+        lineId: z.string().uuid(),
+        /** Zero cancels what the line brought into stock. */
+        qty: qtyInput.refine((s) => !s.startsWith('-'), 'Quantité négative.'),
+        unitPriceExcl: price4Input,
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
 // --- Stock (R-STK-03) and inventory (R-STK-04) ---------------------------------------------
 
 export const lossSchema = z.object({
@@ -152,6 +168,8 @@ export const inventoryCreateSchema = z.object({
     categoryId: z.string().uuid().optional(),
     productIds: z.array(z.string().uuid()).max(5000).optional(),
   }),
+  /** R-EVO-30: block sales at the till until the inventory is validated or cancelled. */
+  freezeSales: z.boolean().default(false),
 });
 
 export const inventoryCountSchema = z.object({
@@ -238,6 +256,8 @@ export const labelsSchema = z.object({
   productIds: z.array(z.string().uuid()).min(1).max(1000),
   perPage: z.union([z.literal(24), z.literal(40)]).optional(),
   markDone: z.boolean().default(false),
+  /** R-EVO-07: false prints the label without its barcode. */
+  barcode: z.boolean().default(true),
 });
 
 /** R-STK-07: a dated batch of a product (best-before date and quantity). */

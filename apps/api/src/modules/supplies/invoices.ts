@@ -1,3 +1,4 @@
+import ExcelJS from 'exceljs';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -89,8 +90,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     to: z.string().date().optional(),
   });
 
-  app.get('/supplier-invoices', { ...editors, schema: { querystring: listQuery } }, async (req) => {
-    const q = req.query;
+  const listInvoices = async (q: z.infer<typeof listQuery>) => {
     const f: SQL[] = [];
     if (q.supplierId) f.push(eq(supplierInvoice.supplierId, q.supplierId));
     if (q.status) f.push(eq(supplierInvoice.status, q.status));
@@ -117,7 +117,51 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       .where(and(...f))
       .orderBy(desc(supplierInvoice.date))
       .limit(1000);
-  });
+  };
+
+  app.get('/supplier-invoices', { ...editors, schema: { querystring: listQuery } }, (req) =>
+    listInvoices(req.query),
+  );
+
+  /** R-EVO-21: invoices to pay, paid or all, in Excel. */
+  app.get(
+    '/supplier-invoices.xlsx',
+    { ...editors, schema: { querystring: listQuery } },
+    async (req, reply) => {
+      const rows = await listInvoices(req.query);
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Factures');
+      const money = { numFmt: '#,##0.00 €' };
+      ws.columns = [
+        { header: 'Fournisseur', key: 'supplierName', width: 30 },
+        { header: 'Pièce', key: 'pieceRef', width: 18 },
+        { header: 'Date', key: 'date', width: 12 },
+        { header: 'Échéance', key: 'dueDate', width: 12 },
+        { header: 'HT', key: 'totalExcl', width: 12, style: money },
+        { header: 'TVA', key: 'totalVat', width: 12, style: money },
+        { header: 'TTC', key: 'totalIncl', width: 12, style: money },
+        { header: 'État', key: 'status', width: 12 },
+        { header: 'Réglée le', key: 'paidAt', width: 14 },
+        { header: 'Mode', key: 'paymentMethod', width: 14 },
+      ];
+      ws.getRow(1).font = { bold: true };
+      for (const r of rows)
+        ws.addRow({
+          ...r,
+          totalExcl: Number(r.totalExcl),
+          totalVat: Number(r.totalVat),
+          totalIncl: Number(r.totalIncl),
+          status: r.status === 'PAID' ? 'Réglée' : 'À régler',
+          paidAt: r.paidAt ?? '',
+          paymentMethod: r.paymentMethod ?? '',
+        });
+      const buf = await wb.xlsx.writeBuffer();
+      return reply
+        .header('content-disposition', 'attachment; filename="factures.xlsx"')
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(Buffer.from(buf));
+    },
+  );
 
   /** R-FAC-05: invoices to pay, by due date. */
   app.get('/supplier-invoices/schedule', editors, async () =>

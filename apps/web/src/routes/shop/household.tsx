@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { WALLET_ENTRY_KIND_LABELS, type WalletEntryKind } from '@episoft/shared';
+import {
+  PAYMENT_METHOD_LABELS,
+  WALLET_ENTRY_KIND_LABELS,
+  type PaymentMethod,
+  type WalletEntryKind,
+} from '@episoft/shared';
 import { api } from '@/lib/api';
 import { euro, formatDate } from '@/lib/format';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
@@ -25,7 +30,13 @@ interface Mine {
       comment: string | null;
       saleId: string | null;
     }[];
-    tickets: { id: string; number: string; soldAt: string; total: string }[];
+    tickets: {
+      id: string;
+      number: string;
+      soldAt: string;
+      total: string;
+      methods: PaymentMethod[];
+    }[];
   } | null;
 }
 
@@ -70,14 +81,23 @@ export function MyHouseholdPage() {
       {h ? (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Card>
+            {/* R-EVO-41: the state of the cagnotte first, green or red. */}
+            <Card className={Number(h.balance) > 0 ? 'border-success/50' : 'border-destructive/50'}>
               <CardHeader>
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   Cagnotte
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold tabular-nums">{euro(h.balance)}</p>
+                <p
+                  data-testid="wallet-balance"
+                  className={`text-3xl font-semibold tabular-nums ${Number(h.balance) > 0 ? 'text-success' : 'text-destructive'}`}
+                >
+                  {euro(h.balance)}
+                </p>
+                <Badge variant={Number(h.balance) > 0 ? 'success' : 'destructive'} className="mt-2">
+                  {Number(h.balance) > 0 ? 'Cagnotte approvisionnée' : 'Cagnotte à recharger'}
+                </Badge>
               </CardContent>
             </Card>
             <Card>
@@ -186,6 +206,7 @@ export function MyHouseholdPage() {
                     <SortTh state={ticketSort} sortKey="number">
                       Ticket
                     </SortTh>
+                    <th>Règlement</th>
                     <SortTh state={ticketSort} sortKey="total" className="text-right">
                       Total
                     </SortTh>
@@ -204,12 +225,13 @@ export function MyHouseholdPage() {
                           {s.number}
                         </button>
                       </td>
+                      <td>{s.methods.map((m) => PAYMENT_METHOD_LABELS[m]).join(', ')}</td>
                       <td className="text-right tabular-nums">{euro(s.total)}</td>
                     </tr>
                   ))}
                   {h.tickets.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="text-muted-foreground">
+                      <td colSpan={4} className="text-muted-foreground">
                         Aucun achat.
                       </td>
                     </tr>

@@ -77,6 +77,18 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       .where(
         and(eq(sale.householdId, householdId), sql`${sale.soldAt} >= now() - interval '12 months'`),
       );
+    // R-EVO-43: the payment methods of each ticket, not only the cagnotte.
+    const pays = tickets.length
+      ? await db
+          .select({ saleId: salePayment.saleId, method: salePayment.method })
+          .from(salePayment)
+          .where(
+            inArray(
+              salePayment.saleId,
+              tickets.map((s) => s.id),
+            ),
+          )
+      : [];
     return {
       household: {
         balance: bal?.balance ?? '0.00',
@@ -84,7 +96,11 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
         membership: current ?? null,
         spentLast12Months: spent,
         wallet: wallet.map((w) => ({ ...w, at: w.at.toISOString() })),
-        tickets: tickets.map((s) => ({ ...s, soldAt: s.soldAt.toISOString() })),
+        tickets: tickets.map((s) => ({
+          ...s,
+          soldAt: s.soldAt.toISOString(),
+          methods: [...new Set(pays.filter((p) => p.saleId === s.id).map((p) => p.method))],
+        })),
       },
     };
   });
@@ -130,85 +146,89 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
   );
 
   /** R-MBR-08: the member's own data as a JSON file (right of access), household included. */
-  app.get('/me/export', async (req, reply) => {
-    const [me] = await db.select().from(member).where(eq(member.id, req.user!.id));
-    if (!me) throw notFound('Compte introuvable.');
-    const { passwordHash: _p, qrTokenHash: _q, ...profile } = me;
-    const hid = me.householdId;
-    const wallet = hid
-      ? await db
-          .select({
-            at: walletEntry.at,
-            kind: walletEntry.kind,
-            amount: walletEntry.amount,
-            comment: walletEntry.comment,
-          })
-          .from(walletEntry)
-          .where(eq(walletEntry.householdId, hid))
-          .orderBy(desc(walletEntry.at))
-      : [];
-    const tickets = hid
-      ? await db
-          .select({ id: sale.id, number: sale.number, soldAt: sale.soldAt, total: sale.total })
-          .from(sale)
-          .where(eq(sale.householdId, hid))
-          .orderBy(desc(sale.soldAt))
-      : [];
-    const ids = tickets.map((x) => x.id);
-    const lines = ids.length
-      ? await db
-          .select({
-            saleId: saleLine.saleId,
-            label: saleLine.label,
-            qty: saleLine.qty,
-            lineTotal: saleLine.lineTotal,
-          })
-          .from(saleLine)
-          .where(inArray(saleLine.saleId, ids))
-          .orderBy(saleLine.saleId, saleLine.lineNo)
-      : [];
-    const memberships = hid
-      ? await db
-          .select({
-            startDate: membership.startDate,
-            endDate: membership.endDate,
-            amount: membership.amount,
-            cancelledAt: membership.cancelledAt,
-          })
-          .from(membership)
-          .where(eq(membership.householdId, hid))
-          .orderBy(desc(membership.startDate))
-      : [];
-    const reviews = await db
-      .select({
-        rating: productReview.rating,
-        comment: productReview.comment,
-        status: productReview.status,
-        createdAt: productReview.createdAt,
-      })
-      .from(productReview)
-      .where(eq(productReview.memberId, me.id));
-    const logins = await db
-      .select({ at: loginLog.at, success: loginLog.success, ip: loginLog.ip })
-      .from(loginLog)
-      .where(eq(loginLog.memberId, me.id))
-      .orderBy(desc(loginLog.at))
-      .limit(500);
-    void reply.header(
-      'content-disposition',
-      `attachment; filename="mes-donnees-${me.number}.json"`,
-    );
-    return {
-      exportedAt: new Date().toISOString(),
-      member: profile,
-      memberships,
-      wallet,
-      tickets: tickets.map(({ id, ...x }) => ({
-        ...x,
-        lines: lines.filter((l) => l.saleId === id).map(({ saleId: _s, ...l }) => l),
-      })),
-      reviews,
-      logins,
-    };
-  });
+  app.get(
+    '/me/export',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const [me] = await db.select().from(member).where(eq(member.id, req.user!.id));
+      if (!me) throw notFound('Compte introuvable.');
+      const { passwordHash: _p, qrTokenHash: _q, ...profile } = me;
+      const hid = me.householdId;
+      const wallet = hid
+        ? await db
+            .select({
+              at: walletEntry.at,
+              kind: walletEntry.kind,
+              amount: walletEntry.amount,
+              comment: walletEntry.comment,
+            })
+            .from(walletEntry)
+            .where(eq(walletEntry.householdId, hid))
+            .orderBy(desc(walletEntry.at))
+        : [];
+      const tickets = hid
+        ? await db
+            .select({ id: sale.id, number: sale.number, soldAt: sale.soldAt, total: sale.total })
+            .from(sale)
+            .where(eq(sale.householdId, hid))
+            .orderBy(desc(sale.soldAt))
+        : [];
+      const ids = tickets.map((x) => x.id);
+      const lines = ids.length
+        ? await db
+            .select({
+              saleId: saleLine.saleId,
+              label: saleLine.label,
+              qty: saleLine.qty,
+              lineTotal: saleLine.lineTotal,
+            })
+            .from(saleLine)
+            .where(inArray(saleLine.saleId, ids))
+            .orderBy(saleLine.saleId, saleLine.lineNo)
+        : [];
+      const memberships = hid
+        ? await db
+            .select({
+              startDate: membership.startDate,
+              endDate: membership.endDate,
+              amount: membership.amount,
+              cancelledAt: membership.cancelledAt,
+            })
+            .from(membership)
+            .where(eq(membership.householdId, hid))
+            .orderBy(desc(membership.startDate))
+        : [];
+      const reviews = await db
+        .select({
+          rating: productReview.rating,
+          comment: productReview.comment,
+          status: productReview.status,
+          createdAt: productReview.createdAt,
+        })
+        .from(productReview)
+        .where(eq(productReview.memberId, me.id));
+      const logins = await db
+        .select({ at: loginLog.at, success: loginLog.success, ip: loginLog.ip })
+        .from(loginLog)
+        .where(eq(loginLog.memberId, me.id))
+        .orderBy(desc(loginLog.at))
+        .limit(500);
+      void reply.header(
+        'content-disposition',
+        `attachment; filename="mes-donnees-${me.number}.json"`,
+      );
+      return {
+        exportedAt: new Date().toISOString(),
+        member: profile,
+        memberships,
+        wallet,
+        tickets: tickets.map(({ id, ...x }) => ({
+          ...x,
+          lines: lines.filter((l) => l.saleId === id).map(({ saleId: _s, ...l }) => l),
+        })),
+        reviews,
+        logins,
+      };
+    },
+  );
 };

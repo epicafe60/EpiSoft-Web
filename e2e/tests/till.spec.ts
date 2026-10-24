@@ -105,6 +105,7 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
   await page.getByLabel('5 €', { exact: true }).fill('1');
   await expect(page.getByText('Écart')).toBeVisible();
   await page.getByRole('button', { name: 'Clôturer la session' }).click();
+  await page.getByRole('button', { name: 'Confirmer la clôture' }).click();
   await expect(page.getByText('Session clôturée.', { exact: false })).toBeVisible();
   const count = await query<{ expected_cash: string; difference: string }>(
     `select c.expected_cash, c.difference from app.cash_count c join app.cash_session s on s.id = c.session_id join app.pos_device d on d.id = s.device_id where d.name = 'E2E'`,

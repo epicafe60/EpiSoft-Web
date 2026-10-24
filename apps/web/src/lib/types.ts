@@ -44,7 +44,12 @@ export interface MemberDetail {
   status: MemberStatus;
   publicVisible: boolean;
   newsletter: boolean;
+  /** Cagnotte of the household, to warn before archiving someone who still has money in it. */
+  householdBalance: string | null;
   newsletterOptInAt: string | null;
+  ticketEmailOptOut: boolean;
+  imageConsent: boolean;
+  imageConsentAt: string | null;
   username: string | null;
   hasPassword: boolean;
   hasQr: boolean;

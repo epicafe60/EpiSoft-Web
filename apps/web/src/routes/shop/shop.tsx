@@ -14,6 +14,7 @@ import {
   type Unit,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { confirmNow } from '@/components/confirm';
 import { useMe } from '@/lib/auth';
 import type { MemberListItem } from '@/lib/types';
 import { euro, formatDate, todayIso } from '@/lib/format';
@@ -509,9 +510,18 @@ export function MyOrders() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    window.confirm(`Annuler la commande ${o.number} ?`) && cancel.mutate(o.id)
-                  }
+                  onClick={async () => {
+                    if (
+                      await confirmNow({
+                        title: `Annuler la commande ${o.number} ?`,
+                        message: 'Les produits ne seront pas préparés.',
+                        confirmLabel: 'Annuler la commande',
+                        cancelLabel: 'Garder la commande',
+                        destructive: true,
+                      })
+                    )
+                      cancel.mutate(o.id);
+                  }}
                 >
                   Annuler
                 </Button>

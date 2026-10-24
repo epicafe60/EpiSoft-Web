@@ -5,6 +5,8 @@ import {
   sale,
   salePayment,
   membership,
+  member,
+  posDevice,
   type DbOrTx,
 } from '@episoft/db';
 import {
@@ -29,6 +31,9 @@ export interface SessionSummary {
   cashOther: string;
   chequesComputed: string;
   cardComputed: string;
+  /** R-EVO-06: the tills that sold in the session, and the net sales of each cashier. */
+  devices?: string[];
+  byCashier?: { name: string; salesCount: number; total: string }[];
 }
 
 /** R-SES-02 step 2: totals of a session, by payment method and category. */
@@ -79,8 +84,32 @@ export async function sessionSummary(db: DbOrTx, sessionId: string): Promise<Ses
   const sumOther = (method: PaymentMethod) =>
     other.filter((o) => o.method === method).reduce((t, o) => t + decimalToCents(o.amount), 0);
 
+  const devices = await db
+    .selectDistinct({ name: posDevice.name })
+    .from(sale)
+    .innerJoin(posDevice, eq(posDevice.id, sale.deviceId))
+    .where(eq(sale.sessionId, sessionId));
+  const cashiers = await db
+    .select({
+      first: member.firstName,
+      last: member.lastName,
+      n: sql<number>`count(*) filter (where ${sale.cancelsSaleId} is null)::int`,
+      total: sql<string>`coalesce(sum(${sale.total}), 0)::numeric(12,2)::text`,
+    })
+    .from(sale)
+    .innerJoin(member, eq(member.id, sale.cashierId))
+    .where(eq(sale.sessionId, sessionId))
+    .groupBy(member.id, member.firstName, member.lastName)
+    .orderBy(member.lastName, member.firstName);
+
   return {
     sessionId,
+    devices: devices.map((d) => d.name).sort(),
+    byCashier: cashiers.map((c) => ({
+      name: `${c.first} ${c.last}`,
+      salesCount: c.n,
+      total: c.total,
+    })),
     openingFloat: s.openingFloat,
     salesCount: counts!.sales,
     cancellationsCount: counts!.cancellations,

@@ -46,8 +46,10 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
   await expect(page.getByTestId('ticket-total')).toHaveText(/8,00/);
   await page.getByRole('button', { name: 'Encaisser' }).click();
   const pay = page.getByRole('dialog', { name: 'Règlement' });
+  await pay.getByRole('radio', { name: 'Espèces' }).click();
   await pay.getByRole('button', { name: 'Ajouter' }).click();
   await pay.getByRole('button', { name: 'Valider le ticket' }).click();
+  await expect(page.getByText(/Ticket .* enregistré/)).toBeVisible();
   await expect(page.getByText('Tout est envoyé')).toBeVisible({ timeout: 15_000 });
 
   // Inventory of the supplier's products: 4 counted for 5 expected (R-STK-04).
@@ -81,4 +83,22 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
     `select stock_qty from app.product where code = '${SEED.honey.code}'`,
   );
   expect(p!.stock_qty).toBe('4.000');
+
+  // R-EVO-11: a manager corrects the validated receipt (6 → 5); the stock follows.
+  await page.goto('/appros/commandes');
+  await page.getByRole('link', { name: /CF-/ }).first().click();
+  await page.getByRole('button', { name: 'Corriger' }).click();
+  const fix = page.getByRole('dialog', { name: /Corriger la réception/ });
+  await fix.getByLabel(`Qté corrigée ${SEED.honey.name}`).fill('5');
+  await fix.getByRole('button', { name: 'Enregistrer la correction' }).click();
+  await expect(fix).toBeHidden();
+  await expect(page.getByText(/saisie par/)).toBeVisible();
+  const [after] = await query<{ stock_qty: string }>(
+    `select stock_qty from app.product where code = '${SEED.honey.code}'`,
+  );
+  expect(after!.stock_qty).toBe('3.000');
+  const kinds = await query<{ kind: string; qty: string }>(
+    `select m.kind, m.qty from app.stock_movement m join app.product p on p.id = m.product_id where p.code = '${SEED.honey.code}' and m.kind = 'CORRECTION'`,
+  );
+  expect(kinds).toEqual([{ kind: 'CORRECTION', qty: '-1.000' }]);
 });

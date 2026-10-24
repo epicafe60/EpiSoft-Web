@@ -50,7 +50,7 @@ export function ForgotPasswordPage() {
       ) : (
         <form onSubmit={submit} className="grid gap-4">
           {state === 'error' ? <Alert>{error}</Alert> : null}
-          <Field label="Identifiant">
+          <Field label="Identifiant ou courriel">
             {(p) => (
               <Input
                 {...p}

@@ -41,6 +41,7 @@ test('R-OFF-01 / R-OFF-06: the till reloads, keeps its ticket and sells with no 
 
   await page.getByRole('button', { name: 'Encaisser' }).click();
   const dialog = page.getByRole('dialog', { name: 'Règlement' });
+  await dialog.getByRole('radio', { name: 'Espèces' }).click();
   await dialog.getByRole('button', { name: 'Ajouter' }).click();
   await dialog.getByRole('button', { name: 'Valider le ticket' }).click();
   await expect(page.getByText(/Ticket HORSLIGNE-[0-9]+ enregistré/)).toBeVisible();

@@ -28,6 +28,8 @@ export interface OutboxEntry {
   /** When the server answered; until the next snapshot, its effects are still estimated locally. */
   syncedAt: string | null;
   result: SyncResult | null;
+  /** A refused ticket the cashier has dealt with (re-entered or put aside). */
+  acknowledged?: boolean;
 }
 
 export interface DraftLine {

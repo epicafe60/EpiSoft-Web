@@ -6,6 +6,7 @@ import { formatQty, parseQtyToMilli } from '@episoft/shared';
 import { api } from '@/lib/api';
 import { euro, todayIso } from '@/lib/format';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { useConfirm } from '@/components/confirm';
 import { Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Alert, Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
@@ -67,6 +68,23 @@ export function StockPage() {
       void queryClient.invalidateQueries({ queryKey: ['to-order'] });
     },
   });
+  const confirm = useConfirm();
+  /** A loss that takes the stock below zero means a delivery or a count is missing somewhere. */
+  const confirmLoss = async () => {
+    const stock = parseQtyToMilli(lossProduct?.stockQty ?? '0') ?? 0;
+    const qty = parseQtyToMilli(lossQty.replace(',', '.')) ?? 0;
+    if (qty > stock) {
+      const ok = await confirm({
+        title: 'Le stock deviendrait négatif',
+        message: `Il reste ${formatQty(stock)} de « ${lossProduct!.name} » en stock, et vous déclarez une perte de ${formatQty(qty)}. Un stock négatif veut dire qu’une réception ou un inventaire manque.`,
+        impact: ['Vérifiez d’abord que la dernière livraison est bien enregistrée.'],
+        confirmLabel: 'Enregistrer quand même',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    loss.mutate();
+  };
   const order = useMutation({
     mutationFn: (supplierId: string) =>
       api.post<{ id: string }>('/purchase-orders', { supplierId }),
@@ -78,9 +96,20 @@ export function StockPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <div className="flex flex-wrap items-center gap-3 lg:col-span-2">
+        <span className="text-sm text-muted-foreground">
+          Données fournisseurs : produits sans fournisseur, fournisseurs sans produit.
+        </span>
+        <a
+          className={buttonVariants({ variant: 'outline', className: 'ml-auto' })}
+          href="/api/v1/supply-audit.xlsx"
+        >
+          Audit fournisseurs (Excel)
+        </a>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">À commander (stock sous le minimum, R-PRD-10)</CardTitle>
+          <CardTitle className="text-base">À commander (stock sous le minimum)</CardTitle>
         </CardHeader>
         {toOrder.error ? <QueryError error={toOrder.error} /> : null}
         <Table>
@@ -130,7 +159,7 @@ export function StockPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Perte, casse, péremption (R-STK-03)</CardTitle>
+            <CardTitle className="text-base">Perte, casse, péremption</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             {lossProduct ? (
@@ -173,7 +202,7 @@ export function StockPage() {
             {loss.error ? <Alert>{loss.error.message}</Alert> : null}
             {loss.isSuccess ? <Alert variant="success">Perte enregistrée.</Alert> : null}
             <Button
-              onClick={() => loss.mutate()}
+              onClick={() => void confirmLoss()}
               disabled={!lossProduct || !lossQty || !lossReason || loss.isPending}
             >
               Enregistrer la perte
@@ -183,7 +212,7 @@ export function StockPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Valorisation du stock (R-STK-06)</CardTitle>
+            <CardTitle className="text-base">Valorisation du stock</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             <div className="flex flex-wrap items-end gap-3">

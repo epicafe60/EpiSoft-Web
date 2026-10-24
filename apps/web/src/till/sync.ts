@@ -1,4 +1,4 @@
-import type { Snapshot, SyncOp, SyncResult } from '@episoft/shared';
+import { shouldDropSession, type Snapshot, type SyncOp, type SyncResult } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { getMeta, setMeta, tillDb, type OutboxEntry, type TillDb } from './db';
 import { backoffMs } from './logic';
@@ -168,6 +168,27 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * R-EVO-06: the session was closed from another till. It is forgotten here (the tickets still
+   * in the queue are sent and recorded with a warning), unless it is our own, not yet sent.
+   */
+  private async dropClosedSession(open: { id: string }[] | undefined): Promise<void> {
+    const session = await getMeta('session', this.db);
+    const pending = (
+      await this.db.outbox
+        .filter((o) => o.status === 'PENDING' && o.op.kind === 'SESSION_OPEN')
+        .toArray()
+    ).map((o) => o.id);
+    if (
+      shouldDropSession(
+        session?.id ?? null,
+        open?.map((s) => s.id),
+        pending,
+      )
+    )
+      await setMeta('session', null, this.db);
+  }
+
   /** R-OFF-02: incremental refresh of the replicated data (full the first time). */
   async refresh(): Promise<boolean> {
     const cursor = await getMeta('cursor', this.db);
@@ -203,6 +224,7 @@ export class SyncEngine {
           await setMeta('lastSnapshotAt', snap.serverTime, this.db);
         },
       );
+      await this.dropClosedSession(snap.settings.openSessions);
       this.set({ online: true, authRequired: false });
       return true;
     } catch (e) {

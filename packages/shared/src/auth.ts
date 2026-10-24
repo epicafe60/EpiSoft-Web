@@ -15,13 +15,14 @@ export const passwordSchema = z
   .max(200, 'Le mot de passe est trop long.');
 
 export const loginSchema = z.object({
-  username: z.string().trim().min(1, 'Identifiant requis.').max(100),
+  /** R-EVO-42: the user name or the e-mail given at membership. */
+  username: z.string().trim().min(1, 'Identifiant requis.').max(200),
   password: z.string().min(1, 'Mot de passe requis.').max(200),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const forgotPasswordSchema = z.object({
-  username: z.string().trim().min(1).max(100),
+  username: z.string().trim().min(1).max(200),
 });
 
 export const resetPasswordSchema = z.object({

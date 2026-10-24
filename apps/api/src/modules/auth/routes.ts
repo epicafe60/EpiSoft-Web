@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { loginLog, member, passwordResetToken, session, type Db } from '@episoft/db';
@@ -36,11 +36,29 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       const { username, password } = req.body;
       const now = new Date();
 
+      const user = await db.query.member.findFirst({
+        // R-EVO-42: the e-mail of the membership works as an identifier.
+        where: sql`lower(${member.username}) = lower(${username}) or lower(${member.email}) = lower(${username})`,
+        columns: { id: true, passwordHash: true, status: true },
+      });
+
+      // The lockout counts the attempts on the account, whether its user name or its e-mail was
+      // typed: switching from one to the other must not double the number of tries.
       const since = new Date(now.getTime() - LOCKOUT_LOOKBACK_MINUTES * 60_000);
       const attempts = await db
         .select({ at: loginLog.at, success: loginLog.success })
         .from(loginLog)
-        .where(and(sql`lower(${loginLog.username}) = lower(${username})`, gt(loginLog.at, since)));
+        .where(
+          and(
+            user
+              ? or(
+                  eq(loginLog.memberId, user.id),
+                  sql`lower(${loginLog.username}) = lower(${username})`,
+                )
+              : sql`lower(${loginLog.username}) = lower(${username})`,
+            gt(loginLog.at, since),
+          ),
+        );
       const locked = lockedUntil(attempts, now);
       if (locked) {
         const minutes = Math.ceil((locked.getTime() - now.getTime()) / 60_000);
@@ -51,10 +69,6 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
         );
       }
 
-      const user = await db.query.member.findFirst({
-        where: sql`lower(${member.username}) = lower(${username})`,
-        columns: { id: true, passwordHash: true, status: true },
-      });
       let ok = false;
       if (user?.passwordHash) ok = await verifyPassword(user.passwordHash, password);
       else await verifyDummy(password);
@@ -101,7 +115,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
     { schema: { body: forgotPasswordSchema }, config: { public: true, ...authRateLimit } },
     async (req, reply) => {
       const user = await db.query.member.findFirst({
-        where: sql`lower(${member.username}) = lower(${req.body.username})`,
+        where: sql`lower(${member.username}) = lower(${req.body.username}) or lower(${member.email}) = lower(${req.body.username})`,
         columns: { id: true, email: true, firstName: true, status: true },
       });
       if (user?.email && canLogIn(user.status)) {

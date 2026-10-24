@@ -1,6 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SettingKey, Settings } from '@episoft/shared';
+import {
+  DEFAULT_THRESHOLDS,
+  THRESHOLD_LABELS,
+  type SettingKey,
+  type Settings,
+} from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -188,10 +193,11 @@ export function SettingsPage() {
               {(
                 [
                   ['allowTransfer', 'Accepter le virement comme règlement en caisse'],
-                  ['discountsEnabled', 'Autoriser les remises sur une ligne (R-VTE-07)'],
+                  ['discountsEnabled', 'Autoriser les remises sur une ligne'],
+                  ['membershipExpiredBlocking', 'Bloquer la vente si l’adhésion est expirée'],
                   [
-                    'membershipExpiredBlocking',
-                    'Bloquer la vente si l’adhésion est expirée (R-ADH-03)',
+                    'requireMemberFirst',
+                    'Imposer un adhérent (ou une adhésion de passage) avant la première ligne',
                   ],
                 ] as const
               ).map(([k, label]) => (
@@ -211,7 +217,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="catalog.pricing"
           title="Marge cible et arrondi"
-          description="Taux de marque sur le prix de vente TTC, proposé à la réception (R-PRD-03, question Q2)."
+          description="Taux de marque sur le prix de vente TTC, proposé à la réception."
           initial={data['catalog.pricing']}
         >
           {(v, set, errors) => (
@@ -305,7 +311,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="membership.reminder"
           title="Relance d’adhésion"
-          description="Courriel au foyer avant la fin de son adhésion, une seule fois (R-ADH-04)."
+          description="Courriel au foyer avant la fin de son adhésion, une seule fois."
           initial={data['membership.reminder']}
         >
           {(v, set, errors) => (
@@ -338,7 +344,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="stock.expiryAlert"
           title="Alerte dates limites"
-          description="Chaque matin, courriel et notification à l’équipe approvisionnements s’il y a des lots périmés ou proches de leur date (R-STK-07)."
+          description="Chaque matin, courriel et notification à l’équipe approvisionnements s’il y a des lots périmés ou proches de leur date."
           initial={data['stock.expiryAlert']}
         >
           {(v, set, errors) => (
@@ -369,9 +375,51 @@ export function SettingsPage() {
         </SettingCard>
 
         <SettingCard
+          settingKey="controls.thresholds"
+          title="Seuils d’alerte"
+          description="À partir de quand l’application prévient : le caissier avant d’encaisser, les responsables dans « À surveiller ». Une alerte n’empêche jamais une vente."
+          initial={data['controls.thresholds']}
+        >
+          {(v, set, errors) => (
+            <div className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(Object.keys(THRESHOLD_LABELS) as (keyof typeof THRESHOLD_LABELS)[]).map((k) => (
+                  <Field
+                    key={k}
+                    label={`${THRESHOLD_LABELS[k].label} (${THRESHOLD_LABELS[k].unit})`}
+                    error={errors[k]}
+                  >
+                    {(p) => (
+                      <Input
+                        {...p}
+                        inputMode="decimal"
+                        className="max-w-32"
+                        value={String(v[k])}
+                        onChange={(e) =>
+                          set({ ...v, [k]: Number(e.target.value.replace(',', '.')) || 0 })
+                        }
+                      />
+                    )}
+                  </Field>
+                ))}
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => set({ ...DEFAULT_THRESHOLDS })}
+                >
+                  Remettre les valeurs par défaut
+                </Button>
+              </div>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
           settingKey="wallet.lowReminder"
           title="Rappel de cagnotte basse"
-          description="Courriel au foyer (et notification) quand sa cagnotte passe sous le seuil, s’il a acheté récemment ; un rappel au plus par période (R-CAG-06)."
+          description="Courriel au foyer (et notification) quand sa cagnotte passe sous le seuil, s’il a acheté récemment ; un rappel au plus par période."
           initial={data['wallet.lowReminder']}
         >
           {(v, set, errors) => (
@@ -415,7 +463,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="pos.scaleBarcodes"
           title="Étiquettes de balance"
-          description="Codes 20 à 29 : préfixe, code article (5 chiffres, fin du code produit), valeur (5 chiffres), clé (R-VTE-04)."
+          description="Codes 20 à 29 : préfixe, code article (5 chiffres, fin du code produit), valeur (5 chiffres), clé."
           initial={data['pos.scaleBarcodes']}
         >
           {(v, set) => (
@@ -447,7 +495,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="pos.treasurerEmail"
           title="Courriel du trésorier"
-          description="Reçoit le rapport de chaque clôture de caisse (R-SES-02)."
+          description="Reçoit le rapport de chaque clôture de caisse."
           initial={data['pos.treasurerEmail']}
         >
           {(v, set, errors) => (
@@ -467,7 +515,7 @@ export function SettingsPage() {
         <SettingCard
           settingKey="accounting.accounts"
           title="Comptes des écritures automatiques"
-          description="Comptes utilisés pour les écritures générées par les ventes, factures et clôtures (R-CPT-08..11)."
+          description="Comptes utilisés pour les écritures générées par les ventes, factures et clôtures."
           initial={data['accounting.accounts']}
         >
           {(v, set, errors) => (

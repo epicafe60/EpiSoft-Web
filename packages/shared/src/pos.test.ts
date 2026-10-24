@@ -7,6 +7,11 @@ import {
   estimatedBalanceCents,
   formatSaleNumber,
   isValidEan,
+  canAddPayment,
+  lineEntryBlocked,
+  salesBlockedReason,
+  shouldDropSession,
+  walletTone,
   lineTotalCents,
   lookupProduct,
   membershipEnd,
@@ -195,5 +200,63 @@ describe('walletAlert', () => {
     expect(walletAlert(300, 0, 0)).toBe('LOW');
     expect(walletAlert(500, 0, 0)).toBeNull();
     expect(walletAlert(5000, 1500, 0)).toBeNull();
+  });
+});
+
+describe('R-EVO-01 member before the first line', () => {
+  it('blocks without member nor membership line, unless the rule is off', () => {
+    expect(lineEntryBlocked({ memberId: null, hasMembershipLine: false })).toBe(true);
+    expect(
+      lineEntryBlocked({ memberId: null, hasMembershipLine: false, requireMemberFirst: true }),
+    ).toBe(true);
+    expect(
+      lineEntryBlocked({ memberId: null, hasMembershipLine: false, requireMemberFirst: false }),
+    ).toBe(false);
+  });
+  it('lets a member or a passing membership through', () => {
+    expect(lineEntryBlocked({ memberId: 'm1', hasMembershipLine: false })).toBe(false);
+    expect(lineEntryBlocked({ memberId: null, hasMembershipLine: true })).toBe(false);
+  });
+});
+
+describe('R-EVO-04 / R-EVO-41 cagnotte colour', () => {
+  it('is green only when positive and enough for the ticket', () => {
+    expect(walletTone(1000, 800)).toBe('ok');
+    expect(walletTone(800, 800)).toBe('ok');
+    expect(walletTone(700, 800)).toBe('low');
+    expect(walletTone(0, 0)).toBe('low');
+    expect(walletTone(-50)).toBe('low');
+    expect(walletTone(50)).toBe('ok');
+  });
+});
+
+describe('R-EVO-02 payment method required', () => {
+  it('refuses a payment without a method or with nothing left to pay', () => {
+    expect(canAddPayment(null, 500)).toBe(false);
+    expect(canAddPayment('CASH', 0)).toBe(false);
+    expect(canAddPayment('CASH', 500)).toBe(true);
+  });
+});
+
+describe('R-EVO-30 frozen sales', () => {
+  it('blocks only when the snapshot says so', () => {
+    expect(salesBlockedReason({ salesFrozen: true })).toContain('inventaire');
+    expect(salesBlockedReason({ salesFrozen: false })).toBeNull();
+    expect(salesBlockedReason({})).toBeNull();
+    expect(salesBlockedReason(undefined)).toBeNull();
+    expect(salesBlockedReason(null)).toBeNull();
+  });
+});
+
+describe('R-EVO-06 session closed from another till', () => {
+  it('drops a session the server no longer lists, except our own unsent one', () => {
+    expect(shouldDropSession('s1', ['s1', 's2'], [])).toBe(false);
+    expect(shouldDropSession('s1', ['s2'], [])).toBe(true);
+    expect(shouldDropSession('s1', [], [])).toBe(true);
+    expect(shouldDropSession('s1', ['s2'], ['s1'])).toBe(false);
+  });
+  it('never drops with an old server, or without a session', () => {
+    expect(shouldDropSession('s1', undefined, [])).toBe(false);
+    expect(shouldDropSession(null, ['s2'], [])).toBe(false);
   });
 });

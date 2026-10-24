@@ -60,7 +60,7 @@ export function TillProvider({ children }: { children: ReactNode }) {
     meta,
     settings: meta.settings,
     pendingCount: outbox.filter((o) => o.status === 'PENDING').length,
-    rejectedCount: outbox.filter((o) => o.status === 'REJECTED').length,
+    rejectedCount: outbox.filter((o) => o.status === 'REJECTED' && !o.acknowledged).length,
     cashierId: meta.cashierId ?? me.id,
     balanceCents: (householdId) => {
       const h = households.find((x) => x.id === householdId);

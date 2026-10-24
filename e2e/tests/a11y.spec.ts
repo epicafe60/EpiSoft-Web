@@ -24,7 +24,10 @@ test('customer screens are accessible', async ({ page }) => {
   await login(page, USERS.customer);
   await scan(page, 'accueil');
   await page.getByRole('link', { name: 'Boutique' }).first().click();
-  await page.getByRole('heading', { name: /Boutique/ }).first().waitFor();
+  await page
+    .getByRole('heading', { name: /Boutique/ })
+    .first()
+    .waitFor();
   await scan(page, 'boutique');
   await page.goto('/mon-foyer');
   await page.getByRole('heading', { name: 'Mon foyer' }).waitFor();
@@ -37,6 +40,10 @@ test('staff screens are accessible', async ({ page }) => {
     ['/membres', /Membres|Adhérents/],
     ['/appros/stock', /Approvisionnement|Stock/],
     ['/catalogue', /Catalogue|Produits/],
+    ['/aide', /Aide/],
+    ['/surveillance', /Surveillance/],
+    ['/surveillance/sauvegardes', /Surveillance/],
+    ['/surveillance/activite', /Surveillance/],
   ] as const) {
     await page.goto(path);
     await page.getByRole('heading', { name: heading }).first().waitFor();

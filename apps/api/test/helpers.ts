@@ -16,6 +16,7 @@ export async function setupTestApp() {
     DATABASE_URL: inject('databaseUrl'),
     APP_URL: 'http://test.local',
     AUTH_RATE_LIMIT_MAX: '100000',
+    BACKUP_REPORT_TOKEN: 'test-backup-token-0123456789',
   });
   const app = await buildApp(db, config);
   await app.ready();

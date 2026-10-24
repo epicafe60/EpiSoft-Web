@@ -306,6 +306,75 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     },
   );
 
+  // --- Supplier data audit (R-EVO-15) ----------------------------------------------------------
+
+  /**
+   * Products and suppliers whose link is missing: active goods without supplier (with a positive
+   * stock first), and active suppliers with no active product. To fix after the migration.
+   */
+  const supplyAudit = async () => {
+    const noSupplier = await db
+      .select({
+        code: product.code,
+        name: product.name,
+        stockQty: product.stockQty,
+        categoryName: category.name,
+      })
+      .from(product)
+      .leftJoin(category, eq(category.id, product.categoryId))
+      .where(
+        and(
+          eq(product.kind, 'GOODS'),
+          inArray(product.status, ['ACTIVE', 'ON_ORDER']),
+          sql`${product.supplierId} is null`,
+        ),
+      )
+      .orderBy(desc(product.stockQty), asc(product.code));
+    const noProduct = await db
+      .select({ code: supplier.code, name: supplier.name })
+      .from(supplier)
+      .where(
+        and(
+          eq(supplier.active, true),
+          sql`not exists (select 1 from app.product p where p.supplier_id = ${supplier.id} and p.status in ('ACTIVE', 'ON_ORDER'))`,
+        ),
+      )
+      .orderBy(asc(supplier.name));
+    return {
+      productsWithoutSupplier: noSupplier,
+      positiveStockWithoutSupplier: noSupplier.filter((p) => milli(p.stockQty) > 0).length,
+      suppliersWithoutProduct: noProduct,
+    };
+  };
+
+  app.get('/supply-audit', readers, supplyAudit);
+
+  app.get('/supply-audit.xlsx', readers, async (_req, reply) => {
+    const a = await supplyAudit();
+    const wb = new ExcelJS.Workbook();
+    const w1 = wb.addWorksheet('Produits sans fournisseur');
+    w1.columns = [
+      { header: 'Code', key: 'code', width: 10 },
+      { header: 'Produit', key: 'name', width: 44 },
+      { header: 'Rayon', key: 'categoryName', width: 24 },
+      { header: 'Stock', key: 'stockQty', width: 10 },
+    ];
+    w1.getRow(1).font = { bold: true };
+    a.productsWithoutSupplier.forEach((p) => w1.addRow({ ...p, stockQty: Number(p.stockQty) }));
+    const w2 = wb.addWorksheet('Fournisseurs sans produit');
+    w2.columns = [
+      { header: 'Code', key: 'code', width: 10 },
+      { header: 'Fournisseur', key: 'name', width: 44 },
+    ];
+    w2.getRow(1).font = { bold: true };
+    a.suppliersWithoutProduct.forEach((p) => w2.addRow(p));
+    const buf = await wb.xlsx.writeBuffer();
+    return reply
+      .header('content-disposition', 'attachment; filename="audit-fournisseurs.xlsx"')
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .send(Buffer.from(buf));
+  });
+
   // --- Inventory (R-STK-04) ------------------------------------------------------------------
 
   app.get('/inventories', readers, async () =>
@@ -316,6 +385,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         status: inventorySession.status,
         openedAt: inventorySession.openedAt,
         validatedAt: inventorySession.validatedAt,
+        freezeSales: inventorySession.freezeSales,
         lines: sql<number>`(select count(*)::int from app.inventory_line l where l.session_id = ${inventorySession.id})`,
         counted: sql<number>`(select count(*)::int from app.inventory_line l where l.session_id = ${inventorySession.id} and l.counted_qty is not null)`,
       })
@@ -323,6 +393,84 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       .orderBy(desc(inventorySession.openedAt))
       .limit(100),
   );
+
+  /** R-EVO-30: data checks before opening an inventory (negative stock, no supplier). */
+  app.get(
+    '/inventories/precheck',
+    {
+      ...readers,
+      schema: {
+        querystring: z.object({
+          supplierId: z.string().uuid().optional(),
+          categoryId: z.string().uuid().optional(),
+        }),
+      },
+    },
+    async (req) => {
+      const f: SQL[] = [eq(product.kind, 'GOODS'), ne(product.status, 'INACTIVE')];
+      if (req.query.supplierId) f.push(eq(product.supplierId, req.query.supplierId));
+      if (req.query.categoryId) f.push(eq(product.categoryId, req.query.categoryId));
+      const rows = await db
+        .select({
+          code: product.code,
+          name: product.name,
+          stockQty: product.stockQty,
+          supplierId: product.supplierId,
+        })
+        .from(product)
+        .where(and(...f))
+        .orderBy(asc(product.code));
+      const pick = (r: (typeof rows)[number]) => ({
+        code: r.code,
+        name: r.name,
+        stockQty: r.stockQty,
+      });
+      return {
+        products: rows.length,
+        negativeStock: rows.filter((r) => milli(r.stockQty) < 0).map(pick),
+        noSupplier: rows.filter((r) => !r.supplierId).map(pick),
+      };
+    },
+  );
+
+  /** R-EVO-30: blank count sheet (no theoretical stock shown), sorted by shelf then name. */
+  app.get('/inventories/:id/sheet.xlsx', { ...readers, schema: idParams }, async (req, reply) => {
+    const s = await db.query.inventorySession.findFirst({
+      where: eq(inventorySession.id, req.params.id),
+    });
+    if (!s) throw notFound('Inventaire introuvable.');
+    const rows = await db
+      .select({
+        code: product.code,
+        name: product.name,
+        unit: product.unit,
+        categoryName: category.name,
+        supplierName: supplier.name,
+      })
+      .from(inventoryLine)
+      .innerJoin(product, eq(product.id, inventoryLine.productId))
+      .leftJoin(category, eq(category.id, product.categoryId))
+      .leftJoin(supplier, eq(supplier.id, product.supplierId))
+      .where(eq(inventoryLine.sessionId, s.id))
+      .orderBy(asc(category.name), asc(product.name));
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Comptage');
+    ws.columns = [
+      { header: 'Rayon', key: 'categoryName', width: 24 },
+      { header: 'Code', key: 'code', width: 10 },
+      { header: 'Produit', key: 'name', width: 44 },
+      { header: 'Fournisseur', key: 'supplierName', width: 26 },
+      { header: 'Unité', key: 'unit', width: 8 },
+      { header: 'Quantité comptée', key: 'counted', width: 18 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    for (const r of rows) ws.addRow(r);
+    const buf = await wb.xlsx.writeBuffer();
+    return reply
+      .header('content-disposition', 'attachment; filename="feuille-de-comptage.xlsx"')
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .send(Buffer.from(buf));
+  });
 
   /** Opens a session: the theoretical stock is frozen now (R-STK-04). */
   app.post('/inventories', { ...appros, schema: { body: inventoryCreateSchema } }, async (req) =>
@@ -339,7 +487,12 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       if (!prods.length) throw badRequest('Aucun produit dans ce périmètre.');
       const [s] = await tx
         .insert(inventorySession)
-        .values({ label: req.body.label, scope, openedBy: req.user!.id })
+        .values({
+          label: req.body.label,
+          scope,
+          openedBy: req.user!.id,
+          freezeSales: req.body.freezeSales,
+        })
         .returning();
       await tx.insert(inventoryLine).values(
         prods.map((p) => ({

@@ -78,6 +78,46 @@ export const INTEGRITY_HELP: Record<string, IntegrityHelp> = {
     what: 'Pour une facture fournisseur, le montant TTC doit être égal au montant HT plus la TVA.',
     todo: 'Ouvrez la facture, comparez-la à la pièce papier et corrigez le montant erroné. Si son écriture comptable est déjà validée, il faut d’abord l’extourner.',
   },
+  'SYN-01': {
+    what: 'Un poste de caisse a envoyé un ticket (ou un versement) que le serveur a refusé : il n’a donc modifié ni le stock ni la cagnotte.',
+    todo: 'Ouvrez Surveillance › Tickets à vérifier : lisez le motif, faites ressaisir le ticket à la caisse (bouton « Ressaisir ce ticket » dans « Tickets du jour ») si la vente a bien eu lieu, puis classez le refus.',
+  },
+  'SES-01': {
+    what: 'Une session de caisse est ouverte depuis plus de 24 heures : elle a sans doute été oubliée à la fermeture.',
+    todo: 'Clôturez-la depuis la caisse concernée. Si le poste est perdu, un administrateur peut la clôturer dans Administration › Caisse, avec un motif.',
+  },
+  'SES-02': {
+    what: 'Les espèces attendues, calculées au moment de la clôture, doivent être égales au fond de caisse plus les ventes et encaissements en espèces de la session. Un écart signifie qu’un ticket est arrivé après la clôture ou qu’un montant a été modifié.',
+    todo: 'Ouvrez la session dans Administration › Caisse et regardez les tickets reçus après la clôture. Si tout est expliqué, acceptez le point avec une note.',
+  },
+  'VTE-06': {
+    what: 'Ces tickets sont bien enregistrés, mais la caisse ou le serveur a signalé quelque chose d’inhabituel (prix très différent, quantité élevée, remise forte, stock négatif, horloge du poste).',
+    todo: 'Ouvrez Surveillance › Tickets à vérifier, lisez l’avertissement, corrigez ce qui doit l’être (prix du catalogue, inventaire), puis cliquez « Vu ».',
+  },
+  'FAC-02': {
+    what: 'Le total d’une facture fournisseur doit être proche du total des réceptions qu’elle couvre (à un euro près, pour les arrondis).',
+    todo: 'Ouvrez la facture : comparez les quantités et les prix reçus avec ceux de la facture, demandez un avoir ou une facture rectificative au fournisseur, ou corrigez la réception si la saisie était fausse.',
+  },
+  'MEM-01': {
+    what: 'Deux fiches portent le même nom et le même prénom : il s’agit probablement de la même personne, enregistrée deux fois.',
+    todo: 'Ouvrez les deux fiches. Si c’est la même personne, gardez celle qui a l’historique et archivez l’autre. Si ce sont deux personnes différentes (homonymes), acceptez le point avec une note.',
+  },
+  'CAG-05': {
+    what: 'Chaque matin l’application note le solde de chaque cagnotte. Le solde actuel doit être égal à ce solde plus les mouvements enregistrés depuis. Un écart veut dire qu’un mouvement ancien a été ajouté, modifié ou supprimé sans passer par une opération normale.',
+    todo: 'Ouvrez le foyer et regardez son historique depuis la date indiquée. Rétablissez la cagnotte par une correction avec un motif, et prévenez l’équipe technique : cela ne devrait jamais arriver.',
+  },
+  'REF-01': {
+    what: 'Des lignes pointent vers un élément qui n’existe plus (par exemple des ventes rattachées à un poste de caisse supprimé). La base l’interdit normalement : cela n’arrive qu’après un chargement ou une réparation faits à la main. Une base dans cet état ne se restaure pas proprement depuis sa propre sauvegarde.',
+    todo: 'Prévenez l’équipe technique sans attendre, avec la liste affichée. Ne supprimez rien : il faut recréer l’élément manquant (ou rattacher les lignes au bon élément), puis vérifier qu’une sauvegarde se restaure.',
+  },
+  'MAIL-01': {
+    what: 'Des courriels n’ont pas pu partir ces 7 derniers jours (adresse invalide, messagerie en panne).',
+    todo: 'Ouvrez Surveillance › Courriels : vérifiez l’adresse, puis renvoyez. Si tous échouent, le réglage de la messagerie est à vérifier.',
+  },
+  'BKP-01': {
+    what: 'La sauvegarde automatique de la base doit tourner chaque nuit et le dire à l’application. Aucune sauvegarde récente n’a été signalée.',
+    todo: 'Regardez Surveillance › Sauvegardes et le guide de maintenance : la tâche planifiée du serveur s’est peut-être arrêtée. Faites une sauvegarde à la main en attendant.',
+  },
   'PRE-01': {
     what: 'Une précommande marquée « retirée » doit être liée au ticket de caisse sur lequel elle a été réglée.',
     todo: 'Ouvrez la liste des précommandes, retrouvez la commande et vérifiez le ticket de caisse du retrait. Si la commande n’a pas été retirée, remettez-la à son état d’origine. Si le ticket existe, signalez-le à l’équipe technique pour le relier. Sinon, « Accepter » avec une note.',

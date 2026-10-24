@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, TriangleAlert, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { confirmNow } from '@/components/confirm';
 import { euro, formatDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -169,9 +170,18 @@ export function ClosingPage() {
                       <Button
                         variant="destructive"
                         disabled={reopen.isPending}
-                        onClick={() =>
-                          window.confirm(`Rouvrir l’exercice ${year.label} ?`) && reopen.mutate()
-                        }
+                        onClick={async () => {
+                          if (
+                            await confirmNow({
+                              title: `Rouvrir l’exercice ${year.label} ?`,
+                              message:
+                                'Les écritures de clôture (variation de stock, résultat, à-nouveaux) seront supprimées.',
+                              confirmLabel: 'Rouvrir l’exercice',
+                              destructive: true,
+                            })
+                          )
+                            reopen.mutate();
+                        }}
                       >
                         Rouvrir l’exercice
                       </Button>
@@ -183,6 +193,67 @@ export function ClosingPage() {
           </CardContent>
         </Card>
       ) : null}
+      {year ? <OpeningCheck yearId={year.id} /> : null}
     </div>
+  );
+}
+
+interface OpeningCheckData {
+  previous: string | null;
+  previousStatus: 'OPEN' | 'CLOSED' | null;
+  ok: boolean;
+  differences: number;
+  rows: { number: string; label: string; closing: string; opening: string; difference: string }[];
+}
+
+/** R-EVO-51: the carried-forward balances against the closing of the previous year. */
+function OpeningCheck({ yearId }: { yearId: string }) {
+  const { data } = useQuery({
+    queryKey: ['opening-check', yearId],
+    queryFn: () => api.get<OpeningCheckData>(`/fiscal-years/${yearId}/opening-check`),
+  });
+  if (!data?.previous) return null;
+  const off = data.rows.filter((r) => r.difference !== '0.00');
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Soldes d’ouverture</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm">
+        <p className="flex flex-wrap items-center gap-2">
+          <Badge variant={data.ok ? 'success' : 'destructive'}>
+            {data.ok ? 'À-nouveaux conformes' : `${data.differences} écart(s)`}
+          </Badge>
+          <span className="text-muted-foreground">
+            comparés à la clôture de {data.previous}
+            {data.previousStatus === 'OPEN' ? ' (exercice précédent non clôturé)' : ''}
+          </span>
+        </p>
+        {off.length ? (
+          <table className="w-full text-left">
+            <thead>
+              <tr>
+                <th>Compte</th>
+                <th className="text-right">Clôture</th>
+                <th className="text-right">Ouverture</th>
+                <th className="text-right">Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {off.map((r) => (
+                <tr key={r.number}>
+                  <td>
+                    {r.number} {r.label}
+                  </td>
+                  <td className="text-right tabular-nums">{euro(r.closing)}</td>
+                  <td className="text-right tabular-nums">{euro(r.opening)}</td>
+                  <td className="text-right tabular-nums text-destructive">{euro(r.difference)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."inventory_session" ADD COLUMN "freeze_sales" boolean DEFAULT false NOT NULL;

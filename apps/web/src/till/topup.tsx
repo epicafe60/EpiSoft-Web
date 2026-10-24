@@ -110,7 +110,7 @@ export function TopupDialog({
               onChange={(e) => setReceipt(e.target.checked)}
             />
             <Label htmlFor="topup-receipt" className="font-normal">
-              Envoyer le reçu par courriel (R-CAG-06)
+              Envoyer le reçu par courriel
             </Label>
           </div>
         ) : null}

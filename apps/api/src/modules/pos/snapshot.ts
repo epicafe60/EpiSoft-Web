@@ -19,6 +19,7 @@ import type {
   Snapshot,
   Unit,
 } from '@episoft/shared';
+import { cashSession, inventorySession, posDevice } from '@episoft/db';
 import { loadSettings } from '../admin/settings-store';
 
 /**
@@ -65,7 +66,8 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
       householdId: member.householdId,
       status: member.status,
       qrTokenHash: member.qrTokenHash,
-      hasEmail: sql<boolean>`${member.email} is not null`,
+      // R-EVO-40: true when the member receives the ticket (an address, no opt-out).
+      hasEmail: sql<boolean>`${member.email} is not null and not ${member.ticketEmailOptOut}`,
     })
     .from(member)
     .where(since ? gt(member.updatedAt, since) : ne(member.status, 'ARCHIVED'));
@@ -133,6 +135,24 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
         ? settings['pos.scaleBarcodes'].valueKind
         : null,
       associationName: settings['association.identity'].name,
+      thresholds: settings['controls.thresholds'],
+      // R-EVO-06: the open sessions of the shop (one drawer, several tills).
+      openSessions: (
+        await db
+          .select({
+            id: cashSession.id,
+            openedAt: cashSession.openedAt,
+            openingFloat: cashSession.openingFloat,
+            deviceName: posDevice.name,
+          })
+          .from(cashSession)
+          .innerJoin(posDevice, eq(posDevice.id, cashSession.deviceId))
+          .where(eq(cashSession.status, 'OPEN'))
+      ).map((s) => ({ ...s, openedAt: s.openedAt.toISOString() })),
+      // R-EVO-30: an open inventory with frozen sales blocks new tickets at the till.
+      salesFrozen: !!(await db.query.inventorySession.findFirst({
+        where: and(eq(inventorySession.status, 'OPEN'), eq(inventorySession.freezeSales, true)),
+      })),
     },
   };
 }

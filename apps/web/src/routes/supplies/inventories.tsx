@@ -1,13 +1,22 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { confirmNow } from '@/components/confirm';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck, Plus, ScanLine } from 'lucide-react';
-import { formatQty, normalizeSearch, parseQtyToMilli, UNIT_LABELS } from '@episoft/shared';
+import {
+  centsToDecimal,
+  formatQty,
+  inventoryImpact,
+  normalizeSearch,
+  parseQtyToMilli,
+  UNIT_LABELS,
+} from '@episoft/shared';
 import { api } from '@/lib/api';
+import { useThresholds } from '@/lib/thresholds';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
 import { Dialog } from '@/components/ui/dialog';
@@ -40,6 +49,7 @@ export function InventoriesPage() {
   const [label, setLabel] = useState(`Inventaire du ${new Date().toLocaleDateString('fr-FR')}`);
   const [scope, setScope] = useState<'all' | 'supplier' | 'category'>('all');
   const [scopeId, setScopeId] = useState('');
+  const [freeze, setFreeze] = useState(false);
   const create = useMutation({
     mutationFn: () =>
       api.post<{ id: string }>('/inventories', {
@@ -50,6 +60,7 @@ export function InventoriesPage() {
             : scope === 'category'
               ? { categoryId: scopeId }
               : {},
+        freezeSales: freeze,
       }),
     onSuccess: (r) => navigate({ to: '/appros/inventaires/$id', params: { id: r.id } }),
   });
@@ -114,6 +125,13 @@ export function InventoriesPage() {
           >
             <Plus /> Ouvrir l’inventaire
           </Button>
+          <div className="flex w-full items-center gap-2">
+            <Checkbox id="freeze" checked={freeze} onChange={(e) => setFreeze(e.target.checked)} />
+            <Label htmlFor="freeze" className="font-normal">
+              Suspendre les ventes en caisse pendant l’inventaire
+            </Label>
+          </div>
+          <Precheck scope={scope} scopeId={scopeId} />
           {create.error ? <Alert>{create.error.message}</Alert> : null}
         </CardContent>
       </Card>
@@ -194,6 +212,8 @@ export function InventoryPage() {
   const [mode, setMode] = useState<'add' | 'set'>('add');
   const [validating, setValidating] = useState(false);
   const [zero, setZero] = useState(false);
+  const [gapsChecked, setGapsChecked] = useState(false);
+  const thresholds = useThresholds();
   const [filter, setFilter] = useState<'all' | 'todo' | 'done'>('todo');
   const searchRef = useRef<HTMLInputElement>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['inventory', id] });
@@ -240,6 +260,18 @@ export function InventoryPage() {
     filter === 'all' ? true : filter === 'todo' ? l.countedQty === null : l.countedQty !== null,
   );
 
+  // What validating would change: the gaps that stand out, their value, the products set to 0.
+  const impact = inventoryImpact(
+    s.lines.map((l) => ({
+      theoreticalMilli: parseQtyToMilli(l.theoreticalQty) ?? 0,
+      countedMilli: l.countedQty === null ? null : (parseQtyToMilli(l.countedQty) ?? 0),
+      unitCostCents: Math.round(Number(l.unitCostExcl ?? 0) * 100),
+    })),
+    zero,
+    thresholds,
+  );
+  const needsCheck = impact.flagged.length > 0 || impact.totalFlagged;
+
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
     if (matches.length === 1) setSelected(matches[0]!);
@@ -268,16 +300,30 @@ export function InventoryPage() {
         </div>
         {s.status === 'OPEN' ? (
           <div className="flex gap-2">
+            <a
+              className={buttonVariants({ variant: 'outline' })}
+              href={`/api/v1/inventories/${id}/sheet.xlsx`}
+            >
+              Feuille de comptage
+            </a>
             <Button onClick={() => setValidating(true)}>
               <ClipboardCheck /> Valider
             </Button>
             <Button
               variant="ghost"
               className="text-destructive"
-              onClick={() =>
-                window.confirm('Annuler cet inventaire ? Aucun stock ne sera modifié.') &&
-                cancel.mutate()
-              }
+              onClick={async () => {
+                if (
+                  await confirmNow({
+                    title: 'Annuler cet inventaire ?',
+                    message: 'Aucun stock ne sera modifié. Les comptages saisis seront perdus.',
+                    confirmLabel: 'Annuler l’inventaire',
+                    cancelLabel: 'Garder l’inventaire',
+                    destructive: true,
+                  })
+                )
+                  cancel.mutate();
+              }}
             >
               Annuler
             </Button>
@@ -474,6 +520,35 @@ export function InventoryPage() {
         description={`${counted} produit(s) compté(s) recevront un mouvement d’inventaire.`}
       >
         <div className="grid gap-3">
+          {impact.flagged.length || impact.totalFlagged ? (
+            <div className="grid gap-2 rounded-md border border-warning bg-warning/10 p-3 text-sm">
+              <p className="font-medium">
+                {impact.flagged.length
+                  ? `${impact.flagged.length} produit(s) sont très loin de leur stock théorique : `
+                  : 'Les écarts sont élevés au total : '}
+                {impact.flagged
+                  .slice(0, 5)
+                  .map((i) => s.lines[i]!.name)
+                  .join(', ')}
+                {impact.flagged.length > 5 ? '…' : ''}
+              </p>
+              <p>Valeur des écarts : {euro(centsToDecimal(impact.totalGapCents))} HT.</p>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="gaps-checked"
+                  checked={gapsChecked}
+                  onChange={(e) => setGapsChecked(e.target.checked)}
+                />
+                <Label htmlFor="gaps-checked" className="font-normal">
+                  J’ai recompté ces produits (ou je sais d’où viennent les écarts)
+                </Label>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Valeur des écarts : {euro(centsToDecimal(impact.totalGapCents))} HT. Rien d’anormal.
+            </p>
+          )}
           <div className="flex items-start gap-2">
             <Checkbox id="zero" checked={zero} onChange={(e) => setZero(e.target.checked)} />
             <Label htmlFor="zero" className="font-normal">
@@ -487,11 +562,53 @@ export function InventoryPage() {
             </Alert>
           ) : null}
           {validate.error ? <Alert>{validate.error.message}</Alert> : null}
-          <Button onClick={() => validate.mutate()} disabled={validate.isPending}>
+          <Button
+            onClick={() => validate.mutate()}
+            disabled={validate.isPending || (needsCheck && !gapsChecked)}
+          >
             Valider l’inventaire
           </Button>
         </div>
       </Dialog>
+    </div>
+  );
+}
+
+/** R-EVO-30: data worth fixing before counting. */
+function Precheck({ scope, scopeId }: { scope: 'all' | 'supplier' | 'category'; scopeId: string }) {
+  const params = new URLSearchParams();
+  if (scope === 'supplier' && scopeId) params.set('supplierId', scopeId);
+  if (scope === 'category' && scopeId) params.set('categoryId', scopeId);
+  const { data } = useQuery({
+    queryKey: ['inventory-precheck', params.toString()],
+    queryFn: () =>
+      api.get<{
+        products: number;
+        negativeStock: { code: string; name: string; stockQty: string }[];
+        noSupplier: { code: string; name: string; stockQty: string }[];
+      }>(`/inventories/precheck?${params}`),
+    enabled: scope === 'all' || !!scopeId,
+  });
+  if (!data) return null;
+  const sample = (l: { code: string; name: string }[]) =>
+    l
+      .slice(0, 5)
+      .map((x) => `${x.code} ${x.name}`)
+      .join(', ') + (l.length > 5 ? '…' : '');
+  return (
+    <div className="grid w-full gap-2">
+      <p className="text-sm text-muted-foreground">{data.products} produit(s) dans le périmètre.</p>
+      {data.negativeStock.length ? (
+        <Alert variant="info">
+          {data.negativeStock.length} produit(s) avec un stock négatif :{' '}
+          {sample(data.negativeStock)}
+        </Alert>
+      ) : null}
+      {data.noSupplier.length ? (
+        <Alert variant="info">
+          {data.noSupplier.length} produit(s) sans fournisseur : {sample(data.noSupplier)}
+        </Alert>
+      ) : null}
     </div>
   );
 }

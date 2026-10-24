@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { confirmNow } from '@/components/confirm';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
@@ -325,11 +326,19 @@ function EntryForm({ id }: { id: string | null }) {
     );
   };
 
-  const loadGuide = (tid: string) => {
+  const loadGuide = async (tid: string) => {
     const t = templates.data?.find((x) => x.id === tid);
     if (!t) return;
     const touched = lines.some((l) => l.accountId || l.debit || l.credit);
-    if (touched && !window.confirm('Remplacer les lignes saisies par celles du guide ?')) return;
+    if (
+      touched &&
+      !(await confirmNow({
+        title: 'Remplacer les lignes ?',
+        message: 'Les lignes déjà saisies seront remplacées par celles du guide.',
+        confirmLabel: 'Remplacer',
+      }))
+    )
+      return;
     setJournalId(t.journalId);
     setMode(t.mode ?? '');
     if (!label) setLabel(t.label);
@@ -683,7 +692,17 @@ function EntryForm({ id }: { id: string | null }) {
             {id ? (
               <Button
                 variant="destructive"
-                onClick={() => window.confirm('Supprimer ce brouillon ?') && del.mutate()}
+                onClick={async () => {
+                  if (
+                    await confirmNow({
+                      title: 'Supprimer ce brouillon ?',
+                      message: 'L’écriture en brouillon sera supprimée définitivement.',
+                      confirmLabel: 'Supprimer',
+                      destructive: true,
+                    })
+                  )
+                    del.mutate();
+                }}
               >
                 Supprimer
               </Button>

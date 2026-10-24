@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly EpiSoft-Web database backup
+
+[Timer]
+# 03:15 every night; if the server was off, run at the next start.
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

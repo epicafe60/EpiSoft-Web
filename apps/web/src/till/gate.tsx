@@ -3,6 +3,7 @@ import { centsToDecimal, parseAmountToCents } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { euro } from '@/lib/format';
+import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Field, Input } from '@/components/ui/form';
@@ -80,6 +81,9 @@ function OpenSession() {
     if (open) void setMeta('session', open);
   }, [state.data]);
 
+  // R-EVO-06: a session opened on another till is the shop's: join it (one drawer, one closing).
+  const others = (settings?.openSessions ?? []).filter((s) => s.id !== state.data?.openSession?.id);
+
   const proposed = state.data?.proposedFloat ?? settings?.defaultFloat ?? '0.00';
   const value = float ?? proposed.replace('.', ',');
 
@@ -123,6 +127,34 @@ function OpenSession() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {others.length ? (
+            <div className="mb-5 grid gap-2 rounded-md border bg-muted/40 p-3">
+              <p className="text-sm font-medium">Une session est déjà ouverte dans l’épicerie</p>
+              {others.map((s) => (
+                <div key={s.id} className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm">
+                    {s.deviceName}, ouverte à {formatDateTime(s.openedAt)} (fond{' '}
+                    {euro(s.openingFloat)})
+                  </span>
+                  <Button
+                    onClick={() =>
+                      void setMeta('session', {
+                        id: s.id,
+                        openedAt: s.openedAt,
+                        openingFloat: s.openingFloat,
+                      })
+                    }
+                  >
+                    Rejoindre cette session
+                  </Button>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                Un seul tiroir-caisse et une seule clôture. Ne l’ouvrez à part que si ce poste a son
+                propre tiroir.
+              </p>
+            </div>
+          ) : null}
           <form onSubmit={submit} className="grid gap-4">
             <Field
               label="Fond de caisse (€)"

@@ -3,6 +3,7 @@ import {
   decimalToCents,
   lineTotalCents,
   milliToDecimal,
+  parseQtyToMilli,
   type PaymentMethod,
   type PendingWalletMove,
   type SnapshotProduct,
@@ -41,6 +42,21 @@ export function addProduct(lines: DraftLine[], p: SnapshotProduct, qtyMilli: num
       discountCents: 0,
     },
   ];
+}
+
+/**
+ * A refused ticket entered again: its lines and its member go back into a new draft, at the
+ * price that was charged, so the cashier checks and pays it again.
+ */
+export function linesFromSale(payload: Extract<SyncOp, { kind: 'SALE' }>['payload']): DraftLine[] {
+  return payload.lines.map((l) => ({
+    productId: l.productId,
+    label: l.label,
+    qtyMilli: parseQtyToMilli(l.qty) ?? 1000,
+    unitPriceCents: decimalToCents(l.unitPrice),
+    catalogPriceCents: decimalToCents(l.catalogPrice ?? l.unitPrice),
+    discountCents: decimalToCents(l.discount),
+  }));
 }
 
 export interface PaymentDraft {

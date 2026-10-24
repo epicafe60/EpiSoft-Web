@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { cashCount, cashSession, posDevice, type DbOrTx } from '@episoft/db';
 import { DENOMINATIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from '@episoft/shared';
 import { formatParis } from '../../lib/dates';
-import { eur, keyValues, letterhead, render, table } from '../../lib/pdf';
+import { eur, keyValues, letterhead, render, table, pdfText } from '../../lib/pdf';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
 
@@ -37,6 +37,19 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
         ),
         ['Encaissements hors ventes en espèces', eur(summary.cashOther)],
         ['Fond initial', eur(summary.openingFloat)],
+        // R-EVO-06: shared session, sub-totals by cashier.
+        ...(summary.devices && summary.devices.length > 1
+          ? ([['Postes', summary.devices.join(', ')]] as [string, string][])
+          : []),
+        ...((summary.byCashier?.length ?? 0) > 1
+          ? summary.byCashier!.map(
+              (c) =>
+                [`Ventes de ${pdfText(c.name)}`, `${eur(c.total)} (${c.salesCount})`] as [
+                  string,
+                  string,
+                ],
+            )
+          : []),
       ],
       { width: 330 },
     );

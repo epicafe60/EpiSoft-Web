@@ -1,16 +1,21 @@
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { integrityAck, type Db } from '@episoft/db';
+import { integrityAck, integrityRun, type Db } from '@episoft/db';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
 import { badRequest, notFound } from '../../lib/problem';
 import { FALLBACK_HELP, INTEGRITY_HELP, type IntegrityHelp } from './integrity-help';
 import { ANALYSIS_OF, integrityAnalysis } from './integrity-analysis';
 import { reportXlsx } from '../../lib/report-output';
 
 type Row = Record<string, unknown>;
+
+/** A duration of the alert thresholds (Administration › Paramètres), read inside the check. */
+const thresholdHours = (key: 'sessionHours' | 'backupHours', fallback: number) =>
+  sql`coalesce((select (value ->> ${key})::int from app.setting where key = 'controls.thresholds'), ${fallback})`;
 
 export interface IntegrityCheck {
   id: string;
@@ -268,6 +273,135 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
       select p.number as ref, 'retirée sans ticket' as detail, '/precommandes' as link
       from app.preorder p where p.status = 'PICKED_UP' and p.sale_id is null`,
   },
+  {
+    id: 'SYN-01',
+    label: 'Aucun ticket refusé par le serveur n’attend d’être traité',
+    severity: 'error',
+    query: sql`
+      select 'refus du ' || to_char(r.at at time zone 'Europe/Paris', 'DD/MM HH24:MI') as ref,
+             r.reason as detail, '/surveillance' as link
+      from app.sync_rejection r where r.acknowledged_at is null`,
+  },
+  {
+    id: 'SES-01',
+    label: 'Aucune session de caisse n’est restée ouverte trop longtemps',
+    severity: 'warning',
+    query: sql`
+      select d.name || ' du ' || to_char(s.opened_at at time zone 'Europe/Paris', 'DD/MM HH24:MI') as ref,
+             'ouverte depuis plus longtemps que le seuil réglé' as detail, '/admin/caisse' as link
+      from app.cash_session s join app.pos_device d on d.id = s.device_id
+      where s.status = 'OPEN'
+        and s.opened_at < now() - make_interval(hours => ${thresholdHours('sessionHours', 24)})`,
+  },
+  {
+    id: 'SES-02',
+    label: 'Les espèces attendues à la clôture correspondent aux ventes de la session',
+    severity: 'warning',
+    query: sql`
+      select d.name || ' du ' || to_char(s.opened_at at time zone 'Europe/Paris', 'DD/MM') as ref,
+             'attendu à la clôture ' || c.expected_cash || ' / recalculé ' || x.recomputed as detail,
+             '/admin/caisse' as link
+      from app.cash_session s
+        join app.cash_count c on c.session_id = s.id
+        join app.pos_device d on d.id = s.device_id
+        cross join lateral (
+          select s.opening_float
+            + coalesce((select sum(p.amount) from app.sale_payment p join app.sale sa on sa.id = p.sale_id
+                        where sa.session_id = s.id and p.method = 'CASH'), 0)
+            + coalesce((select sum(m.amount) from app.member_payment m
+                        where m.cash_session_id = s.id and m.method = 'CASH'), 0) as recomputed) x
+      where s.legacy_date is null and c.expected_cash <> x.recomputed`,
+  },
+  {
+    id: 'VTE-06',
+    label: 'Les tickets enregistrés avec un avertissement ont été examinés',
+    severity: 'warning',
+    query: sql`
+      select s.number as ref, coalesce(s.warnings -> 0 ->> 'message', 'avertissement') as detail,
+             '/surveillance' as link
+      from app.sale s
+      where s.warnings is not null and jsonb_array_length(s.warnings) > 0
+        and s.warnings_reviewed_at is null and s.sold_at > now() - interval '30 days'`,
+  },
+  {
+    id: 'FAC-02',
+    label: 'Le total d’une facture fournisseur correspond aux réceptions qu’elle couvre',
+    severity: 'warning',
+    query: sql`
+      select i.piece_ref as ref, 'facture ' || i.total_incl || ' / réceptions ' || r.total as detail,
+             '/appros/factures/' || i.id as link
+      from app.supplier_invoice i
+        join lateral (
+          select round(sum(l.qty * l.unit_price_excl * (1 + l.vat_rate::numeric / 100)), 2) as total
+          from app.invoice_receipt ir join app.goods_receipt_line l on l.receipt_id = ir.receipt_id
+          where ir.invoice_id = i.id) r on r.total is not null
+      where abs(i.total_incl - r.total) > 1 and i.date < current_date - 30`,
+  },
+  {
+    id: 'MEM-01',
+    label: 'Aucune personne n’a deux fiches de membre',
+    severity: 'warning',
+    query: sql`
+      select min(m.last_name) || ' ' || min(m.first_name) as ref,
+             count(*) || ' fiches au même nom' as detail, '/membres' as link
+      from app.member m where m.status <> 'ARCHIVED'
+      group by lower(m.last_name), lower(m.first_name) having count(*) > 1`,
+  },
+  {
+    id: 'CAG-05',
+    label: 'Chaque cagnotte égale son solde de la veille plus les mouvements depuis',
+    severity: 'error',
+    query: sql`
+      with last as (
+        select distinct on (household_id) household_id, day, balance
+        from app.wallet_snapshot order by household_id, day desc)
+      select 'foyer ' || h.number as ref,
+             'solde au ' || l.day || ' : ' || l.balance || ' + mouvements ' || coalesce(mv.s, 0)
+               || ' ≠ solde actuel ' || coalesce(b.balance, 0) as detail,
+             '/foyers/' || h.id as link
+      from last l
+        join app.household h on h.id = l.household_id
+        left join app.household_balance b on b.household_id = h.id
+        left join lateral (
+          select sum(w.amount) as s from app.wallet_entry w
+          where w.household_id = l.household_id
+            and w.created_at >= (l.day::timestamp at time zone 'Europe/Paris')) mv on true
+      where l.balance + coalesce(mv.s, 0) <> coalesce(b.balance, 0)`,
+  },
+  {
+    id: 'REF-01',
+    label: 'Aucune donnée ne pointe vers un élément qui n’existe plus',
+    severity: 'error',
+    query: sql`
+      select o.child_table || ' → ' || o.parent_table as ref,
+             o.orphans || ' ligne(s) orpheline(s) (' || o.constraint_name || ')' as detail,
+             null as link
+      from app.orphan_references() o`,
+  },
+  {
+    id: 'MAIL-01',
+    label: 'Les courriels de la semaine sont partis',
+    severity: 'warning',
+    query: sql`
+      select e."to" as ref, e.subject || ' : ' || coalesce(e.last_error, 'échec') as detail,
+             '/surveillance/courriels' as link
+      from app.email_outbox e
+      where e.status = 'FAILED' and e.created_at > now() - interval '7 days'
+        and e.last_error is distinct from ${EMAIL_DISABLED_NOTE}`,
+  },
+  {
+    id: 'BKP-01',
+    label: 'Une sauvegarde récente de la base a été signalée',
+    severity: 'warning',
+    query: sql`
+      select 'sauvegarde' as ref,
+             case when last.at is null then 'aucune sauvegarde signalée à l’application'
+                  else 'la dernière date du ' || to_char(last.at at time zone 'Europe/Paris', 'DD/MM HH24:MI') end as detail,
+             '/surveillance/sauvegardes' as link
+      from (select max(at) as at from app.backup_run where kind = 'BACKUP' and ok) last
+      where last.at is null
+         or last.at < now() - make_interval(hours => ${thresholdHours('backupHours', 26)})`,
+  },
 ];
 
 /** Where to review all the items of a check. */
@@ -360,6 +494,7 @@ const SAMPLES = 10;
 
 /** Runs every check; a failing query is reported as an error, never thrown. */
 export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
+  const started = Date.now();
   const checks: IntegrityResult[] = [];
   const acks = await db.select().from(integrityAck);
   const ackOf = new Map(acks.map((a) => [`${a.checkId}|${a.ref}`, a.note]));
@@ -408,12 +543,43 @@ export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
       });
     }
   }
-  return {
+  const report = {
     at: new Date().toISOString(),
     errors: checks.filter((c) => c.severity === 'error').reduce((n, c) => n + c.count, 0),
     warnings: checks.filter((c) => c.severity === 'warning').reduce((n, c) => n + c.count, 0),
     checks,
   };
+  await recordIntegrityRun(db, report, Date.now() - started);
+  return report;
+}
+
+/**
+ * Keeps the history of the runs (trend, « À surveiller »). The administrator's page re-runs
+ * the checks on every visit: a new row is written only if the last one is a few minutes old.
+ */
+async function recordIntegrityRun(db: Db, report: IntegrityReport, durationMs: number) {
+  try {
+    const [prev] = await db.select().from(integrityRun).orderBy(desc(integrityRun.at)).limit(1);
+    if (prev && Date.now() - prev.at.getTime() < 5 * 60_000) {
+      // A recent run, but the result changed (a fix, an acceptance): keep the latest figures.
+      if (prev.errors !== report.errors || prev.warnings !== report.warnings)
+        await db
+          .update(integrityRun)
+          .set({ errors: report.errors, warnings: report.warnings, at: new Date() })
+          .where(eq(integrityRun.id, prev.id));
+      return;
+    }
+    await db.insert(integrityRun).values({
+      errors: report.errors,
+      warnings: report.warnings,
+      durationMs,
+      failing: Object.fromEntries(
+        report.checks.filter((c) => c.count > 0).map((c) => [c.id, c.count]),
+      ),
+    });
+  } catch {
+    // The history is a convenience: it never makes the checks fail.
+  }
 }
 
 /** Last result, shown on the administrator’s home page without re-running the checks. */

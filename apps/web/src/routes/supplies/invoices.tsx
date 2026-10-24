@@ -10,6 +10,8 @@ import {
   SUPPLIER_PAYMENT_METHOD_LABELS,
   SUPPLIER_PAYMENT_METHODS,
   type SupplierPaymentMethod,
+  formatQty,
+  parseQtyToMilli,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { euro, formatDate, todayIso } from '@/lib/format';
@@ -29,6 +31,8 @@ const INVOICE_SORT = {
   supplier: (r: InvoiceRow) => r.supplierName,
   piece: (r: InvoiceRow) => r.pieceRef,
   status: (r: InvoiceRow) => (r.status === 'PAID' ? 'Réglée' : 'À régler'),
+  excl: (r: InvoiceRow) => Number(r.totalExcl),
+  vat: (r: InvoiceRow) => Number(r.totalVat),
   total: (r: InvoiceRow) => Number(r.totalIncl),
 };
 
@@ -80,9 +84,30 @@ export function InvoicesPage() {
             </option>
           ))}
         </Select>
-        <Link to="/appros/factures/nouvelle" className={buttonVariants({ className: 'ml-auto' })}>
-          <Plus /> Nouvelle facture
-        </Link>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {/* R-EVO-21: Excel exports of the invoices to pay, paid, or all. */}
+          {(
+            [
+              ['À régler', 'TO_PAY'],
+              ['Réglées', 'PAID'],
+              ['Toutes', ''],
+            ] as const
+          ).map(([label, st]) => (
+            <a
+              key={label}
+              className={buttonVariants({ variant: 'outline' })}
+              href={`/api/v1/supplier-invoices.xlsx?${new URLSearchParams({
+                ...(st ? { status: st } : {}),
+                ...(supplierId ? { supplierId } : {}),
+              })}`}
+            >
+              Excel : {label}
+            </a>
+          ))}
+          <Link to="/appros/factures/nouvelle" className={buttonVariants()}>
+            <Plus /> Nouvelle facture
+          </Link>
+        </div>
       </div>
       {error ? <QueryError error={error} /> : null}
       <Card>
@@ -100,6 +125,12 @@ export function InvoicesPage() {
               </SortTh>
               <SortTh state={sort} sortKey="status">
                 État
+              </SortTh>
+              <SortTh state={sort} sortKey="excl" className="text-right">
+                HT
+              </SortTh>
+              <SortTh state={sort} sortKey="vat" className="text-right">
+                TVA
               </SortTh>
               <SortTh state={sort} sortKey="total" className="text-right">
                 TTC
@@ -134,12 +165,14 @@ export function InvoicesPage() {
                     <Badge>À régler</Badge>
                   )}
                 </td>
+                <td className="text-right tabular-nums">{euro(r.totalExcl)}</td>
+                <td className="text-right tabular-nums">{euro(r.totalVat)}</td>
                 <td className="text-right tabular-nums">{euro(r.totalIncl)}</td>
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-muted-foreground">
+                <td colSpan={7} className="text-muted-foreground">
                   Aucune facture.
                 </td>
               </tr>
@@ -149,7 +182,7 @@ export function InvoicesPage() {
           {total ? (
             <tfoot>
               <tr className="border-t font-medium">
-                <td colSpan={4}>Total à régler</td>
+                <td colSpan={6}>Total à régler</td>
                 <td className="text-right tabular-nums">{euro(centsToDecimal(total))}</td>
               </tr>
             </tfoot>
@@ -199,6 +232,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   const [receiptIds, setReceiptIds] = useState<string[]>(invoice?.receipts.map((r) => r.id) ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
   const paid = invoice?.status === 'PAID';
 
   // Due date proposed from the supplier's payment terms (R-FAC-01).
@@ -258,6 +292,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
+      <ReceiptDialog id={viewing} onClose={() => setViewing(null)} />
       <form onSubmit={submit} className="grid content-start gap-4">
         <Breadcrumbs
           items={[
@@ -271,7 +306,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
         </h2>
         {check.data?.duplicates.length ? (
           <Alert>
-            Doublon probable (R-FAC-05) :{' '}
+            Doublon probable :{' '}
             {check.data.duplicates
               .map((d) => `pièce ${d.pieceRef} du ${formatDate(d.date)} (${euro(d.totalIncl)})`)
               .join(', ')}
@@ -282,19 +317,13 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
           <CardContent className="grid gap-4 pt-5">
             <Field label="Fournisseur" error={errors.supplierId}>
               {(p) => (
-                <Select
+                <SupplierPicker
                   {...p}
                   disabled={!!invoice}
+                  suppliers={suppliers.data ?? []}
                   value={supplierId}
-                  onChange={(e) => setSupplierId(e.target.value)}
-                >
-                  <option value="">Choisir…</option>
-                  {(suppliers.data ?? []).map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
+                  onChange={setSupplierId}
+                />
               )}
             </Field>
             <div className="grid gap-4 sm:grid-cols-3">
@@ -377,9 +406,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
             </Field>
             {supplier.data?.receipts.length ? (
               <fieldset className="grid gap-1">
-                <legend className="mb-1 text-sm font-medium">
-                  Réceptions concernées (R-FAC-02)
-                </legend>
+                <legend className="mb-1 text-sm font-medium">Réceptions concernées</legend>
                 {supplier.data.receipts.slice(0, 20).map((r) => (
                   <div key={r.id} className="flex items-center gap-2">
                     <Checkbox
@@ -397,6 +424,14 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
                     <Label htmlFor={`r-${r.id}`} className="font-normal">
                       {r.number} du {formatDate(r.date)}
                     </Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setViewing(r.id)}
+                    >
+                      Voir
+                    </Button>
                   </div>
                 ))}
               </fieldset>
@@ -584,5 +619,115 @@ function InvoiceEntries({ invoiceId, paid }: { invoiceId: string; paid: boolean 
         ))
       )}
     </div>
+  );
+}
+
+/** R-EVO-20: the supplier is found by typing the first letters (the browser filters the list). */
+function SupplierPicker({
+  suppliers,
+  value,
+  onChange,
+  disabled,
+  ...rest
+}: {
+  suppliers: SupplierRow[];
+  value: string;
+  onChange: (id: string) => void;
+  disabled?: boolean;
+  id?: string;
+}) {
+  const nameOf = (id: string) => suppliers.find((x) => x.id === id)?.name ?? '';
+  const [text, setText] = useState('');
+  // Shows the chosen supplier once the list is loaded (editing an existing invoice).
+  useEffect(() => {
+    if (value && !text) setText(nameOf(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, suppliers]);
+  const listId = `${rest.id ?? 'supplier'}-list`;
+  return (
+    <>
+      <Input
+        {...rest}
+        list={listId}
+        autoComplete="off"
+        placeholder="Premières lettres du fournisseur…"
+        disabled={disabled}
+        value={text}
+        onChange={(e) => {
+          const t = e.target.value;
+          setText(t);
+          const hit = suppliers.find((x) => x.name.toLowerCase() === t.trim().toLowerCase());
+          onChange(hit?.id ?? '');
+        }}
+      />
+      <datalist id={listId}>
+        {suppliers.map((x) => (
+          <option key={x.id} value={x.name} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
+interface ReceiptView {
+  number: string;
+  date: string;
+  receivedByName: string | null;
+  totalIncl: string;
+  lines: { id: string; code: string; name: string; qty: string; unitPriceExcl: string }[];
+}
+
+/** R-EVO-20: what was received, shown before ticking the receipt for the invoice. */
+function ReceiptDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { data } = useQuery({
+    queryKey: ['receipt', id],
+    queryFn: () => api.get<ReceiptView>(`/receipts/${id}`),
+    enabled: !!id,
+  });
+  return (
+    <Dialog
+      open={!!id}
+      onClose={onClose}
+      title={data ? `Réception ${data.number}` : 'Réception'}
+      description={
+        data
+          ? `Du ${formatDate(data.date)}${data.receivedByName ? ` · saisie par ${data.receivedByName}` : ''}`
+          : undefined
+      }
+      className="max-w-2xl"
+    >
+      {data ? (
+        <Table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th className="text-right">Qté</th>
+              <th className="text-right">PA HT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.lines.map((l) => (
+              <tr key={l.id}>
+                <td>
+                  <span className="text-muted-foreground">{l.code}</span> {l.name}
+                </td>
+                <td className="text-right tabular-nums">
+                  {formatQty(parseQtyToMilli(l.qty) ?? 0)}
+                </td>
+                <td className="text-right tabular-nums">{euro(l.unitPriceExcl)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="font-medium">
+              <td colSpan={2}>Total TTC</td>
+              <td className="text-right tabular-nums">{euro(data.totalIncl)}</td>
+            </tr>
+          </tfoot>
+        </Table>
+      ) : (
+        <p className="text-muted-foreground">Chargement…</p>
+      )}
+    </Dialog>
   );
 }

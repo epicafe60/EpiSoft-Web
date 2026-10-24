@@ -238,7 +238,7 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
         .from(productBarcode)
         .where(inArray(productBarcode.productId, req.body.productIds));
       const barcodes = new Map<string, Buffer>();
-      for (const p of prods) {
+      for (const p of req.body.barcode ? prods : []) {
         const ean = eans.find((e) => e.productId === p.id)?.ean;
         barcodes.set(
           p.id,
@@ -314,12 +314,24 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
               .font('Helvetica')
               .fontSize(6.5)
               .text(pdfText(small.join(' — ')), x + pad, y + h * 0.58, {
-                width: w * 0.48,
+                width: req.body.barcode ? w * 0.48 : w - 2 * pad,
                 height: h * 0.35,
               });
-            doc.image(barcodes.get(p.id)!, x + w * 0.5, y + h * 0.56, {
-              fit: [w * 0.48 - pad, h * 0.38],
-            });
+            if (req.body.barcode)
+              doc.image(barcodes.get(p.id)!, x + w * 0.5, y + h * 0.56, {
+                fit: [w * 0.48 - pad, h * 0.38],
+              });
+            // R-EVO-07: red dot for a local product, green dot for an organic one.
+            const dots: string[] = [];
+            if ((p.qualities as Quality[]).includes('LOCAL')) dots.push('#d62828');
+            if ((p.qualities as Quality[]).includes('ORGANIC')) dots.push('#2a9d3f');
+            dots.forEach((color, d) =>
+              doc
+                .circle(x + w - pad - 5 - d * 14, y + pad + 5, 5)
+                .fillColor(color)
+                .fill(),
+            );
+            doc.fillColor('black');
           });
         },
         { margin: 0 },

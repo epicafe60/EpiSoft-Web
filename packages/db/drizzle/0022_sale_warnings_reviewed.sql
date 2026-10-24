@@ -1,0 +1,1 @@
+ALTER TABLE "app"."sale" ADD COLUMN "warnings_reviewed_at" timestamp with time zone;

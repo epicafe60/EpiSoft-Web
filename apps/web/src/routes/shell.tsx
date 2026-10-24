@@ -14,6 +14,8 @@ import {
   Truck,
   UserCog,
   FileUp,
+  LifeBuoy,
+  ShieldAlert,
   Wallet,
   Users,
   X,
@@ -66,6 +68,14 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
           </Link>
         );
       })}
+      <Link to="/aide" className={linkClass} onClick={onNavigate}>
+        <LifeBuoy /> Aide
+      </Link>
+      {hasAnyRole(me.roles, ['ADMIN', 'COMPTA']) ? (
+        <Link to="/surveillance" className={linkClass} onClick={onNavigate}>
+          <ShieldAlert /> Surveillance
+        </Link>
+      ) : null}
       {hasAnyRole(me.roles, ['PRODUITS', 'ADHERENTS']) ? (
         <Link to="/imports" className={linkClass} onClick={onNavigate}>
           <FileUp /> Imports

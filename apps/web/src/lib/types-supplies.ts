@@ -114,10 +114,12 @@ export interface OrderDetail {
     unitPriceExcl: string;
     vatRate: string;
     salePrice: string;
+    /** The product's last known purchase price (what the receipt is checked against). */
+    purchasePriceExcl: string | null;
     stockQty: string;
     totalExcl: string;
   }[];
-  receipts: { id: string; number: string; date: string }[];
+  receipts: { id: string; number: string; date: string; receivedByName?: string | null }[];
 }
 
 export interface InvoiceRow {
@@ -183,6 +185,8 @@ export interface InventoryDetail {
     countedQty: string | null;
     countedAt: string | null;
     adjustment: string | null;
+    /** Purchase price excl. VAT frozen when the inventory was opened (values the gaps). */
+    unitCostExcl: string | null;
     eans: string[];
   }[];
 }

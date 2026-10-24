@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { SnapshotProduct, SyncOp } from '@episoft/shared';
 import type { OutboxEntry } from './db';
-import { addProduct, backoffMs, draftTotalCents, pendingWalletMoves, saleOp } from './logic';
+import {
+  addProduct,
+  backoffMs,
+  draftTotalCents,
+  linesFromSale,
+  pendingWalletMoves,
+  saleOp,
+} from './logic';
 
 const product = (over: Partial<SnapshotProduct> = {}): SnapshotProduct => ({
   id: 'p1',
@@ -127,5 +134,44 @@ describe('estimated cagnotte balance (R-OFF-04)', () => {
 describe('back-off (R-OFF-03)', () => {
   it('doubles up to two minutes', () => {
     expect([1, 2, 3, 10].map(backoffMs)).toEqual([2000, 4000, 8000, 120_000]);
+  });
+});
+
+describe('a refused ticket entered again', () => {
+  it('puts its lines back in a draft at the price that was charged', () => {
+    const lines = addProduct([], product(), 2000);
+    const draft = {
+      id: 'd1',
+      memberId: 'm1',
+      lines: lines.map((l) => ({ ...l, unitPriceCents: 200, discountCents: 50 })),
+      parked: false,
+      createdAt: '',
+      updatedAt: '',
+    };
+    const op = saleOp({
+      id: 'op1',
+      deviceSeq: 1,
+      draft,
+      sessionId: 's1',
+      cashierId: 'c1',
+      provisionalNumber: 'E2E-1',
+      payments: [{ method: 'CASH', amountCents: 350 }],
+      emailReceipt: false,
+      overdraftForcedBy: null,
+      now: new Date('2026-10-24T10:00:00Z'),
+    });
+    if (op.kind !== 'SALE') throw new Error('sale expected');
+    const again = linesFromSale(op.payload);
+    expect(again).toEqual([
+      {
+        productId: 'p1',
+        label: 'Chips',
+        qtyMilli: 2000,
+        unitPriceCents: 200,
+        catalogPriceCents: 250,
+        discountCents: 50,
+      },
+    ]);
+    expect(draftTotalCents({ lines: again })).toBe(350);
   });
 });

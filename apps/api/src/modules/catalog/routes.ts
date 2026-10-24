@@ -16,6 +16,7 @@ import {
 } from '@episoft/db';
 import {
   normalizeSearch,
+  similarNames,
   PRODUCT_STATUSES,
   productCreateSchema,
   productPatchSchema,
@@ -68,6 +69,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           q: z.string().max(100).optional(),
           status: z.enum(PRODUCT_STATUSES).optional(),
           categoryId: z.string().uuid().optional(),
+          supplierId: z.string().uuid().optional(),
           labelPending: z.enum(['true']).optional(),
           limit: z.coerce.number().int().min(1).max(1000).default(200),
         }),
@@ -88,6 +90,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       }
       if (req.query.status) f.push(eq(product.status, req.query.status));
       if (req.query.categoryId) f.push(eq(product.categoryId, req.query.categoryId));
+      if (req.query.supplierId) f.push(eq(product.supplierId, req.query.supplierId));
       if (req.query.labelPending) f.push(eq(product.labelPending, true));
       const rows = await db
         .select({
@@ -142,6 +145,36 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       updatedAt: p.updatedAt.toISOString(),
     };
   });
+
+  /**
+   * Existing products whose name is the same or one letter or two away from the one being typed:
+   * a warning against creating the same product twice (never a refusal).
+   */
+  app.get(
+    '/products/similar',
+    {
+      ...readers,
+      schema: {
+        querystring: z.object({
+          name: z.string().max(200),
+          exceptId: z.string().uuid().optional(),
+        }),
+      },
+    },
+    async (req) => {
+      const rows = await db
+        .select({ id: product.id, code: product.code, name: product.name, status: product.status })
+        .from(product);
+      const names = similarNames(
+        req.query.name,
+        rows.filter((r) => r.id !== req.query.exceptId).map((r) => r.name),
+      );
+      return rows
+        .filter((r) => r.id !== req.query.exceptId && names.includes(r.name))
+        .slice(0, 5)
+        .map((r) => ({ id: r.id, code: r.code, name: r.name, status: r.status }));
+    },
+  );
 
   /** R-PRD-01: next code of a shelf = universe + shelf + sequence. */
   app.get(

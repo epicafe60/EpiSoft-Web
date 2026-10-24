@@ -57,6 +57,10 @@ export const memberFields = {
   status: z.enum(MEMBER_STATUSES),
   publicVisible: z.boolean(),
   newsletter: z.boolean(),
+  /** R-EVO-40: no ticket e-mail after a sale or a top-up. */
+  ticketEmailOptOut: z.boolean().default(false),
+  /** R-EVO-44: agrees to the use of their image (dated when given). */
+  imageConsent: z.boolean().default(false),
   username: text(100).refine(
     (s) => s === null || /^[\p{L}0-9_.-]+$/u.test(s),
     'Lettres, chiffres, _ . - seulement.',

@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, Wrench } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { api } from '@/lib/api';
+import { confirmNow, promptNow } from '@/components/confirm';
 import { formatDateTime } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Alert } from '@/components/ui/form';
 import { Badge, Card, CardContent } from '@/components/ui/card';
 import { QueryError } from '../errors';
@@ -111,6 +112,7 @@ export function IntegrityPage() {
           <RefreshCw /> Relancer les contrôles
         </Button>
       </div>
+      <WalletReportCard />
       {error ? <QueryError error={error} /> : null}
       {failure ? <Alert>{failure.message}</Alert> : null}
       {fix.isSuccess ? (
@@ -174,7 +176,16 @@ export function IntegrityPage() {
                             size="sm"
                             variant="outline"
                             disabled={fix.isPending}
-                            onClick={() => window.confirm(c.fix!.confirm) && fix.mutate(c.id)}
+                            onClick={async () => {
+                              if (
+                                await confirmNow({
+                                  title: c.fix!.label,
+                                  message: c.fix!.confirm,
+                                  confirmLabel: c.fix!.label,
+                                })
+                              )
+                                fix.mutate(c.id);
+                            }}
                           >
                             <Wrench /> {c.fix.label}
                           </Button>
@@ -195,11 +206,14 @@ export function IntegrityPage() {
                                 <button
                                   type="button"
                                   className="text-muted-foreground hover:text-foreground hover:underline"
-                                  onClick={() => {
-                                    const note = window.prompt(
-                                      'Accepter ce point après vérification. Note (facultative) :',
-                                      '',
-                                    );
+                                  onClick={async () => {
+                                    const note = await promptNow({
+                                      title: 'Accepter ce point',
+                                      message:
+                                        'Vous avez vérifié ce cas et vous l’acceptez tel quel : il ne sera plus signalé.',
+                                      input: { label: 'Note (facultative)', minLength: 0 },
+                                      confirmLabel: 'Accepter',
+                                    });
                                     if (note !== null)
                                       accept.mutate({
                                         checkId: c.id,
@@ -271,5 +285,34 @@ export function IntegrityPage() {
         )}
       </Dialog>
     </div>
+  );
+}
+
+/** R-EVO-50: the cagnotte of every household, rebuilt from its history, to hand to the board. */
+function WalletReportCard() {
+  const { data } = useQuery({
+    queryKey: ['wallet-report'],
+    queryFn: () =>
+      api.get<{ households: number; green: number; negative: number; toCheck: number }>(
+        '/admin/wallet-report',
+      ),
+  });
+  if (!data) return null;
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-3 pt-4 text-sm">
+        <span className="font-medium">Cagnottes par foyer</span>
+        <Badge variant="success">{data.green} vert(s)</Badge>
+        <Badge variant={data.toCheck ? 'destructive' : 'muted'}>{data.toCheck} à vérifier</Badge>
+        <Badge variant={data.negative ? 'destructive' : 'muted'}>{data.negative} négatif(s)</Badge>
+        <span className="text-muted-foreground">sur {data.households} foyers</span>
+        <a
+          className={buttonVariants({ variant: 'outline', className: 'ml-auto' })}
+          href="/api/v1/admin/wallet-report.xlsx"
+        >
+          Rapport Excel
+        </a>
+      </CardContent>
+    </Card>
   );
 }

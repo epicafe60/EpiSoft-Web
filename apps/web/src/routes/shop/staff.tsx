@@ -10,6 +10,7 @@ import {
   type PreorderStatus,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { confirmNow } from '@/components/confirm';
 import { useMe } from '@/lib/auth';
 import { euro, formatDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -201,11 +202,18 @@ function OrderDialog({ id, onClose }: { id: string | null; onClose: () => void }
               (data.status === 'SUBMITTED' || data.status === 'READY') ? (
                 <Button
                   variant="outline"
-                  onClick={() =>
-                    window.confirm(
-                      'Clôturer cette commande comme retirée, sans passer par la caisse ?',
-                    ) && change.mutate('PICKED_UP')
-                  }
+                  onClick={async () => {
+                    if (
+                      await confirmNow({
+                        title: 'Clôturer comme retirée ?',
+                        message:
+                          'La commande sera marquée retirée sans ticket de caisse : le stock et le paiement ne seront pas enregistrés.',
+                        confirmLabel: 'Clôturer (retirée)',
+                        destructive: true,
+                      })
+                    )
+                      change.mutate('PICKED_UP');
+                  }}
                 >
                   Clôturer (retirée)
                 </Button>
@@ -213,9 +221,18 @@ function OrderDialog({ id, onClose }: { id: string | null; onClose: () => void }
               {canTransition(data.status, 'CANCELLED') ? (
                 <Button
                   variant="destructive"
-                  onClick={() =>
-                    window.confirm('Annuler cette commande ?') && change.mutate('CANCELLED')
-                  }
+                  onClick={async () => {
+                    if (
+                      await confirmNow({
+                        title: 'Annuler cette commande ?',
+                        message: 'Le client sera prévenu que sa commande est annulée.',
+                        confirmLabel: 'Annuler la commande',
+                        cancelLabel: 'Garder la commande',
+                        destructive: true,
+                      })
+                    )
+                      change.mutate('CANCELLED');
+                  }}
                 >
                   Annuler la commande
                 </Button>

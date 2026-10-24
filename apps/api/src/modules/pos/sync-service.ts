@@ -14,6 +14,7 @@ import {
   saleLine,
   salePayment,
   syncReceipt,
+  syncRejection,
   userRole,
   walletEntry,
   type Db,
@@ -32,12 +33,15 @@ import {
   type SyncOp,
   type SyncResult,
   type SyncWarning,
+  clockSkew,
+  ticketWarnings,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
 import { queueEmail } from '../../lib/mail';
 import { saleReceiptEmail, topupReceiptEmail } from '../../lib/receipts';
+import { alertNow } from '../../lib/alerts';
 import { loadSettings } from '../admin/settings-store';
 import { recordMovement } from '../stock/ledger';
 import { nextSaleNumber } from './numbers';
@@ -45,6 +49,27 @@ import { currentMembershipEnd, lockedBalanceCents } from './wallet';
 
 /** A business rule refused the operation; it is answered REJECTED, not as an error. */
 export class Rejected extends Error {}
+
+/**
+ * The operation cannot be processed *yet* (a cancellation that reached the server before the
+ * ticket it cancels). Nothing is stored: the till sends it again and it goes through once the
+ * ticket is there. Refusing it for good would lose the cancellation without a trace.
+ */
+export class NotYet extends Error {}
+
+/** How long an operation may wait for what it depends on before it is refused for good. */
+const MAX_WAIT_MS = 24 * 3_600_000;
+
+/**
+ * « Not yet » while the operation is recent; past a day, the missing piece will not come (a till
+ * whose storage was wiped…): the operation is refused and recorded, so it shows in Surveillance
+ * instead of blocking every later ticket of the till.
+ */
+function waitOrRefuse(at: Date, waiting: string, final: string): never {
+  if (Date.now() - at.getTime() > MAX_WAIT_MS)
+    throw new Rejected(`${final} (attendu plus de 24 h)`);
+  throw new NotYet(waiting);
+}
 
 interface Ctx {
   tx: Tx;
@@ -85,8 +110,9 @@ async function processOne(
   deviceId: string,
   op: SyncOp,
 ): Promise<SyncResult> {
+  let fresh = false;
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'op:' + op.id}))`);
       const done = await tx.query.syncReceipt.findFirst({ where: eq(syncReceipt.clientId, op.id) });
       if (done) return done.result as SyncResult;
@@ -108,11 +134,46 @@ async function processOne(
       } catch (e) {
         if (!(e instanceof Rejected)) throw e;
         result = { id: op.id, status: 'REJECTED', warnings: ctx.warnings, error: e.message };
+        // Kept for the administrators: a refused ticket must never vanish without a trace.
+        await tx
+          .insert(syncRejection)
+          .values({
+            deviceId,
+            opId: op.id,
+            kind: op.kind,
+            payload: op.payload,
+            reason: e.message,
+          })
+          .onConflictDoNothing();
       }
       await tx.insert(syncReceipt).values({ clientId: op.id, deviceId, kind: op.kind, result });
+      fresh = true;
       return result;
     });
+    if (fresh && result.status === 'REJECTED') {
+      void alertNow(
+        db,
+        config,
+        ['ADMIN', 'COMPTA'],
+        {
+          subject: 'Épicafé : un ticket de caisse a été refusé',
+          lines: [
+            'Un poste de caisse a envoyé une opération que le serveur a refusée.',
+            `Motif : ${result.error ?? 'inconnu'}`,
+            'Ouvrez Surveillance › Tickets à vérifier pour la voir et la faire ressaisir.',
+          ],
+        },
+        {
+          title: 'Ticket refusé',
+          body: result.error ?? 'Un ticket a été refusé.',
+          url: '/surveillance',
+        },
+        req.log,
+      ).catch((err) => req.log.error({ err }, 'alerte de ticket refusé'));
+    }
+    return result;
   } catch (e) {
+    if (e instanceof NotYet) throw e;
     req.log.error({ err: e, op: op.id, kind: op.kind }, 'échec de traitement d’une opération');
     // Not recorded: the device retries later (R-OFF-03).
     throw e;
@@ -160,11 +221,24 @@ async function openSession(ctx: Ctx, p: Extract<SyncOp, { kind: 'SESSION_OPEN' }
   });
 }
 
-async function sessionOf(ctx: Ctx, sessionId: string) {
-  const s = await ctx.tx.query.cashSession.findFirst({
-    where: and(eq(cashSession.id, sessionId), eq(cashSession.deviceId, ctx.deviceId)),
-  });
-  if (!s) throw new Rejected('Session de caisse inconnue pour ce poste.');
+async function sessionOf(ctx: Ctx, sessionId: string, at: Date) {
+  // R-EVO-06: a session is the shop's, whichever till opened it: another till may sell in it.
+  const s = await ctx.tx.query.cashSession.findFirst({ where: eq(cashSession.id, sessionId) });
+  if (!s) {
+    // The session is opened by an operation whose id is the session id. Not received yet (the
+    // till that opened it is offline, or sent it later): say « not yet », the ticket is kept
+    // and sent again. Received and refused: there is no session to sell in.
+    const opened = await ctx.tx.query.syncReceipt.findFirst({
+      where: eq(syncReceipt.clientId, sessionId),
+    });
+    if (!opened)
+      waitOrRefuse(
+        at,
+        'La session de caisse n’est pas encore arrivée : le poste réessaiera.',
+        'La session de caisse n’est jamais arrivée sur le serveur',
+      );
+    throw new Rejected('La session de caisse avait été refusée : on ne peut pas y vendre.');
+  }
   if (s.status === 'CLOSED')
     warn(ctx, 'SESSION_CLOSED', 'La session était déjà clôturée (clôture forcée).');
   return s;
@@ -191,9 +265,9 @@ async function recordSale(
   saleId: string,
 ): Promise<string> {
   const { tx } = ctx;
-  const session = await sessionOf(ctx, p.sessionId);
-  await checkCashier(ctx, p.cashierId);
   const soldAt = new Date(p.soldAt);
+  const session = await sessionOf(ctx, p.sessionId, soldAt);
+  await checkCashier(ctx, p.cashierId);
 
   // Products. A product deactivated in the meantime is still accepted (R-SYNC-04).
   const productIds = [...new Set(p.lines.map((l) => l.productId))];
@@ -220,7 +294,7 @@ async function recordSale(
       warn(
         ctx,
         'PRICE_CHANGED',
-        `${prod.name} : prix appliqué ${l.unitPrice} €, catalogue ${prod.salePrice} € (R-VTE-06).`,
+        `${prod.name} : prix appliqué ${l.unitPrice} €, catalogue ${prod.salePrice} €.`,
       );
     }
     return {
@@ -239,12 +313,40 @@ async function recordSale(
 
   const payments = p.payments.map((x) => ({ ...x, cents: decimalToCents(x.amount) }));
   if (payments.some((x) => x.cents <= 0)) throw new Rejected('Règlement nul ou négatif.');
+
+  // Unusual values never refuse the sale: they are recorded with it for the treasurer to check.
+  const thresholds = (await loadSettings(tx))['controls.thresholds'];
+  const changeCents = payments.reduce(
+    (s, x) => s + (x.changeToWallet || !x.change ? 0 : decimalToCents(x.change)),
+    0,
+  );
+  for (const w of ticketWarnings(
+    lines.map((x) => ({
+      label: x.prod.name,
+      qtyMilli: x.qtyMilli,
+      unitPriceCents: x.unitPriceCents,
+      catalogPriceCents: decimalToCents(x.prod.salePrice),
+      discountCents: x.discountCents,
+    })),
+    changeCents,
+    thresholds,
+  ))
+    warn(ctx, w.code, w.message);
+  const skew = clockSkew(soldAt, new Date(), thresholds);
+  if (skew)
+    warn(
+      ctx,
+      'CLOCK_SKEW',
+      skew === 'FUTURE'
+        ? 'L’horloge du poste de caisse est en avance : vérifiez la date et l’heure du poste.'
+        : 'Ce ticket est très ancien (poste resté hors ligne ?) : vérifiez la date du ticket.',
+    );
   if (payments.reduce((s, x) => s + x.cents, 0) !== totalCents)
     throw new Rejected('Le ticket n’est pas soldé.');
 
   // Member and household. Wallet payments need a household (R-VTE-02).
   let householdId: string | null = null;
-  let buyer: { firstName: string; email: string | null } | null = null;
+  let buyer: { firstName: string; email: string | null; optOut: boolean } | null = null;
   if (p.memberId) {
     const m = await tx.query.member.findFirst({ where: eq(member.id, p.memberId) });
     if (!m) throw new Rejected('Adhérent inconnu.');
@@ -252,7 +354,7 @@ async function recordSale(
       warn(ctx, 'MEMBER_INACTIVE', `${m.firstName} ${m.lastName} n’est plus actif.`);
     }
     householdId = m.householdId;
-    buyer = { firstName: m.firstName, email: m.email };
+    buyer = { firstName: m.firstName, email: m.email, optOut: m.ticketEmailOptOut };
   }
   const needsHousehold = payments.some((x) => x.method === 'WALLET' || x.changeToWallet);
   if (needsHousehold && !householdId)
@@ -312,6 +414,19 @@ async function recordSale(
     saleId,
     soldAt,
   );
+  const goodsIds = lines.filter((x) => x.prod.kind === 'GOODS').map((x) => x.prod.id);
+  if (goodsIds.length) {
+    const below = await tx
+      .select({ name: product.name, stockQty: product.stockQty })
+      .from(product)
+      .where(and(inArray(product.id, goodsIds), sql`${product.stockQty} < 0`));
+    for (const b of below)
+      warn(
+        ctx,
+        'STOCK_NEGATIVE',
+        `${b.name} : le stock est négatif (${Number(b.stockQty)}) après cette vente. Un inventaire ou une réception manque peut-être.`,
+      );
+  }
 
   // Cagnotte: the household is debited in the same transaction (R-CAG-02).
   if (householdId) {
@@ -411,7 +526,18 @@ async function recordSale(
   }
 
   // R-VTE-11: the receipt is queued only now that the sale is recorded.
-  if (p.emailReceipt && buyer?.email) {
+  // R-EVO-40: automatic for every member with an e-mail address who did not opt out.
+  if (buyer?.email && !buyer.optOut) {
+    let balance: { beforeCents: number; afterCents: number } | undefined;
+    if (householdId) {
+      const afterCents = await lockedBalanceCents(tx, householdId);
+      const delta =
+        -payments.filter((x) => x.method === 'WALLET').reduce((s, x) => s + x.cents, 0) +
+        payments
+          .filter((x) => x.changeToWallet && x.change)
+          .reduce((s, x) => s + Math.max(0, decimalToCents(x.change!)), 0);
+      balance = { beforeCents: afterCents - delta, afterCents };
+    }
     const cashier = await tx.query.member.findFirst({
       where: eq(member.id, p.cashierId),
       columns: { firstName: true, lastName: true },
@@ -433,6 +559,7 @@ async function recordSale(
           amount: centsToDecimal(x.cents),
         })),
         cashierName: cashier ? `${cashier.firstName} ${cashier.lastName}` : null,
+        balance,
       }),
     );
     await tx.update(sale).set({ emailSentAt: new Date() }).where(eq(sale.id, saleId));
@@ -483,9 +610,22 @@ async function cancelSale(
   deviceSeq: number,
 ): Promise<string> {
   const { tx } = ctx;
-  const session = await sessionOf(ctx, p.sessionId);
+  const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
   const original = await tx.query.sale.findFirst({ where: eq(sale.id, p.saleId) });
-  if (!original) throw new Rejected('Ticket à annuler introuvable.');
+  if (!original) {
+    // Never received: it is on its way (the till sends in order), say « not yet ». Received and
+    // refused: there will never be a ticket to cancel.
+    const origin = await tx.query.syncReceipt.findFirst({
+      where: eq(syncReceipt.clientId, p.saleId),
+    });
+    if (!origin)
+      waitOrRefuse(
+        new Date(p.at),
+        'Le ticket à annuler n’est pas encore arrivé : le poste réessaiera.',
+        'Le ticket à annuler n’est jamais arrivé sur le serveur',
+      );
+    throw new Rejected('Le ticket à annuler avait été refusé : il n’y a rien à annuler.');
+  }
   if (original.cancelsSaleId) throw new Rejected('Un ticket d’annulation ne peut pas être annulé.');
   if (original.status === 'CANCELLED') throw new Rejected('Ce ticket est déjà annulé.');
   // A ticket of the current session can be cancelled at the till; older ones need ADMIN.
@@ -587,7 +727,7 @@ async function cancelSale(
 
 async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['payload']) {
   const { tx } = ctx;
-  const session = await sessionOf(ctx, p.sessionId);
+  const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
   const h = await tx.query.household.findFirst({ where: eq(household.id, p.householdId) });
   if (!h) throw new Rejected('Foyer inconnu.');
   const cents = decimalToCents(p.amount);
@@ -615,13 +755,13 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
     paymentId: pay!.id,
     createdBy: p.cashierId,
   });
-  if (p.emailReceipt)
-    await sendTopupReceipt(tx, h.id, h.referentMemberId, {
-      at,
-      amountCents: cents,
-      beforeCents: before,
-      method: p.method,
-    });
+  // R-EVO-40: the top-up receipt is automatic too (opt-out respected).
+  await sendTopupReceipt(tx, h.id, h.referentMemberId, {
+    at,
+    amountCents: cents,
+    beforeCents: before,
+    method: p.method,
+  });
 }
 
 export async function sendTopupReceipt(
@@ -638,5 +778,6 @@ export async function sendTopupReceipt(
     : await tx.query.member.findFirst({
         where: and(eq(member.householdId, householdId), sql`${member.email} is not null`),
       });
-  if (to?.email) await queueEmail(tx, topupReceiptEmail(to.email, to.firstName, r));
+  if (to?.email && !to.ticketEmailOptOut)
+    await queueEmail(tx, topupReceiptEmail(to.email, to.firstName, r));
 }

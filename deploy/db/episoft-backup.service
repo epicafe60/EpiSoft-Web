@@ -1,0 +1,13 @@
+[Unit]
+Description=EpiSoft-Web database backup (dump, check, copy, report)
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+# Production: PostgreSQL installed on the machine (see deploy/db/lib.sh). Settings and the shared
+# secret in /etc/episoft/backup.env (root only): BACKUP_API_URL, BACKUP_REPORT_TOKEN, and the
+# off-site copy (BACKUP_RSYNC_DEST or BACKUP_RCLONE_DEST).
+Environment=PG_MODE=native
+Environment=BACKUP_ENV_FILE=/etc/episoft/backup.env
+ExecStart=/bin/bash /opt/episoft-web/src/deploy/db/backup.sh

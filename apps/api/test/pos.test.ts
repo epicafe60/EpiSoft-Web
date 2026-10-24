@@ -5,6 +5,7 @@ import { expectIntegrity } from './integrity-helper';
 import {
   householdBalance,
   household,
+  emailOutbox,
   member,
   membership,
   membershipType,
@@ -734,5 +735,258 @@ describe('integrity checks catch corrupted figures', () => {
       saleId: op.id,
     });
     expect(await failing()).toEqual([]);
+  });
+});
+
+describe('R-EVO-40 automatic ticket e-mail', () => {
+  it('sends the ticket with the cagnotte before and after, unless the member opted out', async () => {
+    const chips = await addProduct();
+    const { members } = await addHousehold(1, '20.00');
+    const pay = [{ method: 'WALLET', amount: '3.00' }];
+    const [r1] = await push([
+      saleOp([{ productId: chips.id, qty: '1', unitPrice: '3.00' }], pay, {
+        memberId: members[0]!.id,
+      }),
+    ]);
+    expect(r1!.status).toBe('OK');
+    const mails = await t.db.select().from(emailOutbox);
+    expect(mails).toHaveLength(1);
+    expect(mails[0]!.text).toContain('avant : 20,00');
+    expect(mails[0]!.text).toContain('après : 17,00');
+
+    await t.db.update(member).set({ ticketEmailOptOut: true }).where(eq(member.id, members[0]!.id));
+    await push([
+      saleOp([{ productId: chips.id, qty: '1', unitPrice: '3.00' }], pay, {
+        memberId: members[0]!.id,
+      }),
+    ]);
+    expect(await t.db.select().from(emailOutbox)).toHaveLength(1);
+  });
+});
+
+describe('R-EVO-50 cagnotte report by household', () => {
+  it('rebuilds the balance from the history and flags a household that disagrees with its tickets', async () => {
+    const chips = await addProduct();
+    const { household: h, members } = await addHousehold(1, '20.00');
+    const [r] = await push([
+      saleOp(
+        [{ productId: chips.id, qty: '1', unitPrice: '3.00' }],
+        [{ method: 'WALLET', amount: '3.00' }],
+        {
+          memberId: members[0]!.id,
+        },
+      ),
+    ]);
+    expect(r!.status).toBe('OK');
+    const admin = await createUser(t.db, { roles: ['ADMIN'] });
+    const ah = await login(t.app, admin.username!);
+    const rowOf = async () =>
+      (
+        (await t.app.inject({ url: '/api/v1/admin/wallet-report', headers: ah })).json() as {
+          rows: {
+            number: number;
+            balance: string;
+            gap: string;
+            status: string;
+            purchases: string;
+          }[];
+        }
+      ).rows.find((x) => x.number === h.number)!;
+    expect(await rowOf()).toMatchObject({
+      balance: '17.00',
+      purchases: '-3.00',
+      gap: '0.00',
+      status: 'OK',
+    });
+
+    // A purchase entry removed by hand: the tickets say 3 € were paid, the history no longer does.
+    const removed = await t.db
+      .delete(walletEntry)
+      .where(and(eq(walletEntry.householdId, h.id), eq(walletEntry.kind, 'PURCHASE')))
+      .returning();
+    expect(await rowOf()).toMatchObject({ balance: '20.00', gap: '3.00', status: 'CHECK' });
+    // Repair so the shared afterEach integrity check passes.
+    await t.db.insert(walletEntry).values(removed);
+
+    const xlsx = await t.app.inject({ url: '/api/v1/admin/wallet-report.xlsx', headers: ah });
+    expect(xlsx.statusCode).toBe(200);
+  });
+});
+
+describe('R-EVO-06 one session shared by several tills', () => {
+  it('lets a second till sell in the open session, with one drawer and one closing', async () => {
+    const chips = await addProduct();
+    const second = await createUser(t.db, { roles: ['CAISSE'] });
+    const dev2 = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/pos/devices',
+      headers,
+      payload: { name: 'CAISSE2' },
+    });
+    const device2 = dev2.json().id as string;
+
+    // The snapshot tells the second till which session is open, and where.
+    const snap = (await t.app.inject({ url: '/api/v1/sync/snapshot', headers })).json();
+    expect(snap.settings.openSessions).toEqual([
+      expect.objectContaining({ id: sessionId, deviceName: 'CAISSE1' }),
+    ]);
+
+    // Till 1 and till 2 (another cashier) sell in the same session.
+    await push([
+      saleOp([{ productId: chips.id, unitPrice: '2.50' }], [{ method: 'CASH', amount: '2.50' }]),
+    ]);
+    const op2 = saleOp(
+      [{ productId: chips.id, qty: '2', unitPrice: '2.50' }],
+      [{ method: 'CASH', amount: '5.00' }],
+    );
+    if (op2.kind === 'SALE') op2.payload.cashierId = second.id;
+    const res = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/push',
+      headers,
+      payload: { deviceId: device2, ops: [op2] },
+    });
+    expect(res.json().results[0].status).toBe('OK');
+
+    const summary = (
+      await t.app.inject({ url: `/api/v1/pos/sessions/${sessionId}/summary`, headers })
+    ).json();
+    expect(summary).toMatchObject({
+      salesCount: 2,
+      cashSales: '7.50',
+      devices: ['CAISSE1', 'CAISSE2'],
+    });
+    expect(summary.byCashier).toHaveLength(2);
+
+    // One count for the whole drawer: 100 float + 7.50 of cash sales.
+    const close = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/pos/sessions/${sessionId}/close`,
+      headers,
+      payload: {
+        denominations: { '5000': 2, '500': 1, '200': 1, '50': 1 },
+        bankDeposit: '0',
+        chequesCount: 0,
+        chequesTotal: '0',
+        cardTotalDeclared: '0',
+      },
+    });
+    expect(close.statusCode, close.body).toBe(200);
+    expect(close.json()).toMatchObject({
+      expectedCash: '107.50',
+      countedCash: '107.50',
+      difference: '0.00',
+    });
+    const after = (await t.app.inject({ url: '/api/v1/sync/snapshot', headers })).json();
+    expect(after.settings.openSessions).toEqual([]);
+  });
+});
+
+const closeBody = (denominations: Record<string, number>) => ({
+  denominations,
+  bankDeposit: '0',
+  chequesCount: 0,
+  chequesTotal: '0',
+  cardTotalDeclared: '0',
+});
+
+describe('R-EVO-05 undoing a closing', () => {
+  it('lets the treasury (COMPTA) reopen a closed session, not a cashier', async () => {
+    const close = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/pos/sessions/${sessionId}/close`,
+      headers,
+      payload: closeBody({ '5000': 2 }),
+    });
+    expect(close.statusCode, close.body).toBe(200);
+    const reopen = (h: Headers) =>
+      t.app.inject({ method: 'POST', url: `/api/v1/pos/sessions/${sessionId}/reopen`, headers: h });
+    expect((await reopen(headers)).statusCode).toBe(403);
+    const treasurer = await createUser(t.db, { roles: ['COMPTA'] });
+    const res = await reopen(await login(t.app, treasurer.username!));
+    expect(res.statusCode, res.body).toBe(200);
+    const state = (
+      await t.app.inject({ url: `/api/v1/pos/devices/${deviceId}/state`, headers })
+    ).json();
+    expect(state.openSession).toMatchObject({ id: sessionId });
+  });
+});
+
+describe('R-EVO-08 donation at the till', () => {
+  it('counts the cash of a donation and books it on account 754000 at closing', async () => {
+    const [don] = await t.db.select().from(product).where(eq(product.code, '01004'));
+    expect(don).toBeTruthy();
+    const [r] = await push([
+      saleOp([{ productId: don!.id, unitPrice: '5.00' }], [{ method: 'CASH', amount: '5.00' }]),
+    ]);
+    expect(r!.status).toBe('OK');
+    const summary = (
+      await t.app.inject({ url: `/api/v1/pos/sessions/${sessionId}/summary`, headers })
+    ).json();
+    expect(summary).toMatchObject({ cashSales: '5.00', salesCount: 1 });
+    // 100 float + 5 donation = 105 expected.
+    const close = await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/pos/sessions/${sessionId}/close`,
+      headers,
+      payload: closeBody({ '5000': 2, '500': 1 }),
+    });
+    expect(close.json()).toMatchObject({ expectedCash: '105.00', difference: '0.00' });
+    const lines = await t.db.execute(sql`
+      select a.number, l.credit::text as credit from app.entry_line l
+        join app.account a on a.id = l.account_id
+        join app.entry e on e.id = l.entry_id
+      where e.source_type = 'session' and l.credit > 0`);
+    expect(lines.rows).toEqual(
+      expect.arrayContaining([expect.objectContaining({ number: '754000', credit: '5.00' })]),
+    );
+  });
+});
+
+describe('R-EVO-30 sales still recorded during an inventory freeze', () => {
+  it('accepts a queued ticket while the freeze is on, and shows it in the snapshot', async () => {
+    const chips = await addProduct();
+    const appros = await createUser(t.db, { roles: ['APPROS'] });
+    const ah = await login(t.app, appros.username!);
+    const opened = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/inventories',
+      headers: ah,
+      payload: { label: 'Gel', scope: {}, freezeSales: true },
+    });
+    expect(opened.statusCode, opened.body).toBe(200);
+    const snap = (await t.app.inject({ url: '/api/v1/sync/snapshot', headers })).json();
+    expect(snap.settings.salesFrozen).toBe(true);
+    // A ticket made before the freeze and sent later is never lost.
+    const [r] = await push([
+      saleOp([{ productId: chips.id, unitPrice: '2.50' }], [{ method: 'CASH', amount: '2.50' }]),
+    ]);
+    expect(r!.status).toBe('OK');
+  });
+});
+
+describe('R-EVO-43 payment methods in the member history', () => {
+  it('lists every method of each ticket, not only the cagnotte', async () => {
+    const chips = await addProduct();
+    const { household: h } = await addHousehold(0, '20.00');
+    const buyer = await createUser(t.db, { roles: [] });
+    await t.db.update(member).set({ householdId: h.id }).where(eq(member.id, buyer.id));
+    await push([
+      saleOp(
+        [{ productId: chips.id, unitPrice: '5.00' }],
+        [
+          { method: 'WALLET', amount: '3.00' },
+          { method: 'CARD', amount: '2.00' },
+        ],
+        { memberId: buyer.id },
+      ),
+    ]);
+    const mine = (
+      await t.app.inject({
+        url: '/api/v1/me/household',
+        headers: await login(t.app, buyer.username!),
+      })
+    ).json();
+    expect(mine.household.tickets[0].methods.sort()).toEqual(['CARD', 'WALLET']);
   });
 });

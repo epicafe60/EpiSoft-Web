@@ -59,9 +59,14 @@ export function MembersPage() {
         title="Membres"
         description="Membres, foyers, adhésions et cagnottes."
         actions={
-          <Link to="/membres/nouveau" className={buttonVariants()}>
-            <Plus /> Nouveau membre
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <a className={buttonVariants({ variant: 'outline' })} href="/api/v1/members.xlsx">
+              Exporter (Excel)
+            </a>
+            <Link to="/membres/nouveau" className={buttonVariants()}>
+              <Plus /> Nouveau membre
+            </Link>
+          </div>
         }
       />
       <div className="mb-4 flex flex-wrap gap-3">

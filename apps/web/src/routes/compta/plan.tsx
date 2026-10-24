@@ -1,4 +1,5 @@
 import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
+import { confirmNow } from '@/components/confirm';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -121,9 +122,17 @@ function AccountsCard() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() =>
-                          window.confirm(`Supprimer le compte ${a.number} ?`) && remove.mutate(a.id)
-                        }
+                        onClick={async () => {
+                          if (
+                            await confirmNow({
+                              title: `Supprimer le compte ${a.number} ?`,
+                              message: 'Le compte n’est utilisé par aucune écriture.',
+                              confirmLabel: 'Supprimer',
+                              destructive: true,
+                            })
+                          )
+                            remove.mutate(a.id);
+                        }}
                       >
                         Supprimer
                       </Button>
@@ -386,9 +395,17 @@ function GuidesCard() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() =>
-                      window.confirm(`Supprimer le guide « ${t.label} » ?`) && remove.mutate(t.id)
-                    }
+                    onClick={async () => {
+                      if (
+                        await confirmNow({
+                          title: 'Supprimer ce guide ?',
+                          message: `Le guide de saisie « ${t.label} » sera supprimé.`,
+                          confirmLabel: 'Supprimer',
+                          destructive: true,
+                        })
+                      )
+                        remove.mutate(t.id);
+                    }}
                   >
                     Supprimer
                   </Button>

@@ -31,6 +31,7 @@ import {
   accountMap,
   createEntry,
   fiscalYearAt,
+  journalByCode,
   plannedToLines,
   validateEntries,
 } from './service';
@@ -150,6 +151,62 @@ export const closingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 ) => {
   const compta = { preHandler: app.requireRoles('COMPTA') };
   const admin = { preHandler: app.requireRoles('ADMIN') };
+
+  /**
+   * R-EVO-51: the opening balances (journal RAN) of a year against the closing balances of the
+   * previous one, account by account (balance sheet classes 1 to 5). Used to check the carry-over
+   * before keying the first months of the new year (e.g. July to September after a June closing).
+   */
+  app.get('/fiscal-years/:id/opening-check', { ...compta, schema: idParams }, async (req) => {
+    const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, req.params.id));
+    if (!fy) throw notFound('Exercice introuvable.');
+    const [previous] = await db
+      .select()
+      .from(fiscalYear)
+      .where(and(ne(fiscalYear.id, fy.id), sql`${fiscalYear.endDate} < ${fy.startDate}`))
+      .orderBy(desc(fiscalYear.endDate))
+      .limit(1);
+    if (!previous)
+      return { previous: null, previousStatus: null, rows: [], ok: true, differences: 0 };
+    const ran = await journalByCode(db, 'RAN');
+    const [prevBalances, openBalances] = await Promise.all([
+      accountBalances(db, { fiscalYearId: previous.id, status: 'VALIDATED' }),
+      ran
+        ? accountBalances(db, { fiscalYearId: fy.id, status: 'VALIDATED', journalId: ran.id })
+        : Promise.resolve([]),
+    ]);
+    const cls = (n: string) => Number(n.slice(0, 1));
+    const closing = new Map(
+      prevBalances.filter((b) => cls(b.number) <= 5).map((b) => [b.number, b]),
+    );
+    const opening = new Map(
+      openBalances.filter((b) => cls(b.number) <= 5).map((b) => [b.number, b]),
+    );
+    const numbers = [...new Set([...closing.keys(), ...opening.keys()])].sort();
+    const rows = numbers
+      .map((n) => {
+        const c = closing.get(n);
+        const o = opening.get(n);
+        const closingCents = c ? balanceOf(c) : 0;
+        const openingCents = o ? balanceOf(o) : 0;
+        return {
+          number: n,
+          label: (c ?? o)!.label,
+          closing: centsToDecimal(closingCents),
+          opening: centsToDecimal(openingCents),
+          difference: centsToDecimal(openingCents - closingCents),
+        };
+      })
+      .filter((r) => r.closing !== '0.00' || r.opening !== '0.00');
+    const differences = rows.filter((r) => r.difference !== '0.00').length;
+    return {
+      previous: previous.label,
+      previousStatus: previous.status,
+      rows,
+      ok: differences === 0,
+      differences,
+    };
+  });
 
   app.get('/fiscal-years/:id/closing-check', { ...compta, schema: idParams }, async (req) => {
     const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, req.params.id));

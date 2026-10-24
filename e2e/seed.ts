@@ -6,6 +6,7 @@ import {
   membershipType,
   supplier,
   posTab,
+  setting,
   product,
   productBarcode,
   stockMovement,
@@ -23,6 +24,16 @@ export const SEED = {
 
 /** Lot 1 test data: a small catalogue with a till tab, and a household with a cagnotte. */
 export async function seedLot1(db: Db): Promise<void> {
+  // R-EVO-01 is off for the historic scenarios (anonymous sales); till-evo.spec.ts turns it on.
+  await db.insert(setting).values({
+    key: 'pos.options',
+    value: {
+      allowTransfer: false,
+      discountsEnabled: false,
+      membershipExpiredBlocking: false,
+      requireMemberFirst: false,
+    },
+  });
   const [tab] = await db.insert(posTab).values({ name: 'Fruits', sort: 1 }).returning();
   const [chips] = await db
     .insert(product)

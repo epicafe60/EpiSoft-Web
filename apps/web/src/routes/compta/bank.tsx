@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { confirmNow } from '@/components/confirm';
 import { Link, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp } from 'lucide-react';
@@ -675,9 +676,17 @@ function RulesTab() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() =>
-                      window.confirm(`Supprimer la règle « ${r.label} » ?`) && remove.mutate(r.id)
-                    }
+                    onClick={async () => {
+                      if (
+                        await confirmNow({
+                          title: 'Supprimer cette règle ?',
+                          message: `La règle « ${r.label} » ne classera plus les lignes bancaires.`,
+                          confirmLabel: 'Supprimer',
+                          destructive: true,
+                        })
+                      )
+                        remove.mutate(r.id);
+                    }}
                   >
                     Supprimer
                   </Button>

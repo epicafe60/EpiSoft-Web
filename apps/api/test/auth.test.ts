@@ -36,6 +36,34 @@ describe('login (R-AUTH-01, R-AUTH-07)', () => {
     expect(logs[0]).toMatchObject({ success: true });
   });
 
+  it('R-EVO-42: accepts the e-mail of the membership as identifier', async () => {
+    const u = await createUser(t.db, { roles: ['CAISSE'], email: 'Marie.Dupont@Example.org' });
+    const res = await post('/api/v1/auth/login', {
+      username: 'marie.dupont@example.org',
+      password: PASSWORD,
+    });
+    expect(res.statusCode).toBe(204);
+    const bad = await post('/api/v1/auth/login', {
+      username: 'marie.dupont@example.org',
+      password: 'wrong password',
+    });
+    expect(bad.statusCode).toBe(401);
+    expect(u.email).toBe('Marie.Dupont@Example.org');
+  });
+
+  it('R-EVO-42: the password link is also asked with the e-mail', async () => {
+    const u = await createUser(t.db, { email: 'oubli@example.org' });
+    const res = await post('/api/v1/auth/password/forgot', { username: 'OUBLI@example.org' });
+    expect(res.statusCode).toBe(204);
+    const [mail] = await t.db.select().from(emailOutbox);
+    expect(mail).toMatchObject({ to: 'oubli@example.org' });
+    expect(u.id).toBeTruthy();
+    // An unknown address gets the same answer and no e-mail.
+    const none = await post('/api/v1/auth/password/forgot', { username: 'nobody@example.org' });
+    expect(none.statusCode).toBe(204);
+    expect(await t.db.select().from(emailOutbox)).toHaveLength(1);
+  });
+
   it('refuses a wrong password with a generic message', async () => {
     const u = await createUser(t.db);
     const res = await post('/api/v1/auth/login', {

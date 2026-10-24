@@ -7,7 +7,6 @@ import {
   Printer,
   ShoppingBasket,
   ScanLine,
-  Trash2,
   UserRound,
   UserX,
   Wallet,
@@ -18,6 +17,12 @@ import {
   formatEuro,
   formatQty,
   decodeScaleBarcode,
+  DEFAULT_THRESHOLDS,
+  lineEntryBlocked,
+  ticketWarnings,
+  type TicketWarning,
+  salesBlockedReason,
+  walletTone,
   lookupProduct,
   productForPlu,
   scaleQuantityMilli,
@@ -26,7 +31,6 @@ import {
   normalizeSearch,
   parseAmountToCents,
   parseQtyToMilli,
-  percentDiscountCents,
   provisionalNumber,
   sha256Hex,
   UNIT_LABELS,
@@ -35,11 +39,12 @@ import {
   type SyncOp,
 } from '@episoft/shared';
 import { todayIso, formatDate } from '@/lib/format';
+import { confirmNow } from '@/components/confirm';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Alert, Field, Input } from '@/components/ui/form';
-import { getMeta, tillDb, type Draft, type DraftLine } from './db';
+import { Alert, Input } from '@/components/ui/form';
+import { getMeta, tillDb, type Draft } from './db';
 import { useTill } from './context';
 import { activeDraft, newDraft, parkDraft, resumeDraft, updateDraft } from './drafts';
 import { addProduct, draftTotalCents, lineCents, saleOp } from './logic';
@@ -49,6 +54,10 @@ import { enqueue } from './sync';
 import { TopupDialog } from './topup';
 import { CashierSwitch } from './cashier';
 import { Receipt } from './receipt';
+import { WeightDialog, LineDialog } from './line-dialogs';
+
+/** R-EVO-08: the service product of the donations (account 754 at closing). */
+const DONATION_CODE = '01004';
 
 const eur = (c: number) => formatEuro(centsToDecimal(c));
 
@@ -90,6 +99,8 @@ export function SalePage() {
   const parked = useLiveQuery(() => tillDb.drafts.filter((d) => d.parked).toArray(), []);
 
   const scanRef = useRef<HTMLInputElement>(null);
+  const validating = useRef(false);
+  const opIds = useRef<{ draftId: string; id: string }>({ draftId: '', id: '' });
   const [scan, setScan] = useState('');
   const [choices, setChoices] = useState<SnapshotProduct[]>([]);
   const [message, setMessage] = useState<{
@@ -101,6 +112,8 @@ export function SalePage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [memberQuery, setMemberQuery] = useState('');
   const [paying, setPaying] = useState(false);
+  const [review, setReview] = useState<TicketWarning[] | null>(null);
+  const reviewedKey = useRef('');
   const [topup, setTopup] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -125,10 +138,43 @@ export function SalePage() {
   const annual = (types ?? []).find((t) => t.code === 'ANNUAL' && t.active);
   const passing = (types ?? []).find((t) => t.code === 'PASSING' && t.active);
 
+  // R-EVO-03: matches are listed while typing (name search), with the packaging to tell
+  // two variants of a product apart (250 g / 300 g).
+  const typed = scan.trim();
+  const suggestions = useMemo(() => {
+    if (typed.length < 2 || /^\d+$/.test(typed) || (!/\s/.test(typed) && typed.length >= 10))
+      return [];
+    const r = lookupProduct(sellable, typed, 12);
+    return r.kind === 'choices' ? r.products : r.kind === 'found' ? [r.product] : [];
+  }, [typed, sellable]);
+  const listed = suggestions.length ? suggestions : choices;
+
   const focusScan = () => setTimeout(() => scanRef.current?.focus(), 0);
 
   const addLine = async (p: SnapshotProduct, qtyMilli = 1000, weighed = false) => {
     if (!draft) return;
+    const frozen = salesBlockedReason(settings);
+    if (frozen) {
+      setMessage({ kind: 'error', text: frozen });
+      return;
+    }
+    // R-EVO-01: a member or a membership line comes first (a membership or a donation is allowed).
+    if (
+      !membershipProducts.has(p.id) &&
+      p.code !== DONATION_CODE &&
+      lineEntryBlocked({
+        memberId: draft.memberId,
+        hasMembershipLine,
+        requireMemberFirst: settings?.requireMemberFirst,
+      })
+    ) {
+      setChoices([]);
+      setMessage({
+        kind: 'error',
+        text: 'Choisissez d’abord l’adhérent, ou lancez une adhésion de passage.',
+      });
+      return;
+    }
     if (p.saleMode !== 'UNIT' && !weighed && !weighing) {
       setWeighing(p);
       return;
@@ -137,6 +183,20 @@ export function SalePage() {
     setMessage(null);
     setChoices([]);
     focusScan();
+  };
+
+  /** R-EVO-08: a donation is the « Don » service line, its amount typed by the cashier. */
+  const addDonation = async () => {
+    if (!draft) return;
+    const p = sellable.find((x) => x.code === DONATION_CODE);
+    if (!p) {
+      setMessage({ kind: 'error', text: 'Le produit « Don » est introuvable dans le catalogue.' });
+      return;
+    }
+    const existing = draft.lines.findIndex((l) => l.productId === p.id);
+    const index = existing >= 0 ? existing : draft.lines.length;
+    await addLine(p);
+    setEditing(index);
   };
 
   const selectMember = async (m: SnapshotMember | null) => {
@@ -188,7 +248,21 @@ export function SalePage() {
 
   const validate = async (r: PaymentResult) => {
     if (!draft || !meta.session || !meta.device) return;
-    const opId = crypto.randomUUID();
+    // A double click must not make two tickets: one operation id per ticket, one run at a time.
+    if (validating.current) return;
+    validating.current = true;
+    try {
+      await validateTicket(r);
+    } finally {
+      validating.current = false;
+    }
+  };
+
+  const validateTicket = async (r: PaymentResult) => {
+    if (!draft || !meta.session || !meta.device) return;
+    if (opIds.current.draftId !== draft.id)
+      opIds.current = { draftId: draft.id, id: crypto.randomUUID() };
+    const opId = opIds.current.id;
     let number = '';
     const op = await enqueue(
       (deviceSeq) => {
@@ -226,10 +300,15 @@ export function SalePage() {
 
   const startPayment = () => {
     if (!draft?.lines.length) return;
+    const frozen = salesBlockedReason(settings);
+    if (frozen) {
+      setMessage({ kind: 'error', text: frozen });
+      return;
+    }
     if (!draft.memberId && settings && !settings.sellToNonMembers) {
       setMessage({
         kind: 'error',
-        text: 'La vente aux non-adhérents est désactivée : choisissez un adhérent (R-VTE-02).',
+        text: 'La vente aux non-adhérents est désactivée : choisissez un adhérent.',
       });
       return;
     }
@@ -241,8 +320,24 @@ export function SalePage() {
     ) {
       setMessage({
         kind: 'error',
-        text: 'Adhésion expirée : ajoutez l’adhésion au ticket (R-ADH-03).',
+        text: 'Adhésion expirée : ajoutez l’adhésion au ticket.',
       });
+      return;
+    }
+    // Something unusual on the ticket: look at it once more before paying (never blocks).
+    const found = ticketWarnings(
+      draft.lines.map((l) => ({
+        label: l.label,
+        qtyMilli: l.qtyMilli,
+        unitPriceCents: l.unitPriceCents,
+        catalogPriceCents: l.catalogPriceCents,
+        discountCents: l.discountCents,
+      })),
+      0,
+      settings?.thresholds ?? DEFAULT_THRESHOLDS,
+    );
+    if (found.length && reviewedKey.current !== JSON.stringify(draft.lines)) {
+      setReview(found);
       return;
     }
     setPaying(true);
@@ -328,6 +423,15 @@ export function SalePage() {
           <Button type="submit" size="lg" className="h-12">
             OK
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="h-12"
+            onClick={() => void addDonation()}
+          >
+            Don
+          </Button>
         </form>
 
         {message ? (
@@ -344,7 +448,7 @@ export function SalePage() {
           </Alert>
         ) : null}
 
-        {choices.length ? (
+        {listed.length ? (
           <div
             className="grid gap-2 rounded-lg border bg-card p-2"
             role="listbox"
@@ -352,7 +456,7 @@ export function SalePage() {
           >
             <p className="px-1 text-sm text-muted-foreground">Choisissez le produit :</p>
             <div className="grid gap-2 sm:grid-cols-2">
-              {choices.map((p) => (
+              {listed.map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -361,7 +465,15 @@ export function SalePage() {
                   onClick={() => void addLine(p)}
                   className="flex min-h-11 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left hover:bg-accent"
                 >
-                  <span>{p.name}</span>
+                  <span>
+                    {p.name}
+                    {p.unitQty && p.unit ? (
+                      <span className="ml-1 font-medium">
+                        {formatQty(parseQtyToMilli(p.unitQty) ?? 0)} {UNIT_LABELS[p.unit]}
+                      </span>
+                    ) : null}
+                    <span className="block text-xs text-muted-foreground">{p.code}</span>
+                  </span>
                   <span className="tabular-nums text-muted-foreground">
                     {formatEuro(p.salePrice)}
                   </span>
@@ -460,12 +572,15 @@ export function SalePage() {
                     n° {member.number}
                   </span>
                 </p>
-                <p className="text-sm">
+                <p className="text-base">
                   Cagnotte :{' '}
                   <strong
+                    data-testid="till-wallet"
                     className={cn(
-                      'tabular-nums',
-                      balance !== null && balance < 0 && 'text-destructive',
+                      'text-lg tabular-nums',
+                      // R-EVO-04: green when it covers the ticket, red otherwise.
+                      balance !== null &&
+                        (walletTone(balance, total) === 'ok' ? 'text-success' : 'text-destructive'),
                     )}
                   >
                     {balance !== null ? eur(balance) : '—'}
@@ -554,7 +669,7 @@ export function SalePage() {
           )}
           {member && membership !== 'VALID' && annual?.productId && !hasMembershipLine ? (
             <Alert variant="info" className="flex items-center justify-between gap-2">
-              <span>Adhésion à renouveler (R-ADH-03).</span>
+              <span>Adhésion à renouveler.</span>
               <Button
                 size="sm"
                 variant="outline"
@@ -568,7 +683,7 @@ export function SalePage() {
             </Alert>
           ) : null}
           {!member &&
-          draft.lines.length > 0 &&
+          (draft.lines.length > 0 || settings?.requireMemberFirst !== false) &&
           passing?.productId &&
           !hasMembershipLine &&
           settings?.sellToNonMembers ? (
@@ -577,9 +692,13 @@ export function SalePage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
+                onClick={async () => {
                   const p = products.find((x) => x.id === passing.productId);
-                  if (p) void addLine(p);
+                  if (!p) return;
+                  const index = draft.lines.length;
+                  await addLine(p);
+                  // R-EVO-01: the cashier can change the amount of the passing membership.
+                  setEditing(index);
                 }}
               >
                 Adhésion de passage ({formatEuro(passing.price)})
@@ -594,7 +713,9 @@ export function SalePage() {
         >
           {draft.lines.length === 0 ? (
             <li className="p-4 text-center text-sm text-muted-foreground">
-              Ticket vide. Scannez un produit.
+              {settings?.requireMemberFirst !== false && !member
+                ? 'Ticket vide. Choisissez l’adhérent (ou une adhésion de passage), puis scannez un produit.'
+                : 'Ticket vide. Scannez un produit.'}
             </li>
           ) : null}
           {draft.lines.map((l, i) => (
@@ -637,8 +758,16 @@ export function SalePage() {
           <Button
             variant="outline"
             size="lg"
-            onClick={() => {
-              if (window.confirm('Annuler ce ticket ?'))
+            onClick={async () => {
+              if (
+                await confirmNow({
+                  title: 'Annuler ce ticket ?',
+                  message: 'Les lignes et l’adhérent choisis seront effacés.',
+                  confirmLabel: 'Annuler le ticket',
+                  cancelLabel: 'Garder le ticket',
+                  destructive: true,
+                })
+              )
                 void updateDraft(draft.id, () => ({ lines: [], memberId: null, preorderId: null }));
             }}
             disabled={!draft.lines.length && !draft.memberId}
@@ -689,6 +818,13 @@ export function SalePage() {
         line={editing !== null ? (draft.lines[editing] ?? null) : null}
         discountsEnabled={!!settings?.discountsEnabled}
         onClose={() => {
+          // R-EVO-08: a donation left at 0 € is dropped.
+          const l = editing !== null ? draft.lines[editing] : null;
+          const don = sellable.find((x) => x.code === DONATION_CODE);
+          if (l && don && l.productId === don.id && lineCents(l) === 0)
+            void updateDraft(draft.id, (d) => ({
+              lines: d.lines.filter((x) => x.productId !== don.id),
+            }));
           setEditing(null);
           focusScan();
         }}
@@ -701,6 +837,45 @@ export function SalePage() {
           focusScan();
         }}
       />
+      <Dialog
+        open={!!review}
+        onClose={() => {
+          setReview(null);
+          focusScan();
+        }}
+        title="Vérifiez avant d’encaisser"
+        description="Quelque chose sort de l’ordinaire sur ce ticket."
+      >
+        <div className="grid gap-4">
+          <ul className="grid gap-2" aria-label="Points à vérifier">
+            {(review ?? []).map((w, i) => (
+              <li key={i} className="rounded-md border border-warning/50 bg-warning/10 px-3 py-2">
+                {w.message}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReview(null);
+                focusScan();
+              }}
+            >
+              Corriger le ticket
+            </Button>
+            <Button
+              onClick={() => {
+                reviewedKey.current = JSON.stringify(draft?.lines ?? []);
+                setReview(null);
+                setPaying(true);
+              }}
+            >
+              C’est correct, encaisser
+            </Button>
+          </div>
+        </div>
+      </Dialog>
       <PaymentDialog
         open={paying}
         totalCents={total}
@@ -739,161 +914,3 @@ export function SalePage() {
 }
 
 /** R-VTE-04: quantity pad for products sold by weight or volume, 3 decimals. */
-function WeightDialog({
-  product,
-  onClose,
-  onConfirm,
-}: {
-  product: SnapshotProduct | null;
-  onClose: () => void;
-  onConfirm: (qtyMilli: number) => void;
-}) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setValue('');
-    setError(null);
-  }, [product]);
-  const unit = product?.unit ? UNIT_LABELS[product.unit] : '';
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const q = parseQtyToMilli(value);
-    if (q === null || q <= 0) return setError('Quantité invalide (3 décimales au plus).');
-    onConfirm(q);
-  };
-  return (
-    <Dialog
-      open={!!product}
-      onClose={onClose}
-      title={product?.name ?? ''}
-      description={product ? `${formatEuro(product.salePrice)} / ${unit || 'unité'}` : undefined}
-    >
-      <form onSubmit={submit} className="grid gap-4">
-        <Field label={`Quantité${unit ? ` (${unit})` : ''}`} error={error ?? undefined}>
-          {(p) => (
-            <Input
-              {...p}
-              inputMode="decimal"
-              autoFocus
-              className="h-12 text-xl"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          )}
-        </Field>
-        {product && parseQtyToMilli(value) ? (
-          <p className="text-lg">
-            Montant :{' '}
-            <strong>
-              {eur(
-                lineCents({
-                  qtyMilli: parseQtyToMilli(value)!,
-                  unitPriceCents: decimalToCents(product.salePrice),
-                  discountCents: 0,
-                  productId: '',
-                  label: '',
-                  catalogPriceCents: 0,
-                }),
-              )}
-            </strong>
-          </p>
-        ) : null}
-        <Button type="submit" size="lg">
-          Ajouter au ticket
-        </Button>
-      </form>
-    </Dialog>
-  );
-}
-
-/** R-VTE-06 / R-VTE-07: quantity, price (traced as different from the catalogue) and discount. */
-function LineDialog({
-  line,
-  discountsEnabled,
-  onClose,
-  onSave,
-}: {
-  line: DraftLine | null;
-  discountsEnabled: boolean;
-  onClose: () => void;
-  onSave: (l: DraftLine | null) => void;
-}) {
-  const [qty, setQty] = useState('');
-  const [price, setPrice] = useState('');
-  const [discount, setDiscount] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    if (line) {
-      setQty(formatQty(line.qtyMilli));
-      setPrice(centsToDecimal(line.unitPriceCents).replace('.', ','));
-      setDiscount(line.discountCents ? centsToDecimal(line.discountCents).replace('.', ',') : '');
-      setError(null);
-    }
-  }, [line]);
-  if (!line) return null;
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const q = parseQtyToMilli(qty);
-    const p = parseAmountToCents(price);
-    let d = 0;
-    if (discount.trim().endsWith('%')) {
-      const pct = Number(discount.replace('%', '').replace(',', '.'));
-      if (!Number.isFinite(pct) || pct < 0 || pct > 100) return setError('Remise invalide.');
-      d = percentDiscountCents({ qtyMilli: q ?? 0, unitPriceCents: p ?? 0 }, pct);
-    } else if (discount.trim()) {
-      d = parseAmountToCents(discount) ?? -1;
-    }
-    if (q === null || q <= 0) return setError('Quantité invalide.');
-    if (p === null || p < 0) return setError('Prix invalide.');
-    if (d < 0) return setError('Remise invalide.');
-    const next = { ...line, qtyMilli: q, unitPriceCents: p, discountCents: d };
-    if (lineCents(next) < 0) return setError('La remise dépasse le montant de la ligne.');
-    onSave(next);
-  };
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={line.label}
-      description={`Prix catalogue : ${eur(line.catalogPriceCents)}`}
-    >
-      <form onSubmit={submit} className="grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Quantité">
-            {(p) => (
-              <Input
-                {...p}
-                inputMode="decimal"
-                autoFocus
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-              />
-            )}
-          </Field>
-          <Field label="Prix unitaire (€)">
-            {(p) => (
-              <Input
-                {...p}
-                inputMode="decimal"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-              />
-            )}
-          </Field>
-        </div>
-        {discountsEnabled ? (
-          <Field label="Remise" hint="En euros (2,50) ou en pourcentage (10 %).">
-            {(p) => <Input {...p} value={discount} onChange={(e) => setDiscount(e.target.value)} />}
-          </Field>
-        ) : null}
-        {error ? <Alert>{error}</Alert> : null}
-        <div className="flex justify-between gap-2">
-          <Button variant="outline" className="text-destructive" onClick={() => onSave(null)}>
-            <Trash2 /> Supprimer la ligne
-          </Button>
-          <Button type="submit">Valider</Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}

@@ -45,6 +45,15 @@ import { PreordersPage } from './routes/shop/staff';
 import { StatsPage } from './routes/stats/stats-page';
 import { ImportsPage } from './routes/stats/imports-page';
 import { IntegrityPage } from './routes/admin/integrity';
+import { HelpPage } from './routes/help';
+import {
+  ActivityPage,
+  BackupsPage,
+  EmailsPage,
+  ErrorsPage,
+  MonitoringLayout,
+  ReviewPage,
+} from './routes/monitoring/pages';
 import { MyHouseholdPage } from './routes/shop/household';
 import { ReviewsModerationPage } from './routes/catalog/reviews';
 import { ReportsPage } from './routes/compta/reports';
@@ -449,6 +458,44 @@ const adminAuditRoute = createRoute({
   path: '/journal',
   component: AuditPage,
 });
+const helpRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/aide',
+  component: HelpPage,
+});
+
+const monitoringRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/surveillance',
+  beforeLoad: requireRoles(['ADMIN', 'COMPTA']),
+  component: MonitoringLayout,
+});
+const monitoringIndexRoute = createRoute({
+  getParentRoute: () => monitoringRoute,
+  path: '/',
+  component: ReviewPage,
+});
+const monitoringErrorsRoute = createRoute({
+  getParentRoute: () => monitoringRoute,
+  path: '/erreurs',
+  component: ErrorsPage,
+});
+const monitoringEmailsRoute = createRoute({
+  getParentRoute: () => monitoringRoute,
+  path: '/courriels',
+  component: EmailsPage,
+});
+const monitoringActivityRoute = createRoute({
+  getParentRoute: () => monitoringRoute,
+  path: '/activite',
+  component: ActivityPage,
+});
+const monitoringBackupsRoute = createRoute({
+  getParentRoute: () => monitoringRoute,
+  path: '/sauvegardes',
+  component: BackupsPage,
+});
+
 const adminIntegrityRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/controles',
@@ -521,6 +568,14 @@ const routeTree = rootRoute.addChildren([
       proposalsRoute,
       planRoute,
       yearClosingRoute,
+    ]),
+    helpRoute,
+    monitoringRoute.addChildren([
+      monitoringIndexRoute,
+      monitoringErrorsRoute,
+      monitoringEmailsRoute,
+      monitoringBackupsRoute,
+      monitoringActivityRoute,
     ]),
     adminRoute.addChildren([
       adminIndexRoute,
