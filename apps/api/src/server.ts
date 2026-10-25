@@ -11,8 +11,16 @@ loadEnv();
 const config = loadConfig();
 const pool = createPool(config.DATABASE_URL);
 const db = createDb(pool);
+// The background jobs write through their own connections: their changes are labelled « job »
+// in data_change, and are not mistaken for changes made by hand (integrity check AUD-01).
+const jobsPool = createPool(config.DATABASE_URL, 3, 'job');
+const jobsDb = createDb(jobsPool);
 
-if (config.MIGRATE_ON_START) await migrateAndSeed(db, config.MIGRATIONS_DIR);
+if (config.MIGRATE_ON_START) {
+  const migrationPool = createPool(config.DATABASE_URL, 1, 'migration');
+  await migrateAndSeed(createDb(migrationPool), config.MIGRATIONS_DIR);
+  await migrationPool.end();
+}
 
 const app = await buildApp(db, config, {
   logger:
@@ -23,11 +31,11 @@ const app = await buildApp(db, config, {
         }
       : { level: config.LOG_LEVEL },
 });
-const stopMailer = startMailer(db, config, app.log);
-const stopReminders = startReminderJob(db, app.log, config);
-const stopInvoiceAlerts = startInvoiceAlertJob(db, app.log);
-const stopIntegrity = startIntegrityJob(db, app.log);
-const stopDigest = startDailyDigestJob(db, config, app.log);
+const stopMailer = startMailer(jobsDb, config, app.log);
+const stopReminders = startReminderJob(jobsDb, app.log, config);
+const stopInvoiceAlerts = startInvoiceAlertJob(jobsDb, app.log);
+const stopIntegrity = startIntegrityJob(jobsDb, app.log);
+const stopDigest = startDailyDigestJob(jobsDb, config, app.log);
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} reçu, arrêt.`);
@@ -38,6 +46,7 @@ const shutdown = async (signal: string) => {
   stopDigest();
   await app.close();
   await pool.end();
+  await jobsPool.end();
   process.exit(0);
 };
 process.on('SIGINT', () => void shutdown('SIGINT'));

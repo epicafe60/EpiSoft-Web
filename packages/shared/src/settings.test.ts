@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SETTING_DEFAULTS, SETTING_KEYS, isSettingKey, settingSchemas } from './settings';
+import { DEFAULT_THRESHOLDS } from './controls';
 
 describe('settings', () => {
   it('every default value is accepted by its own schema', () => {
@@ -71,5 +72,21 @@ describe('settings', () => {
       settingSchemas['catalog.pricing'].safeParse({ targetMarkupPct: 25, rounding: 2 }).success,
     ).toBe(false);
     expect(settingSchemas['labels.layout'].safeParse({ perPage: 30 }).success).toBe(false);
+  });
+});
+
+describe('controls.thresholds saved by an earlier version', () => {
+  it('keeps the values the administrators chose and fills the thresholds added since', () => {
+    const { closingOthersActiveMin: _added, ...older } = DEFAULT_THRESHOLDS;
+    const parsed = settingSchemas['controls.thresholds'].parse({ ...older, priceDeviationPct: 30 });
+    expect(parsed.priceDeviationPct).toBe(30);
+    expect(parsed.closingOthersActiveMin).toBe(DEFAULT_THRESHOLDS.closingOthersActiveMin);
+  });
+
+  it('still refuses a value that is not a number', () => {
+    expect(
+      settingSchemas['controls.thresholds'].safeParse({ ...DEFAULT_THRESHOLDS, qtyMax: 'beaucoup' })
+        .success,
+    ).toBe(false);
   });
 });

@@ -83,6 +83,13 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       if (!ok || !user) throw new HttpProblem(401, 'Connexion refusée', INVALID_CREDENTIALS);
 
       await app.startSession(reply, req, user.id, log!.id);
+      await audit(db, req, {
+        action: 'auth.login',
+        entity: 'member',
+        entityId: user.id,
+        actorId: user.id,
+        after: { device },
+      });
       return reply.status(204).send();
     },
   );
@@ -92,6 +99,8 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
     if (loginLogId) {
       await db.update(loginLog).set({ logoutAt: new Date() }).where(eq(loginLog.id, loginLogId));
     }
+    if (req.user)
+      await audit(db, req, { action: 'auth.logout', entity: 'member', entityId: req.user.id });
     return reply.status(204).send();
   });
 
@@ -119,7 +128,16 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
         columns: { id: true, email: true, firstName: true, status: true },
       });
       if (user?.email && canLogIn(user.status)) {
-        await db.transaction((tx) => sendPasswordLink(tx, config, user));
+        await db.transaction(async (tx) => {
+          await sendPasswordLink(tx, config, user);
+          // Asked by someone not signed in: recorded on the account, the address says from where.
+          await audit(tx, req, {
+            action: 'password.forgot',
+            entity: 'member',
+            entityId: user.id,
+            actorId: user.id,
+          });
+        });
       } else {
         req.log.info(
           { username: req.body.username },

@@ -33,10 +33,10 @@ test('an administrator changes a setting and sees it in the audit log (R-ADM-01,
   await expect(form.getByLabel('Montant (€)')).toHaveValue('150.50');
 
   await page.getByRole('link', { name: 'Journal d’audit' }).click();
-  await expect(page.getByRole('cell', { name: 'Paramètre modifié' }).first()).toBeVisible();
+  await expect(page.getByRole('cell', { name: /a modifié un réglage/ }).first()).toBeVisible();
 
   // The change reads as a comparison (added lines in green, removed in red), not as raw JSON.
-  const row = page.getByRole('row', { name: /Paramètre modifié/ }).first();
+  const row = page.getByRole('row', { name: /a modifié un réglage/ }).first();
   await row.getByText(/^Détail/).click();
   const diff = row.getByRole('group', { name: 'Comparaison avant / après' });
   await expect(diff).toContainText('150.5');

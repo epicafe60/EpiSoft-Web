@@ -110,10 +110,17 @@ export default fp<{ db: Db; config: Config }>(async (app, { db, config }) => {
 
 async function loadUser(db: Db, sessionId: string): Promise<AuthUser | null> {
   const [s] = await db
-    .select({ memberId: session.memberId, actingAsId: session.actingAsId })
+    .select({
+      memberId: session.memberId,
+      actingAsId: session.actingAsId,
+      lastSeenAt: session.lastSeenAt,
+    })
     .from(session)
     .where(and(eq(session.id, sessionId), gt(session.expiresAt, new Date())));
   if (!s) return null;
+  // Who is connected (R-SES-06): the time of the last request, noted at most once a minute.
+  if (Date.now() - s.lastSeenAt.getTime() > 60_000)
+    await db.update(session).set({ lastSeenAt: new Date() }).where(eq(session.id, sessionId));
   const real = await loadMember(db, s.memberId);
   if (!real) return null;
   if (!s.actingAsId) return { ...real, sessionId, impersonator: null };

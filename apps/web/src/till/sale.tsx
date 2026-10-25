@@ -52,7 +52,6 @@ import { PreorderPickupDialog, type PickupOrder } from './preorders';
 import { PaymentDialog, type PaymentResult } from './payment';
 import { enqueue } from './sync';
 import { TopupDialog } from './topup';
-import { CashierSwitch } from './cashier';
 import { Receipt } from './receipt';
 import { WeightDialog, LineDialog } from './line-dialogs';
 
@@ -115,7 +114,6 @@ export function SalePage() {
   const [review, setReview] = useState<TicketWarning[] | null>(null);
   const reviewedKey = useRef('');
   const [topup, setTopup] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const [picking, setPicking] = useState(false);
   const [lastSale, setLastSale] = useState<Extract<SyncOp, { kind: 'SALE' }>['payload'] | null>(
     null,
@@ -786,14 +784,6 @@ export function SalePage() {
         >
           <ShoppingBasket /> Précommandes
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setSwitching(true)}
-          className="justify-self-start"
-        >
-          Changer de caissier (badge)
-        </Button>
       </section>
 
       <PreorderPickupDialog
@@ -901,13 +891,6 @@ export function SalePage() {
         sale={lastSale}
         associationName={settings?.associationName ?? 'Épicafé'}
         memberName={lastMemberName}
-      />
-      <CashierSwitch
-        open={switching}
-        onClose={() => {
-          setSwitching(false);
-          focusScan();
-        }}
       />
     </div>
   );

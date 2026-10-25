@@ -1,6 +1,7 @@
 import { eq, inArray } from 'drizzle-orm';
 import webpush from 'web-push';
 import type { FastifyBaseLogger } from 'fastify';
+import { auditSystem } from './audit';
 import { pushSubscription, type Db } from '@episoft/db';
 import type { Config } from '../config';
 
@@ -55,7 +56,16 @@ export async function sendPush(
         }
       }),
     );
-    if (gone.length) await db.delete(pushSubscription).where(inArray(pushSubscription.id, gone));
+    if (gone.length)
+      await db.transaction(async (tx) => {
+        await tx.delete(pushSubscription).where(inArray(pushSubscription.id, gone));
+        await auditSystem(tx, {
+          action: 'push.expired',
+          entity: 'member',
+          entityId: memberId,
+          after: { devices: gone.length },
+        });
+      });
     return sent;
   } catch (e) {
     log?.warn({ err: e }, 'push failed');

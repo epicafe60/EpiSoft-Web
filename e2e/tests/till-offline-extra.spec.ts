@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import pg from 'pg';
 import { login, USERS } from '../fixtures';
+import { closeAllSessions, nameTill } from '../helpers';
 import { PREVIEW_PORT } from '../playwright.config';
 import { SEED } from '../seed';
 
@@ -21,10 +22,10 @@ async function query<T>(sql: string): Promise<T[]> {
 
 /** Declares a till, opens its session, and waits until the service worker controls the page. */
 async function startTill(page: Page, device: string) {
+  await closeAllSessions();
+  await nameTill(page, device);
   await login(page, USERS.cashier);
   await page.goto('/caisse');
-  await page.getByLabel('Nom du poste').fill(device);
-  await page.getByRole('button', { name: 'Déclarer le poste' }).click();
   await page.getByLabel('Fond de caisse (€)').fill('50');
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
   await expect(page.getByLabel('Scanner ou rechercher un produit (F2)')).toBeVisible();

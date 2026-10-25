@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -47,6 +48,8 @@ const updatedAt = () =>
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date());
+/** A transaction id (pg_current_xact_id()), read as a decimal string. */
+const xid8 = customType<{ data: string }>({ dataType: () => 'xid8' });
 
 export const memberStatus = app.enum('member_status', MEMBER_STATUSES);
 
@@ -232,11 +235,52 @@ export const auditLog = app.table(
     before: jsonb('before'),
     after: jsonb('after'),
     ip: text('ip'),
+    /** The database transaction: links the action to the rows it changed (data_change). */
+    // Null for the entries written before migration 0024.
+    xact: xid8('xact').default(sql`pg_current_xact_id()`),
+    /** Set on an « annulation »: the action it undoes. */
+    revertsId: uuid('reverts_id').references((): AnyPgColumn => auditLog.id),
   },
   (t) => [
     index('audit_log_at_idx').on(t.at),
     index('audit_log_entity_idx').on(t.entity, t.entityId),
     index('audit_log_actor_idx').on(t.actorId, t.at),
+    index('audit_log_xact_idx').on(t.xact),
+    index('audit_log_reverts_idx').on(t.revertsId),
+  ],
+);
+
+/**
+ * Every row inserted, changed or deleted in the schema, written by a database trigger (migration
+ * 0024): complete even for changes made outside the application. Secrets are masked, binary
+ * contents replaced by their size. Append-only, like audit_log.
+ */
+export const dataChange = app.table(
+  'data_change',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    at: tz('at')
+      .notNull()
+      .default(sql`clock_timestamp()`),
+    xact: xid8('xact')
+      .notNull()
+      .default(sql`pg_current_xact_id()`),
+    tableName: text('table_name').notNull(),
+    /** The primary key of the row, e.g. {"id": "…"}. */
+    rowKey: jsonb('row_key').$type<Record<string, unknown>>(),
+    /** I, U or D. */
+    op: text('op').notNull(),
+    /** Before: the whole row for D, only the changed columns for U. */
+    old: jsonb('old').$type<Record<string, unknown>>(),
+    /** After: the whole row for I, only the changed columns for U. */
+    new: jsonb('new').$type<Record<string, unknown>>(),
+    /** 'app', 'job:<name>'… ; null for a change made outside the application. */
+    source: text('source'),
+  },
+  (t) => [
+    index('data_change_xact_idx').on(t.xact),
+    index('data_change_row_idx').on(t.tableName, t.rowKey),
+    index('data_change_at_idx').on(t.at),
   ],
 );
 
@@ -603,12 +647,25 @@ export const cashSession = app.table(
     legacyDate: date('legacy_date').unique(),
   },
   (t) => [
-    uniqueIndex('cash_session_one_open_per_device')
-      .on(t.deviceId)
+    // R-SES-05: one drawer, one closing: a single session is open at a time, for the whole shop.
+    uniqueIndex('cash_session_one_open')
+      .on(sql`(true)`)
       .where(sql`${t.status} = 'OPEN'`),
     index('cash_session_opened_idx').on(t.openedAt),
   ],
 );
+
+/**
+ * R-SES-05: a till that opened its own session (offline) while another was open is attached to the
+ * open one when its operation arrives: the sales it made under its own session id are found here.
+ */
+export const cashSessionAlias = app.table('cash_session_alias', {
+  aliasId: uuid('alias_id').primaryKey(),
+  sessionId: uuid('session_id')
+    .notNull()
+    .references(() => cashSession.id),
+  createdAt: createdAt(),
+});
 
 /** R-SES-02: the closing count. Amounts are fixed at closing time. */
 export const cashCount = app.table('cash_count', {

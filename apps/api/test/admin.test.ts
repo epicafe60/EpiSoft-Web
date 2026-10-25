@@ -158,6 +158,7 @@ describe('audit by person', () => {
     ]);
     const res = await t.app.inject({ url: `/api/v1/audit?memberId=${admin.id}`, headers });
     const actions = (res.json() as { action: string }[]).map((r) => r.action).sort();
-    expect(actions).toEqual(['a.did', 'c.on-admin']);
+    // Signing in is recorded too (R-ADM-05).
+    expect(actions).toEqual(['a.did', 'auth.login', 'c.on-admin']);
   });
 });

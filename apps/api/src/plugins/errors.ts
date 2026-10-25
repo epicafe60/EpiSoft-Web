@@ -85,6 +85,7 @@ export default fp<{ db?: Db; config?: Config }>(async (app, opts) => {
         status: err.status,
         detail: err.detail,
         errors: err.errors,
+        ...(err.code ? { code: err.code } : {}),
       };
     } else if (hasZodFastifySchemaValidationErrors(err)) {
       problem = {

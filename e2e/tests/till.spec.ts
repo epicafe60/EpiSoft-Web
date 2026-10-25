@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import pg from 'pg';
 import { login, USERS } from '../fixtures';
+import { closeAllSessions, nameTill } from '../helpers';
 import { SEED } from '../seed';
 
 async function query<T>(sql: string): Promise<T[]> {
@@ -39,12 +40,12 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
     (await query<{ s: string }>(`select stock_qty as s from app.product where code = '111001'`))[0]!
       .s,
   );
+  await closeAllSessions();
+  await nameTill(page, 'E2E');
   await login(page, USERS.cashier);
   await page.goto('/caisse');
 
   // First use: declare the device, then open the session.
-  await page.getByLabel('Nom du poste').fill('E2E');
-  await page.getByRole('button', { name: 'Déclarer le poste' }).click();
   await page.getByLabel('Fond de caisse (€)').fill('100');
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
 

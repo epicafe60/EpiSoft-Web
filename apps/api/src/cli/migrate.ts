@@ -4,7 +4,7 @@ import { loadConfig } from '../config';
 
 loadEnv();
 const config = loadConfig();
-const pool = createPool(config.DATABASE_URL, 1);
+const pool = createPool(config.DATABASE_URL, 1, 'migration');
 try {
   await migrateAndSeed(createDb(pool), config.MIGRATIONS_DIR);
   console.log('Migrations appliquées.');

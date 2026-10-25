@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import pg from 'pg';
 import { login, USERS } from '../fixtures';
+import { closeAllSessions, nameTill } from '../helpers';
 import { SEED } from '../seed';
 
 async function query<T>(sql: string): Promise<T[]> {
@@ -35,9 +36,9 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
   await expect(page.getByText('Reçue', { exact: true })).toBeVisible();
 
   // Sale of 1 at the till.
+  await closeAllSessions();
+  await nameTill(page, 'CYCLE');
   await page.goto('/caisse');
-  await page.getByLabel('Nom du poste').fill('CYCLE');
-  await page.getByRole('button', { name: 'Déclarer le poste' }).click();
   await page.getByLabel('Fond de caisse (€)').fill('0');
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
   const scan = page.getByLabel('Scanner ou rechercher un produit (F2)');

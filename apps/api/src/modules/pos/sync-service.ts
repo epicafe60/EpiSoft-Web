@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import {
   cashSession,
+  cashSessionAlias,
   household,
   member,
   memberPayment,
@@ -34,6 +35,7 @@ import {
   type SyncResult,
   type SyncWarning,
   clockSkew,
+  sessionDayStale,
   ticketWarnings,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -49,6 +51,20 @@ import { currentMembershipEnd, lockedBalanceCents } from './wallet';
 
 /** A business rule refused the operation; it is answered REJECTED, not as an error. */
 export class Rejected extends Error {}
+
+/**
+ * The device itself is refused (not known to the server, or switched off): every operation of the
+ * request would be refused for the same reason, so the till is told with a code it can act on
+ * (R-OFF-03: nothing is lost, the operations stay in its queue).
+ */
+export class DeviceRefused extends Rejected {
+  constructor(
+    readonly code: 'DEVICE_UNKNOWN' | 'DEVICE_DISABLED',
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * The operation cannot be processed *yet* (a cancellation that reached the server before the
@@ -93,7 +109,16 @@ export async function processOps(
   ops: SyncOp[],
 ): Promise<SyncResult[]> {
   const device = await db.query.posDevice.findFirst({ where: eq(posDevice.id, deviceId) });
-  if (!device || !device.active) throw new Rejected('Poste de caisse inconnu ou désactivé.');
+  if (!device)
+    throw new DeviceRefused(
+      'DEVICE_UNKNOWN',
+      'Ce poste de caisse n’est pas connu du serveur. Redéclarez-le : les ventes en attente sont conservées.',
+    );
+  if (!device.active)
+    throw new DeviceRefused(
+      'DEVICE_DISABLED',
+      'Ce poste de caisse a été désactivé par un administrateur. Les ventes en attente sont conservées.',
+    );
 
   const results: SyncResult[] = [];
   for (const op of [...ops].sort((a, b) => a.deviceSeq - b.deviceSeq)) {
@@ -123,12 +148,13 @@ async function processOne(
         // Savepoint: a rejection undoes the partial work but keeps the receipt below.
         result = await tx.transaction(async (sp) => {
           const inner = { ...ctx, tx: sp };
-          const number = await dispatch(inner, op);
+          const done = await dispatch(inner, op);
           return {
             id: op.id,
             status: 'OK' as const,
             warnings: ctx.warnings,
-            ...(number ? { number } : {}),
+            ...(done.number ? { number: done.number } : {}),
+            ...(done.sessionId ? { sessionId: done.sessionId } : {}),
           };
         });
       } catch (e) {
@@ -145,6 +171,12 @@ async function processOne(
             reason: e.message,
           })
           .onConflictDoNothing();
+        await audit(tx, req, {
+          action: 'sync.rejected',
+          entity: 'sync_rejection',
+          entityId: op.id,
+          after: { kind: op.kind, reason: e.message },
+        });
       }
       await tx.insert(syncReceipt).values({ clientId: op.id, deviceId, kind: op.kind, result });
       fresh = true;
@@ -180,32 +212,52 @@ async function processOne(
   }
 }
 
-async function dispatch(ctx: Ctx, op: SyncOp): Promise<string | undefined> {
+async function dispatch(ctx: Ctx, op: SyncOp): Promise<{ number?: string; sessionId?: string }> {
   switch (op.kind) {
     case 'SESSION_OPEN':
-      await openSession(ctx, op.payload);
-      return undefined;
+      return { sessionId: await openSession(ctx, op.payload) };
     case 'SALE':
       // The sale id is the operation id, generated on the device (§6.2: idempotency key).
-      return recordSale(ctx, op.payload, op.deviceSeq, op.id);
+      return { number: await recordSale(ctx, op.payload, op.deviceSeq, op.id) };
     case 'SALE_CANCEL':
-      return cancelSale(ctx, op.payload, op.deviceSeq);
+      return { number: await cancelSale(ctx, op.payload, op.deviceSeq) };
     case 'WALLET_TOPUP':
       await topup(ctx, op.payload);
-      return undefined;
+      return {};
   }
 }
 
 // --- Session ------------------------------------------------------------------------
 
-async function openSession(ctx: Ctx, p: Extract<SyncOp, { kind: 'SESSION_OPEN' }>['payload']) {
-  const open = await ctx.tx.query.cashSession.findFirst({
-    where: and(eq(cashSession.deviceId, ctx.deviceId), eq(cashSession.status, 'OPEN')),
+/**
+ * R-SES-05: one drawer, one closing. The first till to open a session opens the shop's; a till
+ * that opens another one (offline, or at the same moment) is attached to the open one: the
+ * session id it generated becomes an alias, its float is ignored. Returns the session to use.
+ */
+async function openSession(
+  ctx: Ctx,
+  p: Extract<SyncOp, { kind: 'SESSION_OPEN' }>['payload'],
+): Promise<string> {
+  const { tx } = ctx;
+  const alias = await tx.query.cashSessionAlias.findFirst({
+    where: eq(cashSessionAlias.aliasId, p.sessionId),
   });
-  if (open && open.id !== p.sessionId) {
-    throw new Rejected('Une autre session est déjà ouverte sur ce poste. Clôturez-la d’abord.');
+  if (alias) return alias.sessionId;
+  const existing = await tx.query.cashSession.findFirst({ where: eq(cashSession.id, p.sessionId) });
+  if (existing) return existing.id;
+  // Two tills opening at the same moment: one after the other.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('cash_session_open'))`);
+  const open = await tx.query.cashSession.findFirst({ where: eq(cashSession.status, 'OPEN') });
+  if (open) {
+    await tx.insert(cashSessionAlias).values({ aliasId: p.sessionId, sessionId: open.id });
+    await audit(tx, ctx.req, {
+      action: 'session.join',
+      entity: 'cash_session',
+      entityId: open.id,
+      after: { alias: p.sessionId },
+    });
+    return open.id;
   }
-  if (open) return;
   await ctx.tx.insert(cashSession).values({
     id: p.sessionId,
     deviceId: ctx.deviceId,
@@ -219,11 +271,17 @@ async function openSession(ctx: Ctx, p: Extract<SyncOp, { kind: 'SESSION_OPEN' }
     entityId: p.sessionId,
     after: { openingFloat: p.openingFloat },
   });
+  return p.sessionId;
 }
 
 async function sessionOf(ctx: Ctx, sessionId: string, at: Date) {
   // R-EVO-06: a session is the shop's, whichever till opened it: another till may sell in it.
-  const s = await ctx.tx.query.cashSession.findFirst({ where: eq(cashSession.id, sessionId) });
+  const alias = await ctx.tx.query.cashSessionAlias.findFirst({
+    where: eq(cashSessionAlias.aliasId, sessionId),
+  });
+  const s = await ctx.tx.query.cashSession.findFirst({
+    where: eq(cashSession.id, alias?.sessionId ?? sessionId),
+  });
   if (!s) {
     // The session is opened by an operation whose id is the session id. Not received yet (the
     // till that opened it is offline, or sent it later): say « not yet », the ticket is kept
@@ -241,6 +299,13 @@ async function sessionOf(ctx: Ctx, sessionId: string, at: Date) {
   }
   if (s.status === 'CLOSED')
     warn(ctx, 'SESSION_CLOSED', 'La session était déjà clôturée (clôture forcée).');
+  // R-SES-05: the shop's session is the day's; a ticket of a later day is kept, and flagged.
+  if (s.status === 'OPEN' && sessionDayStale(s.openedAt, at))
+    warn(
+      ctx,
+      'SESSION_PREVIOUS_DAY',
+      'La caisse de la veille n’a pas été clôturée : ce ticket est dans la session d’un jour précédent.',
+    );
   return s;
 }
 
@@ -580,6 +645,20 @@ async function recordSale(
   }
   if (ctx.warnings.length)
     await tx.update(sale).set({ warnings: ctx.warnings }).where(eq(sale.id, saleId));
+  await audit(tx, ctx.req, {
+    action: 'sale.create',
+    entity: 'sale',
+    entityId: saleId,
+    after: {
+      number,
+      total: centsToDecimal(totalCents),
+      payments: payments.map((x) => ({ method: x.method, amount: centsToDecimal(x.cents) })),
+      memberId: p.memberId,
+      cashierId: p.cashierId,
+      soldAt: soldAt.toISOString(),
+      ...(ctx.warnings.length ? { warnings: ctx.warnings.map((w) => w.code) } : {}),
+    },
+  });
   return number;
 }
 
@@ -754,6 +833,13 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
     paymentMethod: p.method,
     paymentId: pay!.id,
     createdBy: p.cashierId,
+  });
+  await audit(tx, ctx.req, {
+    action: 'wallet.topup',
+    entity: 'household',
+    entityId: h.id,
+    before: { balanceCents: before },
+    after: { amount: p.amount, method: p.method, at: 'caisse', paymentId: pay!.id },
   });
   // R-EVO-40: the top-up receipt is automatic too (opt-out respected).
   await sendTopupReceipt(tx, h.id, h.referentMemberId, {

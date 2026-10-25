@@ -61,6 +61,12 @@ export interface AuditEntry {
   before: unknown;
   after: unknown;
   ip: string | null;
+  /** The rows it changed are recorded (entries written since the complete record, R-ADM-05). */
+  detailed: boolean;
+  /** An « annulation »: the entry it undoes. */
+  revertsId: string | null;
+  /** Undone since (and not redone). */
+  revertedBy: { id: string; at: string; actorName: string | null } | null;
 }
 
 export const auditQuerySchema = z.object({
@@ -83,6 +89,8 @@ export interface Problem {
   status: number;
   detail?: string;
   errors?: { path: string; message: string }[];
+  /** A stable name for a case the client reacts to (e.g. DEVICE_UNKNOWN), when there is one. */
+  code?: string;
 }
 
 /** Every state-changing request must carry this header (CSRF protection, spec §5.5). */

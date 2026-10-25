@@ -14,7 +14,7 @@ let container: StartedPostgreSqlContainer | undefined;
 export default async function setup({ provide }: GlobalSetupContext) {
   container = await new PostgreSqlContainer('postgres:17').start();
   const url = container.getConnectionUri();
-  const pool = createPool(url, 1);
+  const pool = createPool(url, 1, 'migration');
   try {
     await migrateAndSeed(createDb(pool));
   } finally {

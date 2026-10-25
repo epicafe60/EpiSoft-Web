@@ -182,8 +182,13 @@ export function estimatedBalanceCents(
 
 // --- Cash count and closing (R-SES-02) --------------------------------------------
 
-/** The 12 face values counted at closing, in cents (§2.4.6). */
-export const DENOMINATIONS = [5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
+/**
+ * The 14 face values counted at closing, in cents (§2.4.6): notes from 200 € to 5 €, coins from
+ * 2 € to 1 cent. The 100 and 200 € notes were added on request.
+ */
+export const DENOMINATIONS = [
+  20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1,
+] as const;
 
 export function countedCashCents(counts: Readonly<Record<string, number>>): number {
   return DENOMINATIONS.reduce((s, d) => s + d * Math.max(0, Math.trunc(counts[String(d)] ?? 0)), 0);

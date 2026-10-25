@@ -251,17 +251,19 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
   });
 
   app.post('/admin/emails/:id/resend', { ...staff, schema: idParams }, async (req) => {
-    const [r] = await db
-      .update(emailOutbox)
-      .set({ status: 'PENDING', attempts: 0, lastError: null })
-      .where(and(eq(emailOutbox.id, req.params.id), eq(emailOutbox.status, 'FAILED')))
-      .returning({ id: emailOutbox.id, subject: emailOutbox.subject });
-    if (!r) throw notFound('Courriel introuvable ou déjà reparti.');
-    await audit(db, req, {
-      action: 'email.resend',
-      entity: 'email_outbox',
-      entityId: r.id,
-      after: { subject: r.subject },
+    await db.transaction(async (tx) => {
+      const [r] = await tx
+        .update(emailOutbox)
+        .set({ status: 'PENDING', attempts: 0, lastError: null })
+        .where(and(eq(emailOutbox.id, req.params.id), eq(emailOutbox.status, 'FAILED')))
+        .returning({ id: emailOutbox.id, subject: emailOutbox.subject });
+      if (!r) throw notFound('Courriel introuvable ou déjà reparti.');
+      await audit(tx, req, {
+        action: 'email.resend',
+        entity: 'email_outbox',
+        entityId: r.id,
+        after: { subject: r.subject },
+      });
     });
     return { ok: true };
   });
@@ -295,7 +297,14 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
       const a = Buffer.from(given);
       const b = Buffer.from(expected);
       if (a.length !== b.length || !timingSafeEqual(a, b)) throw unauthorized('Jeton invalide.');
-      await db.insert(backupRun).values({ ...req.body, sizeBytes: req.body.sizeBytes ?? null });
+      await db.transaction(async (tx) => {
+        await tx.insert(backupRun).values({ ...req.body, sizeBytes: req.body.sizeBytes ?? null });
+        await audit(tx, req, {
+          action: 'backup.report',
+          entity: 'backup_run',
+          after: { kind: req.body.kind, ok: req.body.ok, sizeBytes: req.body.sizeBytes ?? null },
+        });
+      });
       return reply.status(204).send();
     },
   );

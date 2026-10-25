@@ -46,7 +46,7 @@ function kill(child: ChildProcess) {
 export default async function globalSetup() {
   const container = await new PostgreSqlContainer('postgres:17').start();
   const url = container.getConnectionUri();
-  const pool = createPool(url, 1);
+  const pool = createPool(url, 1, 'migration');
   const db = createDb(pool);
   await migrateAndSeed(db);
   for (const u of Object.values(USERS)) {

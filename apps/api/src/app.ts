@@ -13,6 +13,7 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Db } from '@episoft/db';
 import type { Config } from './config';
+import { audit } from './lib/audit';
 import auth from './plugins/auth';
 import errors from './plugins/errors';
 import { authRoutes } from './modules/auth/routes';
@@ -46,6 +47,7 @@ import { reviewRoutes } from './modules/preorders/reviews';
 import { favoriteRoutes } from './modules/preorders/favorites';
 import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
+import { revertRoutes } from './modules/admin/revert/routes';
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
@@ -80,6 +82,21 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   }
   await app.register(auth, { db, config });
 
+  // R-ADM-05: every file handed out (Excel, PDF, JSON) is recorded, unless the route already
+  // recorded what it gave (e.g. « a exporté la liste des adhérents »).
+  app.addHook('onSend', async (req, reply, payload) => {
+    const disposition = reply.getHeader('content-disposition');
+    if (typeof disposition !== 'string' || reply.statusCode >= 300 || req.audited || !req.user)
+      return payload;
+    const file = /filename="([^"]+)"/.exec(disposition)?.[1] ?? null;
+    await audit(db, req, {
+      action: 'export.file',
+      entity: 'file',
+      after: { file, url: req.url.split('?')[0] },
+    });
+    return payload;
+  });
+
   await app.register(
     async (api) => {
       await api.register(authRoutes, { db, config });
@@ -113,6 +130,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(seriesRoutes, { db, config });
       await api.register(preorderRoutes, { db, config });
       await api.register(pushRoutes, { db, config });
+      await api.register(revertRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

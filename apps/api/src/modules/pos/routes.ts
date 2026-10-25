@@ -1,10 +1,11 @@
-import { and, desc, eq, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   cashCount,
   cashSession,
+  cashSessionAlias,
   entry,
   member,
   posDevice,
@@ -20,14 +21,16 @@ import {
   countedCashCents,
   decimalToCents,
   DENOMINATIONS,
+  CASHIER_CONNECTED_MIN,
   syncPushSchema,
+  type SessionPresence,
   type PaymentMethod,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { formatParis } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
-import { badRequest, conflict, notFound } from '../../lib/problem';
+import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
 import { euros, saleReceiptEmail } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
@@ -35,7 +38,7 @@ import { closingPdf } from './closing-pdf';
 import { generateSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
-import { NotYet, processOps, Rejected } from './sync-service';
+import { DeviceRefused, NotYet, processOps, Rejected } from './sync-service';
 
 const amount = z
   .string()
@@ -46,6 +49,20 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
   app,
   { db, config },
 ) => {
+  // R-SES-05: the id of a session a till generated and that was attached to the open one
+  // (cash_session_alias) designates that session, wherever a route takes a session id.
+  const resolveSession = async (id: string): Promise<string> =>
+    (
+      await db.query.cashSessionAlias.findFirst({
+        where: eq(cashSessionAlias.aliasId, id),
+      })
+    )?.sessionId ?? id;
+  app.addHook('preHandler', async (req) => {
+    if (!req.routeOptions.url?.includes('/pos/sessions/:id')) return;
+    const params = req.params as { id?: string };
+    if (params.id) params.id = await resolveSession(params.id);
+  });
+
   const cashier = { preHandler: app.requireRoles('CAISSE') };
   const cashierOrAdmin = { preHandler: app.requireRoles('CAISSE', 'ADMIN', 'COMPTA') };
 
@@ -60,10 +77,16 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           where: eq(posDevice.name, req.body.name),
         });
         if (existing) throw conflict('Un poste porte déjà ce nom.');
+        // Two declarations of the same name at the same moment: the database has the last word.
         const [d] = await tx
           .insert(posDevice)
           .values({ name: req.body.name, createdBy: req.user!.id })
-          .returning();
+          .returning()
+          .catch((e: unknown) => {
+            if ((e as { cause?: { code?: string } }).cause?.code === '23505')
+              throw conflict('Un poste porte déjà ce nom.');
+            throw e;
+          });
         await audit(tx, req, {
           action: 'device.create',
           entity: 'pos_device',
@@ -98,14 +121,14 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     async (req) => {
       const device = await db.query.posDevice.findFirst({ where: eq(posDevice.id, req.params.id) });
       if (!device) throw notFound('Poste inconnu.');
+      // R-SES-05: one session for the whole shop, whichever till is asking.
       const open = await db.query.cashSession.findFirst({
-        where: and(eq(cashSession.deviceId, device.id), eq(cashSession.status, 'OPEN')),
+        where: eq(cashSession.status, 'OPEN'),
       });
       const [last] = await db
         .select({ nextFloat: cashCount.nextFloat })
         .from(cashCount)
         .innerJoin(cashSession, eq(cashSession.id, cashCount.sessionId))
-        .where(eq(cashSession.deviceId, device.id))
         .orderBy(desc(cashSession.closedAt))
         .limit(1);
       const settings = await loadSettings(db);
@@ -145,6 +168,8 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
       try {
         return { results: await processOps(db, req, config, req.body.deviceId, req.body.ops) };
       } catch (e) {
+        if (e instanceof DeviceRefused)
+          throw new HttpProblem(400, 'Poste refusé', e.message, undefined, e.code);
         if (e instanceof Rejected) throw badRequest(e.message);
         // A cancellation ahead of its ticket: the till sends it again.
         if (e instanceof NotYet) throw conflict(e.message);
@@ -192,6 +217,77 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         openedAt: r.openedAt.toISOString(),
         closedAt: r.closedAt?.toISOString() ?? null,
       }));
+    },
+  );
+
+  /** R-SES-06: the cashiers signed in lately, for the badges of the till's header. */
+  app.get('/pos/connected', cashierOrAdmin, async (): Promise<{ id: string; name: string }[]> => {
+    const rows = await db.execute<{ id: string; name: string }>(sql`
+      select m.id, m.first_name || ' ' || m.last_name as name
+      from app.member m
+      where exists (select 1 from app.user_role r where r.member_id = m.id and r.role_code = 'CAISSE')
+        and exists (select 1 from app.session s
+                    where s.member_id = m.id and s.expires_at > now()
+                      and s.last_seen_at > now() - make_interval(mins => ${CASHIER_CONNECTED_MIN}))
+      order by m.last_name, m.first_name`);
+    return rows.rows;
+  });
+
+  /**
+   * R-SES-06: who else is still in the session, for the person closing it: the cashiers who sold
+   * in it (last ticket) and the tills that sold in it or reached the server lately.
+   */
+  app.get(
+    '/pos/sessions/:id/presence',
+    { ...cashierOrAdmin, schema: sessionParams },
+    async (req): Promise<SessionPresence> => {
+      const cashiers = await db
+        .select({
+          id: sale.cashierId,
+          name: sql<string>`${member.firstName} || ' ' || ${member.lastName}`,
+          lastSaleAt: sql<Date>`max(${sale.soldAt})`,
+        })
+        .from(sale)
+        .innerJoin(member, eq(member.id, sale.cashierId))
+        .where(and(eq(sale.sessionId, req.params.id), isNull(sale.cancelsSaleId)))
+        .groupBy(sale.cashierId, member.firstName, member.lastName);
+      const devices = await db
+        .select({
+          id: posDevice.id,
+          lastSyncAt: posDevice.lastSyncAt,
+          // The till is told by the name of the person who last sold on it in this session.
+          label: sql<string | null>`(
+            select c.first_name || ' ' || c.last_name from app.sale s
+            join app.member c on c.id = s.cashier_id
+            where s.device_id = pos_device.id and s.session_id = ${req.params.id}
+            order by s.sold_at desc limit 1)`,
+        })
+        .from(posDevice)
+        .where(
+          and(
+            eq(posDevice.active, true),
+            or(
+              gt(posDevice.lastSyncAt, sql`now() - interval '12 hours'`),
+              sql`exists (select 1 from app.sale s where s.device_id = pos_device.id and s.session_id = ${req.params.id})`,
+            ),
+          ),
+        )
+        .orderBy(posDevice.createdAt);
+      return {
+        cashiers: cashiers
+          .filter((c): c is typeof c & { id: string } => !!c.id)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            lastSaleAt: new Date(c.lastSaleAt).toISOString(),
+          }))
+          .sort((a, b) => b.lastSaleAt.localeCompare(a.lastSaleAt)),
+        devices: devices.map((d) => ({
+          id: d.id,
+          label: d.label ?? 'un poste sans vente',
+          lastSyncAt: d.lastSyncAt?.toISOString() ?? null,
+        })),
+      };
     },
   );
 
@@ -305,18 +401,9 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
       }
 
       const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
-      const device = await tx.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
       if (treasurer) {
         await queueEmail(tx, {
-          ...closingReportEmail(
-            treasurer,
-            device?.name ?? '',
-            s.openedAt,
-            closedAt,
-            summary,
-            values,
-            b.forced,
-          ),
+          ...closingReportEmail(treasurer, s.openedAt, closedAt, summary, values, b.forced),
           attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))],
         });
       }
@@ -445,6 +532,8 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           sessionId: z.string().uuid().optional(),
           memberId: z.string().uuid().optional(),
           householdId: z.string().uuid().optional(),
+          /** Every ticket of a day (Paris time), whichever till and session made it. */
+          day: z.string().date().optional(),
           before: z.string().datetime({ offset: true }).optional(),
           limit: z.coerce.number().int().min(1).max(200).default(50),
         }),
@@ -452,12 +541,13 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     },
     async (req) => {
       const q = req.query;
-      if (!q.sessionId && !q.memberId && !q.householdId)
-        throw badRequest('Précisez une session, un membre ou un foyer.');
+      if (!q.sessionId && !q.memberId && !q.householdId && !q.day)
+        throw badRequest('Précisez une session, un jour, un membre ou un foyer.');
       const f: SQL[] = [];
-      if (q.sessionId) f.push(eq(sale.sessionId, q.sessionId));
+      if (q.sessionId) f.push(eq(sale.sessionId, await resolveSession(q.sessionId)));
       if (q.memberId) f.push(eq(sale.memberId, q.memberId));
       if (q.householdId) f.push(eq(sale.householdId, q.householdId));
+      if (q.day) f.push(sql`(${sale.soldAt} at time zone 'Europe/Paris')::date = ${q.day}::date`);
       if (q.before) f.push(lt(sale.soldAt, new Date(q.before)));
       const rows = await db
         .select({
@@ -472,9 +562,14 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           memberId: sale.memberId,
           sessionId: sale.sessionId,
           warnings: sale.warnings,
+          deviceName: posDevice.name,
+          cashierName: sql<
+            string | null
+          >`(select c.first_name || ' ' || c.last_name from app.member c where c.id = ${sale.cashierId})`,
         })
         .from(sale)
         .leftJoin(member, eq(member.id, sale.memberId))
+        .leftJoin(posDevice, eq(posDevice.id, sale.deviceId))
         .where(and(...f))
         .orderBy(desc(sale.soldAt))
         .limit(q.limit);
@@ -528,8 +623,15 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         where: eq(sale.cancelsSaleId, s.id),
         columns: { id: true, number: true },
       });
+      const device = s.deviceId
+        ? await db.query.posDevice.findFirst({
+            where: eq(posDevice.id, s.deviceId),
+            columns: { name: true },
+          })
+        : null;
       return {
         ...s,
+        deviceName: device?.name ?? null,
         soldAt: s.soldAt.toISOString(),
         createdAt: s.createdAt.toISOString(),
         emailSentAt: s.emailSentAt?.toISOString() ?? null,
@@ -572,6 +674,12 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           }),
         );
         await tx.update(sale).set({ emailSentAt: new Date() }).where(eq(sale.id, s.id));
+        await audit(tx, req, {
+          action: 'sale.email_sent',
+          entity: 'sale',
+          entityId: s.id,
+          after: { number: s.number, memberId: m.id },
+        });
       });
       return reply.status(204).send();
     },
@@ -580,7 +688,6 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
 
 function closingReportEmail(
   to: string,
-  deviceName: string,
   openedAt: Date,
   closedAt: Date,
   summary: SessionSummary,
@@ -598,7 +705,7 @@ function closingReportEmail(
   forced: boolean,
 ) {
   const rows: [string, string][] = [
-    ['Poste', deviceName],
+    ['Caissiers', summary.byCashier?.map((c) => c.name).join(', ') || '—'],
     ['Ouverture', formatParis(openedAt)],
     ['Clôture', formatParis(closedAt)],
     ['Tickets', `${summary.salesCount} (annulations : ${summary.cancellationsCount})`],

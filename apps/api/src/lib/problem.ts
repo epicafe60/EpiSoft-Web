@@ -7,6 +7,7 @@ export class HttpProblem extends Error {
     readonly title: string,
     readonly detail?: string,
     readonly errors?: Problem['errors'],
+    readonly code?: string,
   ) {
     super(detail ?? title);
   }

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { cashCount, cashSession, posDevice, type DbOrTx } from '@episoft/db';
+import { cashCount, cashSession, type DbOrTx } from '@episoft/db';
 import { DENOMINATIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from '@episoft/shared';
 import { formatParis } from '../../lib/dates';
 import { eur, keyValues, letterhead, render, table, pdfText } from '../../lib/pdf';
@@ -10,7 +10,6 @@ import { sessionSummary, type SessionSummary } from './closing';
 export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer> {
   const s = await db.query.cashSession.findFirst({ where: eq(cashSession.id, sessionId) });
   if (!s) throw new Error('session not found');
-  const device = await db.query.posDevice.findFirst({ where: eq(posDevice.id, s.deviceId) });
   const count = await db.query.cashCount.findFirst({ where: eq(cashCount.sessionId, s.id) });
   const summary = count ? (count.summary as SessionSummary) : await sessionSummary(db, s.id);
   const settings = await loadSettings(db);
@@ -19,7 +18,7 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
     doc
       .font('Helvetica-Bold')
       .fontSize(16)
-      .text(`Rapport de clôture — caisse ${device?.name ?? ''}`);
+      .text(`Rapport de clôture — session du ${formatParis(s.openedAt).slice(0, 10)}`);
     doc
       .font('Helvetica')
       .fontSize(10)
@@ -38,9 +37,6 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
         ['Encaissements hors ventes en espèces', eur(summary.cashOther)],
         ['Fond initial', eur(summary.openingFloat)],
         // R-EVO-06: shared session, sub-totals by cashier.
-        ...(summary.devices && summary.devices.length > 1
-          ? ([['Postes', summary.devices.join(', ')]] as [string, string][])
-          : []),
         ...((summary.byCashier?.length ?? 0) > 1
           ? summary.byCashier!.map(
               (c) =>

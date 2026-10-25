@@ -291,13 +291,31 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           before: auditLog.before,
           after: auditLog.after,
           ip: auditLog.ip,
+          detailed: sql<boolean>`${auditLog.xact} is not null`,
+          revertsId: auditLog.revertsId,
+          // The undo in effect for this action (one that was itself undone does not count).
+          revertedBy: sql<{ id: string; at: string; actorName: string | null } | null>`(
+            select json_build_object('id', r.id, 'at', r.at, 'actorName', rm.first_name || ' ' || rm.last_name)
+            from app.audit_log r
+            join app.audit_log o on o.id = r.reverts_id
+            left join app.member rm on rm.id = r.actor_id
+            where o.xact = ${auditLog.xact}
+              and not exists (select 1 from app.audit_log rr where rr.reverts_id = r.id)
+            order by r.at desc limit 1)`,
         })
         .from(auditLog)
         .leftJoin(member, eq(member.id, auditLog.actorId))
         .where(and(...filters))
         .orderBy(desc(auditLog.id))
         .limit(q.limit);
-      return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
+      return rows.map((r) => ({
+        ...r,
+        at: r.at.toISOString(),
+        revertedBy: r.revertedBy && {
+          ...r.revertedBy,
+          at: new Date(r.revertedBy.at).toISOString(),
+        },
+      }));
     },
   );
 

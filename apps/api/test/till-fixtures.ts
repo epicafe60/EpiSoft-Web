@@ -29,6 +29,8 @@ export interface Till {
   cashier: Headers;
   admin: Headers;
   cashierId: string;
+  /** « Prénom NOM », as the screens say it. */
+  cashierName: string;
   deviceId: string;
   sessionId: string;
   /** The next device sequence number (operations are numbered by the till). */
@@ -102,6 +104,7 @@ export async function openTill(t: App): Promise<Till> {
     cashier,
     admin,
     cashierId: c.id,
+    cashierName: `${c.firstName} ${c.lastName}`,
     deviceId,
     sessionId,
     nextSeq: () => ++seq,

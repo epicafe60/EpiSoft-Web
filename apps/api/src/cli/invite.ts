@@ -25,7 +25,7 @@ if (!username) {
 
 loadEnv();
 const config = loadConfig();
-const pool = createPool(config.DATABASE_URL, 1);
+const pool = createPool(config.DATABASE_URL, 1, 'cli:invite');
 const db = createDb(pool);
 try {
   const link = await db.transaction(async (tx) => {

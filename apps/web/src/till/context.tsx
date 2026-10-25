@@ -17,7 +17,6 @@ const META_KEYS: (keyof MetaValues)[] = [
   'lastSnapshotAt',
   'lastPushAt',
   'settings',
-  'cashierId',
   'activeDraftId',
 ];
 
@@ -28,6 +27,7 @@ export function TillProvider({ children }: { children: ReactNode }) {
     online: navigator.onLine,
     pushing: false,
     authRequired: false,
+    deviceProblem: null,
     lastError: null,
   });
 
@@ -61,7 +61,7 @@ export function TillProvider({ children }: { children: ReactNode }) {
     settings: meta.settings,
     pendingCount: outbox.filter((o) => o.status === 'PENDING').length,
     rejectedCount: outbox.filter((o) => o.status === 'REJECTED' && !o.acknowledged).length,
-    cashierId: meta.cashierId ?? me.id,
+    cashierId: me.id,
     balanceCents: (householdId) => {
       const h = households.find((x) => x.id === householdId);
       return h ? estimatedBalanceCents(householdId, decimalToCents(h.balance), moves) : null;

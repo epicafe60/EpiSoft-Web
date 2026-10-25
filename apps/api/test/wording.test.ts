@@ -20,7 +20,7 @@ describe('the journal of changes', () => {
   it('has a plain sentence for every action the application records', () => {
     const actions = new Set<string>();
     for (const file of files(join(process.cwd(), 'src')))
-      for (const m of readFileSync(file, 'utf8').matchAll(/action:\s*'([a-z_.]+)'/g))
+      for (const m of readFileSync(file, 'utf8').matchAll(/action:\s*'([a-z_]+\.[a-z_.]+)'/g))
         actions.add(m[1]!);
     expect(actions.size).toBeGreaterThan(50);
     const missing = [...actions].filter((a) => !(a in AUDIT_SENTENCES));

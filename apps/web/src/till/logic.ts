@@ -11,6 +11,14 @@ import {
 } from '@episoft/shared';
 import type { Draft, DraftLine, OutboxEntry } from './db';
 
+/** A name for a till that declares itself: POSTE- and four letters or digits. */
+export function newDeviceName(
+  random: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n)),
+): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I to mistake
+  return `POSTE-${Array.from(random(4), (b) => alphabet[b % alphabet.length]).join('')}`;
+}
+
 export function lineCents(l: DraftLine): number {
   return lineTotalCents(l);
 }

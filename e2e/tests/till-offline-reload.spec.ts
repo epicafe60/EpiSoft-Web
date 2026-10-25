@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { login, USERS } from '../fixtures';
+import { closeAllSessions, nameTill } from '../helpers';
 import { PREVIEW_PORT } from '../playwright.config';
 import { SEED } from '../seed';
 
@@ -10,10 +11,10 @@ test('R-OFF-01 / R-OFF-06: the till reloads, keeps its ticket and sells with no 
   page,
   context,
 }) => {
+  await closeAllSessions();
+  await nameTill(page, 'HORSLIGNE');
   await login(page, USERS.cashier);
   await page.goto('/caisse');
-  await page.getByLabel('Nom du poste').fill('HORSLIGNE');
-  await page.getByRole('button', { name: 'Déclarer le poste' }).click();
   await page.getByLabel('Fond de caisse (€)').fill('50');
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
   const scanInput = page.getByLabel('Scanner ou rechercher un produit (F2)');

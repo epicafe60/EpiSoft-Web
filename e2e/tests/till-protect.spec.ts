@@ -55,6 +55,21 @@ test('a normal ticket goes straight to the payment', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Vérifiez avant d’encaisser' })).toBeHidden();
 });
 
+test('a price very far from the catalogue is checked once before it is paid', async ({ page }) => {
+  await startTill(page, 'PROT8');
+  await scan(page, SEED.chips.ean);
+  await page.getByRole('list', { name: 'Lignes du ticket' }).getByRole('button').first().click();
+  const dialog = page.getByRole('dialog', { name: SEED.chips.name });
+  // 2,50 € sold 0,50 €: 80 % under the catalogue price (the threshold is 50 %).
+  await dialog.getByLabel('Prix unitaire (€)').fill('0,50');
+  await dialog.getByRole('button', { name: 'Valider' }).click();
+  await page.getByRole('button', { name: 'Encaisser' }).click();
+  const review = page.getByRole('dialog', { name: 'Vérifiez avant d’encaisser' });
+  await expect(review.getByRole('list', { name: 'Points à vérifier' })).toContainText(
+    'au lieu de 2,50 €',
+  );
+});
+
 test('a large change has to be checked before the ticket can be validated', async ({ page }) => {
   await startTill(page, 'PROT3');
   await scan(page, SEED.chips.ean);

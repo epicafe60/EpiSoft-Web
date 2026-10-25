@@ -39,6 +39,8 @@ export interface Thresholds {
   sessionHours: number;
   /** A backup older than this many hours is late. */
   backupHours: number;
+  /** Closing the till: another cashier who sold within this many minutes is told about. */
+  closingOthersActiveMin: number;
 }
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
@@ -62,6 +64,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   pendingMin: 15,
   sessionHours: 24,
   backupHours: 26,
+  closingOthersActiveMin: 15,
 };
 
 /** Labels of the thresholds, in the order of the administration screen. */
@@ -89,6 +92,10 @@ export const THRESHOLD_LABELS: Record<keyof Thresholds, { label: string; unit: s
   pendingMin: { label: 'Ticket en attente d’envoi depuis plus de', unit: 'minutes' },
   sessionHours: { label: 'Session de caisse ouverte depuis plus de', unit: 'heures' },
   backupHours: { label: 'Dernière sauvegarde plus ancienne que', unit: 'heures' },
+  closingOthersActiveMin: {
+    label: 'Clôture : un autre caissier a vendu depuis moins de',
+    unit: 'minutes',
+  },
 };
 
 const cents = (euros: number) => Math.round(euros * 100);
@@ -472,4 +479,56 @@ export function memberDuplicates<M extends MemberLike>(
     const op = digits(o.phone);
     return phone.length >= 8 && op.length >= 8 && op.slice(-9) === phone.slice(-9);
   });
+}
+
+// --- The shop's session is the day's (R-SES-05) ---------------------------------------
+
+const PARIS_DAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' });
+
+/** The calendar day in Paris, as YYYY-MM-DD. */
+export const parisDay = (d: Date): string => PARIS_DAY.format(d);
+
+/**
+ * A ticket sold on a later day than the one the session was opened: the session of the day before
+ * was never closed. The ticket is kept (never lost), and flagged.
+ */
+export function sessionDayStale(openedAt: Date, soldAt: Date): boolean {
+  return parisDay(openedAt) < parisDay(soldAt);
+}
+
+/** A cashier is « connected » when their sign-in was used within this many minutes (R-SES-06). */
+export const CASHIER_CONNECTED_MIN = 15;
+
+// --- Closing the shop's till: who else is still there (R-SES-06) ----------------------
+
+export interface SessionPresence {
+  /** Cashiers who sold in the session, with their last ticket. */
+  cashiers: { id: string; name: string; lastSaleAt: string }[];
+  /**
+   * Tills that sold in the session or contacted the server lately, with their last contact. A till
+   * is named by the person who last sold on it: nobody knows the « poste ».
+   */
+  devices: { id: string; label: string; lastSyncAt: string | null }[];
+}
+
+/**
+ * The other cashiers who sold within the last `minutes`: the person closing is told, and asked
+ * to confirm. Never a block: the last one to leave may have forgotten, and anyone can close.
+ */
+export function othersActive(
+  cashiers: SessionPresence['cashiers'],
+  meId: string,
+  now: Date,
+  minutes: number,
+): SessionPresence['cashiers'] {
+  return cashiers.filter((c) => c.id !== meId && minutesSince(c.lastSaleAt, now) <= minutes);
+}
+
+/** Tills whose last contact is older than `minutes`: tickets may still be waiting there. */
+export function silentDevices(
+  devices: SessionPresence['devices'],
+  now: Date,
+  minutes: number,
+): SessionPresence['devices'] {
+  return devices.filter((d) => !d.lastSyncAt || minutesSince(d.lastSyncAt, now) > minutes);
 }

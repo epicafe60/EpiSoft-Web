@@ -135,6 +135,9 @@ export interface SaleListItem {
   memberName: string | null;
   memberId: string | null;
   sessionId: string;
+  /** The till that made the sale (administration only: the cashier is what people know). */
+  deviceName: string | null;
+  cashierName: string | null;
   warnings: { code: string; message: string }[] | null;
   payments: { method: PaymentMethod; amount: string }[];
 }

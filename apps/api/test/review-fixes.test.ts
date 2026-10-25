@@ -221,3 +221,62 @@ describe('an urgent alert', () => {
     expect(await send()).toBe(0);
   });
 });
+
+describe('a device the server does not accept', () => {
+  const pushTo = async (deviceId: string) => {
+    const user = await createUser(t.db, { roles: ['CAISSE'] });
+    const h = await login(t.app, user.username!);
+    const sessionId = randomUUID();
+    return t.app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/push',
+      headers: h,
+      payload: {
+        deviceId,
+        ops: [
+          {
+            kind: 'SESSION_OPEN',
+            id: sessionId,
+            deviceSeq: 1,
+            payload: {
+              sessionId,
+              openedBy: user.id,
+              openedAt: new Date().toISOString(),
+              openingFloat: '50.00',
+            },
+          },
+        ],
+      },
+    });
+  };
+
+  it('answers with a code the till can act on when the device is unknown', async () => {
+    const res = await pushTo(randomUUID());
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'DEVICE_UNKNOWN' });
+    expect(res.json().detail).toContain('Redéclarez');
+  });
+
+  it('answers with another code when the device was switched off', async () => {
+    const [d] = (
+      await t.db.execute(
+        sql`insert into app.pos_device (id, name, active) values (gen_random_uuid(), 'ETEINTE', false) returning id`,
+      )
+    ).rows as { id: string }[];
+    const res = await pushTo(d!.id);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ code: 'DEVICE_DISABLED' });
+  });
+
+  it('leaves the other 400 errors without a code', async () => {
+    const user = await createUser(t.db, { roles: ['CAISSE'] });
+    const res = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/sync/push',
+      headers: await login(t.app, user.username!),
+      payload: { deviceId: 'pas-un-uuid', ops: [] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBeUndefined();
+  });
+});

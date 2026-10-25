@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Ban, CheckCircle2, Clock, RotateCcw, XCircle } from 'lucide-react';
 import {
@@ -10,6 +11,8 @@ import {
   provisionalNumber,
   type SyncOp,
 } from '@episoft/shared';
+import { api } from '@/lib/api';
+import type { SaleDetail, SaleListItem } from '@/lib/types';
 import { formatDateTime } from '@/lib/utils';
 import { confirmNow } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
@@ -50,7 +53,7 @@ function Status({ e }: { e: OutboxEntry }) {
 
 /** The tickets of the current session, from this device's outbox: works offline. */
 export function TicketsPage() {
-  const { meta, cashierId, engine } = useTill();
+  const { meta, cashierId, engine, sync } = useTill();
   const entries = useLiveQuery(() => tillDb.outbox.orderBy('seq').reverse().toArray(), []);
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const [selected, setSelected] = useState<SaleEntry | null>(null);
@@ -106,14 +109,14 @@ export function TicketsPage() {
   };
   if (!entries || !members) return <p className="p-6 text-muted-foreground">Chargement…</p>;
 
-  const cancel = async (s: SaleEntry) => {
+  const cancelSale = async (saleId: string) => {
     await enqueue((deviceSeq) => ({
       kind: 'SALE_CANCEL',
       id: crypto.randomUUID(),
       deviceSeq,
       payload: {
         cancelSaleId: crypto.randomUUID(),
-        saleId: s.id,
+        saleId,
         sessionId: sessionId!,
         cashierId,
         at: new Date().toISOString(),
@@ -125,6 +128,7 @@ export function TicketsPage() {
     setSelected(null);
     setReason('');
   };
+  const cancel = (s: SaleEntry) => cancelSale(s.id);
 
   return (
     <div className="mx-auto grid w-full max-w-4xl gap-4 p-4">
@@ -210,6 +214,18 @@ export function TicketsPage() {
         </Table>
       </Card>
 
+      {sessionId ? (
+        <OtherTills
+          sessionId={sessionId}
+          online={sync.online}
+          localIds={new Set(sales.map((s) => s.id))}
+          cancelled={cancelled}
+          onCancel={cancelSale}
+          reason={reason}
+          setReason={setReason}
+        />
+      ) : null}
+
       <Dialog
         open={!!selected}
         onClose={() => setSelected(null)}
@@ -291,5 +307,170 @@ export function TicketsPage() {
         ) : null}
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * The session is the shop's, whichever till opened it (R-EVO-06): the tickets the other tills made
+ * in it are read from the server (a till only keeps its own in its queue). Needs the network.
+ */
+function OtherTills({
+  sessionId,
+  online,
+  localIds,
+  cancelled,
+  onCancel,
+  reason,
+  setReason,
+}: {
+  sessionId: string;
+  online: boolean;
+  localIds: Set<string>;
+  cancelled: Set<string>;
+  onCancel: (saleId: string) => Promise<void>;
+  reason: string;
+  setReason: (r: string) => void;
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Everyone sees every ticket of the day: tills may each have opened their own session.
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const list = useQuery({
+    queryKey: ['till-day-sales', today],
+    queryFn: () => api.get<SaleListItem[]>(`/pos/sales?day=${today}&limit=200`),
+    enabled: online,
+    refetchInterval: 15_000,
+  });
+  const detail = useQuery({
+    queryKey: ['till-sale', openId],
+    queryFn: () => api.get<SaleDetail>(`/pos/sales/${openId}`),
+    enabled: !!openId && online,
+  });
+  // The cancellation tickets are shown through the ticket they cancel.
+  const cancelledOnServer = new Set(
+    (list.data ?? []).flatMap((s) => (s.cancelsSaleId ? [s.cancelsSaleId] : [])),
+  );
+  const rows = (list.data ?? []).filter((s) => !s.cancelsSaleId && !localIds.has(s.id));
+  const isCancelled = (id: string) => cancelledOnServer.has(id) || cancelled.has(id);
+
+  if (!online)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Les tickets des autres caissiers s’affichent quand la caisse est en ligne.
+      </p>
+    );
+  if (!rows.length) return null;
+  return (
+    <section className="grid gap-2" aria-label="Tickets des autres caissiers">
+      <h2 className="text-lg font-semibold">Tickets des autres caissiers</h2>
+      <Card>
+        <Table>
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Caissier</th>
+              <th>N°</th>
+              <th>Adhérent</th>
+              <th className="text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr
+                key={s.id}
+                className={isCancelled(s.id) ? 'text-muted-foreground line-through' : ''}
+              >
+                <td className="tabular-nums">{formatDateTime(s.soldAt)}</td>
+                <td>{s.cashierName ?? '—'}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => setOpenId(s.id)}
+                  >
+                    {s.number}
+                  </button>
+                </td>
+                <td>{s.memberName ?? 'Sans adhérent'}</td>
+                <td className="text-right tabular-nums">{formatEuro(s.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+      <Dialog
+        open={!!openId}
+        onClose={() => setOpenId(null)}
+        title={`Ticket ${detail.data?.number ?? ''}`}
+        className="max-w-xl"
+      >
+        {detail.data ? (
+          <div className="grid gap-3 text-sm">
+            <p className="text-muted-foreground">
+              {formatDateTime(detail.data.soldAt)} · {detail.data.cashierName ?? 'caissier inconnu'}{' '}
+              · {detail.data.memberName ?? 'Sans adhérent'}
+            </p>
+            <Table>
+              <tbody>
+                {detail.data.lines.map((l) => (
+                  <tr key={l.id}>
+                    <td>{l.label}</td>
+                    <td className="text-right tabular-nums">
+                      {formatQty(parseQtyToMilli(l.qty) ?? 0)}
+                    </td>
+                    <td className="text-right tabular-nums">{formatEuro(l.unitPrice)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <p>
+              {detail.data.payments
+                .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} ${formatEuro(p.amount)}`)
+                .join(' · ')}
+            </p>
+            <p className="text-base font-semibold">Total {formatEuro(detail.data.total)}</p>
+            {detail.data.cancelledBy || isCancelled(detail.data.id) ? (
+              <p className="text-muted-foreground">Ce ticket est annulé.</p>
+            ) : detail.data.sessionId !== sessionId ? (
+              <p className="text-muted-foreground">
+                Ce ticket appartient à une autre session de caisse : seul un administrateur peut
+                l’annuler (Administration).
+              </p>
+            ) : (
+              <div className="grid gap-2 rounded-md border p-3">
+                <Field label="Motif de l’annulation">
+                  {(p) => (
+                    <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />
+                  )}
+                </Field>
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    if (
+                      await confirmNow({
+                        title: 'Annuler ce ticket ?',
+                        message:
+                          'Un ticket d’annulation est créé : il remet le stock et la cagnotte comme avant la vente.',
+                        confirmLabel: 'Annuler le ticket',
+                        cancelLabel: 'Garder le ticket',
+                        destructive: true,
+                      })
+                    ) {
+                      await onCancel(detail.data!.id);
+                      setOpenId(null);
+                    }
+                  }}
+                >
+                  <Ban /> Annuler ce ticket
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-muted-foreground">
+            {detail.error ? detail.error.message : 'Chargement…'}
+          </p>
+        )}
+      </Dialog>
+    </section>
   );
 }

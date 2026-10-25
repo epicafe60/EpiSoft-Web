@@ -4,6 +4,7 @@ import {
   applyPayment,
   closing,
   countedCashCents,
+  DENOMINATIONS,
   estimatedBalanceCents,
   formatSaleNumber,
   isValidEan,
@@ -101,6 +102,11 @@ describe('cagnotte (R-CAG-04, R-OFF-04)', () => {
 describe('closing (R-SES-02)', () => {
   it('counts the 12 face values', () => {
     expect(countedCashCents({ '5000': 1, '200': 3, '1': 4, '7': 99 })).toBe(5000 + 600 + 4);
+    // The 100 and 200 € notes.
+    expect(countedCashCents({ '20000': 2, '10000': 1 })).toBe(50000);
+    expect(DENOMINATIONS).toContain(20000);
+    expect(DENOMINATIONS).toContain(10000);
+    expect([...DENOMINATIONS]).toEqual([...DENOMINATIONS].sort((a, b) => b - a));
   });
 
   it('CA §4.5: float 100, cash sales 50, memberships in cash 12, top-up by cheque 20 → 162', () => {

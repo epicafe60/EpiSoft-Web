@@ -16,7 +16,7 @@ Date: 2026-10-03. Status: proposed, to be confirmed.
 5. **Offline overdraft.** The till refuses a cagnotte payment beyond the limit unless a
    user with the `ADHERENTS` role forces it (logged). A sale made offline with a stale
    balance is accepted by the server with a warning (R-SYNC-04).
-6. **Cashier switch by badge (R-AUTH-04)** is checked on the device against the hashed
+6. **Cashier switch by badge (R-AUTH-04)** — *replaced on 2026-10-25 by a list of the cashiers in the till's header (R-VTE-01); the badge now only identifies a member at the sale.* Original decision: the badge is checked on the device against the hashed
    badges of the snapshot, so it works offline. The server checks the cashier's role when
    the sale arrives and records a warning if needed. No `POST /auth/badge` endpoint.
 7. **Price of a membership.** Changing a membership type's price also changes its service

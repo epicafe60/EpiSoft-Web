@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SnapshotProduct, SyncOp } from '@episoft/shared';
 import type { OutboxEntry } from './db';
 import {
+  newDeviceName,
   addProduct,
   backoffMs,
   draftTotalCents,
@@ -173,5 +174,17 @@ describe('a refused ticket entered again', () => {
       },
     ]);
     expect(draftTotalCents({ lines: again })).toBe(350);
+  });
+});
+
+describe('newDeviceName', () => {
+  it('is POSTE- and four letters or digits, without lookalikes', () => {
+    const name = newDeviceName(() => new Uint8Array([0, 1, 200, 255]));
+    expect(name).toMatch(/^POSTE-[A-HJ-NP-Z2-9]{4}$/);
+    for (let i = 0; i < 50; i++) expect(newDeviceName()).toMatch(/^POSTE-[A-HJ-NP-Z2-9]{4}$/);
+  });
+
+  it('draws different names', () => {
+    expect(new Set(Array.from({ length: 30 }, () => newDeviceName())).size).toBeGreaterThan(25);
   });
 });

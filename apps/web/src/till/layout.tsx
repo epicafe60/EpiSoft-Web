@@ -1,14 +1,16 @@
 import { Link, Outlet } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
 import { DEFAULT_THRESHOLDS, tillHealth } from '@episoft/shared';
 import { ArrowLeft, CloudOff, LogIn, RefreshCw, Wifi } from 'lucide-react';
+import { api } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { formatDateTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { tillDb } from './db';
+import { getMeta, tillDb } from './db';
 import { TillProvider, useTill } from './context';
 
 /** R-OFF-05: permanent indicator — online or not, operations waiting, last synchronisation. */
@@ -56,14 +58,41 @@ function StatusIndicator() {
   );
 }
 
-function CashierName() {
-  const { cashierId } = useTill();
+/**
+ * R-VTE-01 and R-SES-06: the cashier recorded on the tickets is the signed-in user, nobody else.
+ * Badges name the cashiers connected to the shop's till (the signed-in user first, highlighted),
+ * so each one sees who else is there. Offline, only the signed-in user is known.
+ */
+function ConnectedCashiers() {
   const me = useMe();
-  const cashier = useLiveQuery(() => tillDb.members.get(cashierId), [cashierId]);
-  const name = cashier
-    ? `${cashier.firstName} ${cashier.lastName}`
-    : `${me.firstName} ${me.lastName}`;
-  return <span className="truncate">Caissier : {name}</span>;
+  const { sync } = useTill();
+  const { data } = useQuery({
+    queryKey: ['till-connected'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/pos/connected'),
+    enabled: sync.online,
+    refetchInterval: 30_000,
+  });
+  const mine = { id: me.id, name: `${me.firstName} ${me.lastName}` };
+  const others = (data ?? []).filter((c) => c.id !== me.id);
+  return (
+    <ul className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Caissiers connectés">
+      <li
+        className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-medium text-primary-foreground"
+        title="Vous : vos ventes sont comptées à votre nom"
+      >
+        {mine.name}
+      </li>
+      {others.map((c) => (
+        <li
+          key={c.id}
+          className="rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
+          title="Connecté à la caisse"
+        >
+          {c.name}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** What has been waiting too long: offline, old data, tickets not sent, a session left open. */
@@ -101,7 +130,7 @@ function HealthBanners() {
 }
 
 function TillHeader() {
-  const { meta, sync } = useTill();
+  const { sync } = useTill();
   const tab =
     'rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent [&.active]:bg-primary/10 [&.active]:text-primary';
   return (
@@ -114,9 +143,7 @@ function TillHeader() {
         >
           <ArrowLeft className="size-4" /> EpiSoft
         </Link>
-        <span className="font-semibold">
-          {meta.device ? `Caisse ${meta.device.name}` : 'Caisse'}
-        </span>
+        <span className="font-semibold">Caisse</span>
         <nav aria-label="Caisse" className="flex gap-1">
           <Link to="/caisse" className={tab} activeOptions={{ exact: true }}>
             Vente
@@ -128,8 +155,8 @@ function TillHeader() {
             Clôture
           </Link>
         </nav>
-        <span className="hidden min-w-0 flex-1 text-sm text-muted-foreground md:block">
-          <CashierName />
+        <span className="min-w-0 flex-1">
+          <ConnectedCashiers />
         </span>
         <StatusIndicator />
         <Link
@@ -158,7 +185,74 @@ function TillHeader() {
           </Link>
         </div>
       ) : null}
+      {sync.deviceProblem === 'DEVICE_UNKNOWN' ? <DeviceUnknownBanner /> : null}
+      {sync.deviceProblem === 'DEVICE_DISABLED' ? (
+        <div role="alert" className="bg-warning/20 px-4 py-2 text-sm">
+          Ce poste de caisse a été désactivé par un administrateur. Les ventes sont conservées sur
+          ce poste ; demandez-lui de le réactiver (Administration › Caisse).
+        </div>
+      ) : null}
     </>
+  );
+}
+
+/**
+ * The server does not know this device (deleted, or the database was restored): nothing is lost,
+ * the sales wait here. Declaring the device again lets them go.
+ */
+function DeviceUnknownBanner() {
+  const { engine } = useTill();
+  const [name, setName] = useState(() => '');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  useEffect(() => {
+    void getMeta('device').then((device) => setName((n) => n || device?.name || 'CAISSE1'));
+  }, []);
+  const submit = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      await engine.redeclare(name);
+    } catch (e) {
+      setError(
+        e instanceof Error && /porte déjà ce nom/.test(e.message)
+          ? 'Un poste porte déjà ce nom sur le serveur : choisissez un autre nom (par exemple CAISSE2).'
+          : e instanceof Error
+            ? e.message
+            : 'Enregistrement impossible.',
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <div role="alert" className="grid gap-2 bg-warning/20 px-4 py-2 text-sm">
+      <p>
+        Le serveur ne connaît plus ce poste de caisse. Les ventes sont conservées ici et seront
+        envoyées dès que le poste sera redéclaré.
+      </p>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="flex items-center gap-2">
+          Nom du poste
+          <input
+            className="h-8 rounded-md border border-input bg-background px-2 uppercase"
+            value={name}
+            maxLength={40}
+            onChange={(e) => setName(e.target.value.toUpperCase())}
+          />
+        </label>
+        <Button type="submit" size="sm" disabled={pending || !name.trim()}>
+          Redéclarer ce poste
+        </Button>
+        {error ? <span className="text-destructive">{error}</span> : null}
+      </form>
+    </div>
   );
 }
 

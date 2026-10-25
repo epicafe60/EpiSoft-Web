@@ -379,6 +379,37 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
       from app.orphan_references() o`,
   },
   {
+    // R-ADM-07: a change that no action of the journal accounts for.
+    id: 'AUD-01',
+    label: 'Toutes les modifications de la semaine sont expliquées dans le journal',
+    severity: 'warning',
+    query: sql`
+      select to_char(min(d.at) at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI') as ref,
+             string_agg(distinct d.table_name, ', ') || ' : ' || count(*) || ' ligne(s), ' ||
+               case when min(d.source) is null then 'faite(s) directement dans la base'
+                    else 'sans action enregistrée' end as detail,
+             '/admin/journal' as link
+      from app.data_change d
+      where d.at > now() - interval '7 days'
+        and (d.source is null or d.source = 'app')
+        and d.table_name <> 'sync_receipt'
+        and not exists (select 1 from app.audit_log a where a.xact = d.xact)
+      group by d.xact
+      order by min(d.at) desc`,
+  },
+  {
+    id: 'AUD-02',
+    label: 'Chaque table de la base enregistre ses modifications',
+    severity: 'error',
+    query: sql`
+      select c.relname::text as ref, 'modifications non enregistrées' as detail, null as link
+      from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+      where ns.nspname = 'app' and c.relkind in ('r', 'p')
+        and c.relname::text <> all (app.change_capture_excluded())
+        and not exists (select 1 from pg_trigger t
+                        where t.tgrelid = c.oid and t.tgname = 'capture_change' and t.tgenabled <> 'D')`,
+  },
+  {
     id: 'MAIL-01',
     label: 'Les courriels de la semaine sont partis',
     severity: 'warning',

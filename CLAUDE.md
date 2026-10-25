@@ -69,4 +69,5 @@ Rewrite of **EpiSoft**, the management suite of the Epicafé de Montjavoult asso
 - Write business rules as pure functions in `packages/shared`, with unit tests, before using them in the UI or API.
 - Reference spec rule IDs (e.g. `R-VTE-10`) in tests and commit messages.
 - Use parameterized queries only, through Drizzle. Never build SQL by concatenating strings.
+- Everything is audited (ADR 0008): every write calls `audit()` in the same transaction as the change; a new action gets a sentence in `audit-sentences.ts` and an undo decision in `admin/revert/policies.ts`; a migration that adds a table ends with `select app.attach_change_capture();`.
 - Open questions Q1–Q10 (spec §11) are still undecided. Use the documented default and flag it.

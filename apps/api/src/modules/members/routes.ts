@@ -498,6 +498,8 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           })
           .where(eq(member.id, m.id));
         await audit(tx, req, { action: 'member.anonymize', entity: 'member', entityId: m.id });
+        // R-MBR-08: the journals keep that something changed, not the personal values.
+        await tx.execute(sql`select app.scrub_member(${m.id}::uuid)`);
       });
       return { ok: true };
     },

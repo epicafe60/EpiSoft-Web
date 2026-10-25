@@ -1,6 +1,6 @@
 // What the audit journal says, in a sentence a volunteer can read (Surveillance › Derniers
 // changements). The journal itself keeps the raw action and the before/after for the technical
-// team; this is the plain-language layer. A test checks that every audited action has a sentence.
+// team; this is the plain-language layer. `audit()` only accepts the actions listed here.
 
 type After = Record<string, unknown> | null | undefined;
 
@@ -13,7 +13,7 @@ const named = (a: After, ...keys: string[]) => {
   return '';
 };
 
-export const AUDIT_SENTENCES: Record<string, (after: After) => string> = {
+export const AUDIT_SENTENCES = {
   // Accounting
   'account.create': (a) => `a créé un compte comptable${named(a, 'number', 'label')}`,
   'account.update': (a) => `a modifié un compte comptable${named(a, 'number', 'label')}`,
@@ -49,11 +49,20 @@ export const AUDIT_SENTENCES: Record<string, (after: After) => string> = {
   // Till
   'device.create': (a) => `a déclaré un poste de caisse${named(a, 'name')}`,
   'session.open': () => 'a ouvert une session de caisse',
-  'session.close': () => 'a clôturé une session de caisse',
+  'session.join': () => 'a rejoint la session de caisse déjà ouverte',
+  'session.close': (a) =>
+    a?.forced && typeof a.comment === 'string' && a.comment.startsWith('Clôture administrative')
+      ? 'a clôturé d’office une session de caisse'
+      : 'a clôturé une session de caisse',
   'session.reopen': () => 'a rouvert une session de caisse clôturée',
   'session.entry_failed': () => 'La clôture de caisse n’a pas pu générer son écriture comptable',
+  'sale.create': (a) =>
+    `a encaissé un ticket${named(a, 'number')}${a?.total ? ` de ${s(a.total)} €` : ''}`,
   'sale.cancel': (a) => `a annulé un ticket${named(a, 'number')}`,
+  'sale.email_sent': (a) => `a envoyé un ticket par courriel${named(a, 'number')}`,
   'sale.warnings_reviewed': (a) => `a examiné les avertissements d’un ticket${named(a, 'number')}`,
+  'sync.rejected': (a) =>
+    `Un envoi de la caisse a été refusé par le serveur${typeof a?.reason === 'string' ? ` : ${a.reason}` : ''}`,
   'rejection.ack': () => 'a classé un ticket refusé par le serveur',
   'wallet.topup': (a) =>
     `a enregistré un versement sur une cagnotte${a?.amount ? ` de ${s(a.amount)} €` : ''}`,
@@ -75,10 +84,21 @@ export const AUDIT_SENTENCES: Record<string, (after: After) => string> = {
   'household.update': () => 'a modifié un foyer',
   'password.link': () => 'a envoyé un lien de mot de passe',
   'password.reset': () => 'a changé son mot de passe',
+  'password.forgot': () => 'a demandé un lien « mot de passe oublié »',
+  'auth.login': () => 's’est connecté',
+  'auth.logout': () => 's’est déconnecté',
+  'push.subscribe': () => 'a activé les notifications sur un appareil',
+  'push.unsubscribe': () => 'a désactivé les notifications sur un appareil',
+  'favorite.add': () => 'a ajouté un produit à ses favoris',
+  'favorite.remove': () => 'a retiré un produit de ses favoris',
+  'review.write': () => 'a donné son avis sur un produit',
   'impersonate.start': () => 'a pris la place d’un utilisateur (aide à distance)',
   'impersonate.stop': () => 'a repris sa propre place',
   // Catalogue and supplies
   'product.create': (a) => `a créé un produit${named(a, 'name')}`,
+  'product.update': (a) => `a modifié un produit${named(a, 'name')}`,
+  'product.status': (a) =>
+    a?.status === 'ARCHIVED' ? 'a archivé un produit' : 'a changé l’état d’un produit',
   'product.image': () => 'a changé la photo d’un produit',
   'product.bulk_prices': () => 'a modifié des prix en masse',
   'product.labels_done': () => 'a marqué des étiquettes comme imprimées',
@@ -103,7 +123,10 @@ export const AUDIT_SENTENCES: Record<string, (after: After) => string> = {
   'stock.loss': () => 'a déclaré une perte de stock',
   'stock.correction': () => 'a corrigé un stock',
   'stock.batch.add': () => 'a ajouté une date limite de stock',
+  'stock.batch.discard': () => 'a jeté un lot arrivé à date limite',
+  'stock.batch.remove': () => 'a retiré une date limite de stock',
   'inventory.open': (a) => `a ouvert un inventaire${named(a, 'label')}`,
+  'inventory.count': (a) => `a saisi un comptage d’inventaire${named(a, 'product')}`,
   'inventory.validate': () => 'a validé un inventaire',
   'inventory.cancel': () => 'a annulé un inventaire',
   'review.moderate': () => 'a modéré un avis client',
@@ -117,14 +140,25 @@ export const AUDIT_SENTENCES: Record<string, (after: After) => string> = {
   'member.export_all': () => 'a exporté la liste des adhérents',
   'wallet.report_export': () => 'a exporté le rapport des cagnottes',
   'error.ack': (a) => `a classé une erreur du serveur${named(a, 'ref')}`,
+  'staff.notified': (a) => `Message envoyé aux responsables${named(a, 'subject')}`,
+  'push.expired': () => 'Notifications retirées d’un appareil qui ne répond plus',
   'email.resend': () => 'a renvoyé un courriel non parti',
-  error: () => 'Une erreur est survenue',
-  create: () => 'a créé un élément',
-};
+  'export.file': (a) => `a téléchargé un fichier${named(a, 'file')}`,
+  'backup.report': (a) =>
+    a?.kind === 'RESTORE_TEST'
+      ? `Test de restauration ${a?.ok ? 'réussi' : 'en échec'}`
+      : `Sauvegarde ${a?.ok ? 'réussie' : 'en échec'}`,
+  'audit.revert': (a) =>
+    `a annulé une action du journal${typeof a?.reason === 'string' && a.reason ? ` (motif : ${a.reason})` : ''}`,
+} satisfies Record<string, (after: After) => string>;
+
+/** Every action the journal can record. */
+export type AuditAction = keyof typeof AUDIT_SENTENCES;
+export const AUDIT_ACTIONS = Object.keys(AUDIT_SENTENCES) as AuditAction[];
 
 /** The sentence for an audited action (a readable fallback when the action is not known). */
 export function describeAudit(action: string, after?: unknown): string {
-  const f = AUDIT_SENTENCES[action];
+  const f = (AUDIT_SENTENCES as Record<string, (after: After) => string>)[action];
   if (f) return f(after && typeof after === 'object' ? (after as After) : null);
   return `a effectué l’action « ${action.replace(/[._]/g, ' ')} »`;
 }

@@ -31,5 +31,5 @@ test('an administrator acts as a cashier from the menu, sees only their screens,
 
   // The trail names the administrator and who they acted as.
   await page.goto('/admin/journal');
-  await expect(page.getByText('Usurpation démarrée')).toBeVisible();
+  await expect(page.getByText('a pris la place d’un utilisateur (aide à distance)')).toBeVisible();
 });

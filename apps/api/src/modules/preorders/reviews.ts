@@ -101,6 +101,12 @@ export const reviewRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
               updatedAt: sql`now()`,
             },
           });
+        await audit(tx, req, {
+          action: 'review.write',
+          entity: 'product',
+          entityId: p.id,
+          after: { rating: values.rating },
+        });
         return { ok: true };
       }),
   );

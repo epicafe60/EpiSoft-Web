@@ -96,7 +96,6 @@ export interface MetaValues {
   lastSnapshotAt: string | null;
   lastPushAt: string | null;
   settings: TillSettings | null;
-  cashierId: string | null;
   activeDraftId: string | null;
 }
 
@@ -108,7 +107,6 @@ const DEFAULTS: MetaValues = {
   lastSnapshotAt: null,
   lastPushAt: null,
   settings: null,
-  cashierId: null,
   activeDraftId: null,
 };
 

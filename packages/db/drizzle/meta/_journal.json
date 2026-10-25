@@ -169,6 +169,20 @@
       "when": 1792868270478,
       "tag": "0023_orphan_references",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792871414099,
+      "tag": "0024_change_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792931423360,
+      "tag": "0025_one_open_session",
+      "breakpoints": true
     }
   ]
 }

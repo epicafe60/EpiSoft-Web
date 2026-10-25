@@ -1,7 +1,7 @@
 import { shouldDropSession, type Snapshot, type SyncOp, type SyncResult } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { getMeta, setMeta, tillDb, type OutboxEntry, type TillDb } from './db';
-import { backoffMs } from './logic';
+import { backoffMs, newDeviceName } from './logic';
 
 // Sync engine (spec §8.3, R-OFF-02, R-OFF-03). One instance per page; it only talks to the
 // server when online and keeps every operation in IndexedDB until the server has answered.
@@ -11,6 +11,8 @@ export type SyncState = {
   pushing: boolean;
   /** The server refused our session cookie: the user must log in again (sales are kept). */
   authRequired: boolean;
+  /** The server does not accept this device: its sales wait in the queue (R-OFF-03). */
+  deviceProblem: 'DEVICE_UNKNOWN' | 'DEVICE_DISABLED' | null;
   lastError: string | null;
 };
 
@@ -54,6 +56,7 @@ export class SyncEngine {
     online: navigator.onLine,
     pushing: false,
     authRequired: false,
+    deviceProblem: null,
     lastError: null,
   };
   private listeners = new Set<Listener>();
@@ -148,8 +151,9 @@ export class SyncEngine {
           });
         }
       });
+      await this.adoptJoinedSession(results);
       await setMeta('lastPushAt', now, this.db);
-      this.set({ online: true, authRequired: false, lastError: null });
+      this.set({ online: true, authRequired: false, deviceProblem: null, lastError: null });
       // New balances and stock: refresh the replicated data at once.
       void this.refresh();
       return true;
@@ -161,11 +165,68 @@ export class SyncEngine {
           lastError: err?.message ?? String(e),
         });
       if (err?.status === 401) this.set({ authRequired: true });
-      this.set({ online: err ? err.status !== 0 : false, lastError: err?.message ?? String(e) });
+      const code = err?.problem.code;
+      this.set({
+        online: err ? err.status !== 0 : false,
+        deviceProblem: code === 'DEVICE_UNKNOWN' || code === 'DEVICE_DISABLED' ? code : null,
+        lastError: err?.message ?? String(e),
+      });
+      if (code === 'DEVICE_UNKNOWN') void this.redeclareAuto();
       return false;
     } finally {
       this.set({ pushing: false });
     }
+  }
+
+  private redeclaring = false;
+
+  /**
+   * Nobody should have to know about « postes »: a device the server forgot is declared again on
+   * its own, under its old name if that is free, else under a generated one. Only when this fails
+   * (no network, a refusal) does the till show its banner.
+   */
+  private async redeclareAuto(): Promise<void> {
+    if (this.redeclaring) return;
+    this.redeclaring = true;
+    try {
+      const old = (await getMeta('device', this.db))?.name;
+      for (const name of [old, newDeviceName(), newDeviceName(), newDeviceName()]) {
+        if (!name) continue;
+        try {
+          await this.redeclare(name);
+          return;
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 409)) return; // not a taken name: give up
+        }
+      }
+    } finally {
+      this.redeclaring = false;
+    }
+  }
+
+  /**
+   * R-SES-05: the session this till opened (offline, say) was attached to the one already open:
+   * from now on the till works in that one. Its tickets already made under the first id are
+   * found there by the server (alias).
+   */
+  private async adoptJoinedSession(results: SyncResult[]): Promise<void> {
+    const session = await getMeta('session', this.db);
+    const joined = results.find((r) => r.id === session?.id && r.sessionId && r.sessionId !== r.id);
+    if (session && joined?.sessionId)
+      await setMeta('session', { ...session, id: joined.sessionId }, this.db);
+  }
+
+  /**
+   * The server no longer knows this device (deleted, database restored): it declares a new one
+   * under `name`. The queue, the sequence numbers and the open session are kept: the waiting
+   * operations are sent under the new device as soon as it exists.
+   */
+  async redeclare(name: string): Promise<void> {
+    const d = await api.post<{ id: string; name: string }>('/pos/devices', { name: name.trim() });
+    await setMeta('device', d, this.db);
+    this.failures = 0;
+    this.set({ deviceProblem: null, lastError: null });
+    this.kick();
   }
 
   /**

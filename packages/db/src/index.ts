@@ -17,8 +17,9 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 export type DbOrTx = Db | Tx;
 
 // numeric and bigint values are returned as strings by default; keep it that way (exact money).
-export function createPool(url: string, max = 10): pg.Pool {
-  return new pg.Pool({ connectionString: url, max });
+// `source` labels every change made through this pool in data_change (null = made by hand).
+export function createPool(url: string, max = 10, source = 'app'): pg.Pool {
+  return new pg.Pool({ connectionString: url, max, options: `-c episoft.source=${source}` });
 }
 
 export function createDb(pool: pg.Pool): Db {

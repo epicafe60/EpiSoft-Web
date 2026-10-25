@@ -127,6 +127,11 @@ export interface SyncResult {
   status: 'OK' | 'REJECTED';
   /** Final number of a sale (R-SYNC-05). */
   number?: string;
+  /**
+   * Answer to SESSION_OPEN (R-SES-05): the session the till must use. It is the one the till
+   * opened, or the session already open that it was attached to.
+   */
+  sessionId?: string;
   warnings: SyncWarning[];
   error?: string;
 }

@@ -336,12 +336,18 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
         },
         { margin: 0 },
       );
-      if (req.body.markDone) {
-        await db
-          .update(product)
-          .set({ labelPending: false })
-          .where(inArray(product.id, req.body.productIds));
-      }
+      if (req.body.markDone)
+        await db.transaction(async (tx) => {
+          await tx
+            .update(product)
+            .set({ labelPending: false })
+            .where(inArray(product.id, req.body.productIds));
+          await audit(tx, req, {
+            action: 'product.labels_done',
+            entity: 'product',
+            after: { count: req.body.productIds.length, file: 'etiquettes.pdf' },
+          });
+        });
       return reply
         .header('content-disposition', 'inline; filename="etiquettes.pdf"')
         .type('application/pdf')

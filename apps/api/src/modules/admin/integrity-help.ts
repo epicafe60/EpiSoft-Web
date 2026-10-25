@@ -110,6 +110,14 @@ export const INTEGRITY_HELP: Record<string, IntegrityHelp> = {
     what: 'Des lignes pointent vers un élément qui n’existe plus (par exemple des ventes rattachées à un poste de caisse supprimé). La base l’interdit normalement : cela n’arrive qu’après un chargement ou une réparation faits à la main. Une base dans cet état ne se restaure pas proprement depuis sa propre sauvegarde.',
     todo: 'Prévenez l’équipe technique sans attendre, avec la liste affichée. Ne supprimez rien : il faut recréer l’élément manquant (ou rattacher les lignes au bon élément), puis vérifier qu’une sauvegarde se restaure.',
   },
+  'AUD-01': {
+    what: 'Des données ont changé sans qu’aucune action du journal ne l’explique : soit quelqu’un les a modifiées directement dans la base (hors de l’application), soit l’application a oublié d’enregistrer une action.',
+    todo: 'Ouvrez le journal (filtre « Modifications non attribuées ») pour voir ce qui a changé. Si personne de l’équipe technique n’est intervenu ce jour-là, prévenez-la sans attendre.',
+  },
+  'AUD-02': {
+    what: 'Une table de la base n’enregistre pas ses modifications : ce qui y change ne laisse aucune trace et ne peut pas être annulé.',
+    todo: 'Prévenez l’équipe technique : une mise à jour a oublié de brancher l’enregistrement (fonction app.attach_change_capture()).',
+  },
   'MAIL-01': {
     what: 'Des courriels n’ont pas pu partir ces 7 derniers jours (adresse invalide, messagerie en panne).',
     todo: 'Ouvrez Surveillance › Courriels : vérifiez l’adresse, puis renvoyez. Si tous échouent, le réglage de la messagerie est à vérifier.',

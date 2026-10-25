@@ -155,8 +155,9 @@ describe('the new integrity checks', () => {
     // What a manual data load can do: the foreign key is not checked while triggers are off.
     await t.db.transaction(async (tx) => {
       await tx.execute(sql`set local session_replication_role = replica`);
-      await tx.execute(sql`insert into app.cash_session (id, device_id, opened_at, opening_float)
-        values (gen_random_uuid(), ${ghost}, now(), 0)`);
+      // Closed: the shop has a single open session at a time (R-SES-05).
+      await tx.execute(sql`insert into app.cash_session (id, device_id, opened_at, opening_float, status)
+        values (gen_random_uuid(), ${ghost}, now(), 0, 'CLOSED')`);
     });
     expect(await count('REF-01')).toBe(1);
     const report = (await get('/admin/integrity')).json() as {

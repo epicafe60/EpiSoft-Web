@@ -555,7 +555,7 @@ flowchart LR
 - **R-AUTH-01 [corrigé]** Le mot de passe est distinct du QR code et stocké haché (Argon2id). Il doit comporter au moins 10 caractères.
 - **R-AUTH-02 [nouveau]** Réinitialisation du mot de passe par lien envoyé par courriel, valable 1 heure. Le lien « Mot de passe oublié » n'était pas implémenté jusqu'ici.
 - **R-AUTH-03 [nouveau]** Après 5 échecs de connexion, la connexion est bloquée 15 minutes pour cet identifiant.
-- **R-AUTH-04 [nouveau]** Le badge QR sert seulement à *changer de caissier* sur un poste déjà ouvert par un utilisateur authentifié. Il ne donne jamais accès au back-office.
+- **R-AUTH-04 [supprimé]** Plus de changement de caissier par badge : le caissier est l'utilisateur connecté (R-VTE-01). Chacun se connecte avec son compte, même sur un poste partagé. Le badge QR sert uniquement à identifier un adhérent à la vente. Il ne donne jamais accès au back-office.
 - **R-AUTH-05 [reprise + corrigé]** Rôles :
 
   | Rôle | Ancien indice | Accès |
@@ -649,7 +649,7 @@ L'écran de caisse est composé de quatre zones :
 
 **Règles :**
 
-- **R-VTE-01 [reprise]** Le caissier est choisi parmi les utilisateurs ayant le rôle `CAISSE`. Par défaut, c'est l'utilisateur connecté ; on peut en changer par badge QR (R-AUTH-04).
+- **R-VTE-01 [reprise]** Le caissier est choisi parmi les utilisateurs ayant le rôle `CAISSE`. C'est l'utilisateur connecté, sans possibilité de le changer à la caisse : chacun se connecte avec son propre compte.
 - **R-VTE-02 [corrigé]** L'adhérent est facultatif :
   - sans adhérent, la vente est possible si le paramètre « vente aux non-adhérents » est actif ; l'application propose alors d'ajouter l'adhésion de passage ;
   - le paiement par cagnotte exige un adhérent.
@@ -689,7 +689,7 @@ L'écran de caisse est composé de quatre zones :
 
 ### 4.5 Session de caisse, clôture et contrôle
 
-- **R-SES-01 [nouveau]** Une **session de caisse** est ouverte par un caissier sur un poste. Elle porte le fond de caisse initial (repris de la clôture précédente) et rattache tous les tickets.
+- **R-SES-01 [modifié]** La **session de caisse** est celle de la journée et de toute l'épicerie : elle est ouverte par le premier caissier qui arrive, sur n'importe quel poste. Elle porte le fond de caisse initial (repris de la clôture précédente) et rattache tous les tickets (R-SES-05, R-SES-06).
 - **R-SES-02 [corrigé]** La **clôture** n'est plus un transfert de données : les tickets sont déjà définitifs. La clôture :
   1. vérifie que tout est synchronisé (aucun ticket en attente d'envoi sur ce poste) ;
   2. calcule les totaux par mode : espèces, chèques, cartes, cagnotte, virements ; adhésions ; versements cagnotte par mode ;
@@ -700,6 +700,8 @@ L'écran de caisse est composé de quatre zones :
   4. enregistre le nombre de chèques et leur total, et le total des tickets de carte (saisi par le caissier et comparé au total calculé) ;
   5. génère le **brouillon d'écriture comptable** de la session (§4.11, R-CPT-08) ;
   6. produit un **rapport de clôture** PDF, envoyé par courriel au trésorier.
+- **R-SES-05 [nouveau]** Une seule session est ouverte à la fois : un tiroir, une clôture. Un poste qui arrive trouve la session ouverte et la rejoint sans rien demander ; un poste qui en ouvre une hors ligne y est rattaché à l'arrivée de ses opérations (l'identifiant qu'il avait généré devient un alias, son fond de caisse est ignoré, aucune vente n'est perdue). Le poste est déclaré automatiquement, sans nom à saisir. La session d'un jour précédent doit être clôturée avant de vendre (en ligne) ; hors ligne, la vente est conservée et signalée à son arrivée.
+- **R-SES-06 [nouveau]** Tout caissier peut clôturer la session. L'écran de clôture indique les autres caissiers qui ont vendu récemment (seuil réglable, 15 minutes par défaut) et les postes sans nouvelles, et demande une confirmation si un autre caissier est encore actif. Aucun blocage.
 - **R-SES-03 [corrigé]** Une session ne peut être clôturée qu'une fois. La réouverture est réservée à `ADMIN` et journalisée.
 - **R-SES-04 [nouveau]** **Remise en banque :** chaque dépôt d'espèces et chaque remise de chèques (bordereau : liste des chèques, banque émettrice, montant) est enregistré. Cela remplace la table `remcheques`, qui n'était pas utilisée par le logiciel, et alimente les écritures 511200/531000 → 512.
 - **CA :** une session avec 100 € de fond initial, 50 € de ventes en espèces, 12 € d'adhésions en espèces et 20 € de versement cagnotte par chèque donne 162 € d'espèces théoriques.
@@ -975,6 +977,19 @@ Ce processus est aujourd'hui géré dans un tableur Google ; les classes `TCMDEC
 - **R-ADM-02** Journal d'audit consultable : filtre par utilisateur, entité, période ; export.
 - **R-ADM-03** Gestion des appareils de caisse : nom, dernier envoi, ventes en attente de synchronisation.
 - **R-ADM-04** État des sauvegardes (date de la dernière, taille), restauration documentée (§5.6).
+- **R-ADM-05 [nouveau]** Tout est tracé :
+  - chaque action de l'application (y compris connexion, déconnexion, téléchargement de fichier, opération de caisse, envoi refusé, alerte envoyée) écrit une entrée du journal, dans la même transaction que la modification ;
+  - chaque ligne insérée, modifiée ou supprimée dans la base est enregistrée par la base elle-même (`data_change`), même hors de l'application ; les secrets sont masqués, les fichiers remplacés par leur taille ;
+  - le journal et l'enregistrement sont en ajout seul ; l'anonymisation d'un membre (R-MBR-08) efface les valeurs personnelles qu'ils contiennent ;
+  - la simple consultation d'un écran n'est pas tracée.
+- **R-ADM-06 [nouveau]** Annuler une action (administrateur), depuis le journal, avec un motif obligatoire et un aperçu préalable :
+  - fiches et réglages : les valeurs d'avant sont remises ;
+  - opérations de gestion : contre-opération, jamais d'effacement (correction de cagnotte inverse, mouvement de stock inverse, contrepassation d'écriture validée ; versement saisi le jour même : retiré) ;
+  - ticket, clôture de caisse ou d'exercice, réception, inventaire validé : l'annulation se fait depuis l'écran métier, indiqué par un lien ;
+  - impossible (connexion, courriel envoyé, export, anonymisation…) : la raison est affichée ;
+  - si un élément a été modifié depuis, l'annulation est refusée et l'action plus récente est nommée, avec la possibilité de l'annuler d'abord ;
+  - l'annulation est elle-même tracée et peut être annulée.
+- **R-ADM-07 [nouveau]** Contrôles : modifications non attribuées à une action du journal (AUD-01, avertissement), table qui n'enregistre pas ses modifications (AUD-02, erreur) ; liste « Modifications non attribuées » dans le journal.
 
 ### 4.16 Courriels et notifications
 

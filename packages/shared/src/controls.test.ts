@@ -6,8 +6,11 @@ import {
   DEFAULT_THRESHOLDS,
   inventoryImpact,
   memberDuplicates,
+  othersActive,
   purchasePriceFlag,
   sellsBelowCost,
+  sessionDayStale,
+  silentDevices,
   similarNames,
   suggestEmailDomain,
   ticketWarnings,
@@ -283,5 +286,57 @@ describe('bulkPriceImpact', () => {
   });
   it('is empty for no change', () => {
     expect(bulkPriceImpact([])).toMatchObject({ count: 0, avgSalePct: null, bigJumps: 0 });
+  });
+});
+
+describe('sessionDayStale (R-SES-05)', () => {
+  it('is false on the day the session was opened, even after midnight UTC', () => {
+    // 23:30 in Paris (summer time) is 21:30 UTC; 00:30 the next day in Paris is still the next day.
+    expect(
+      sessionDayStale(new Date('2026-10-24T08:00:00+02:00'), new Date('2026-10-24T23:30:00+02:00')),
+    ).toBe(false);
+    expect(
+      sessionDayStale(new Date('2026-10-24T08:00:00+02:00'), new Date('2026-10-24T08:00:00+02:00')),
+    ).toBe(false);
+  });
+
+  it('is true from the next day in Paris', () => {
+    expect(
+      sessionDayStale(new Date('2026-10-24T08:00:00+02:00'), new Date('2026-10-25T00:30:00+02:00')),
+    ).toBe(true);
+  });
+
+  it('is false for a ticket sold the evening before and received the next morning', () => {
+    // What matters is when the ticket was sold, not when it arrives.
+    expect(
+      sessionDayStale(new Date('2026-10-24T08:00:00+02:00'), new Date('2026-10-24T19:00:00+02:00')),
+    ).toBe(false);
+  });
+});
+
+describe('who else is still there when the till is closed (R-SES-06)', () => {
+  const now = new Date('2026-10-25T18:00:00+01:00');
+  const cashiers = [
+    { id: 'me', name: 'Moi', lastSaleAt: '2026-10-25T17:59:00+01:00' },
+    { id: 'a', name: 'Alice', lastSaleAt: '2026-10-25T17:50:00+01:00' },
+    { id: 'b', name: 'Bruno', lastSaleAt: '2026-10-25T16:00:00+01:00' },
+  ];
+
+  it('lists the other cashiers who sold within the delay, never the one closing', () => {
+    expect(othersActive(cashiers, 'me', now, 15).map((c) => c.name)).toEqual(['Alice']);
+    expect(othersActive(cashiers, 'me', now, 5)).toEqual([]);
+    expect(othersActive(cashiers, 'me', now, 200).map((c) => c.name)).toEqual(['Alice', 'Bruno']);
+  });
+
+  it('lists the tills silent for longer than the delay, or never seen', () => {
+    const devices = [
+      { id: '1', label: 'Alice', lastSyncAt: '2026-10-25T17:58:00+01:00' },
+      { id: '2', label: 'Bruno', lastSyncAt: '2026-10-25T17:00:00+01:00' },
+      { id: '3', label: 'un poste sans vente', lastSyncAt: null },
+    ];
+    expect(silentDevices(devices, now, 15).map((d) => d.label)).toEqual([
+      'Bruno',
+      'un poste sans vente',
+    ]);
   });
 });

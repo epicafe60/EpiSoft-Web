@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { login, USERS } from '../fixtures';
-import { closeTillSessions, query, scan, setMemberFirst, startTill } from '../helpers';
+import { closeTillSessions, nameTill, query, scan, setMemberFirst, startTill } from '../helpers';
 import { SEED } from '../seed';
 import { WEB_PORT } from '../playwright.config';
 
@@ -109,19 +109,14 @@ test('R-EVO-06: a second till joins the open session and sells in it', async ({
     timezoneId: 'Europe/Paris',
   });
   const page2 = await other.newPage();
+  await nameTill(page2, 'EVO5');
   await login(page2, USERS.cashier);
   await page2.goto('/caisse');
-  await page2.getByLabel('Nom du poste').fill('EVO5');
-  await page2.getByRole('button', { name: 'Déclarer le poste' }).click();
-  await expect(page2.getByText('Une session est déjà ouverte dans l’épicerie')).toBeVisible({
+  // The session of the shop is open: the second till joins it by itself, nothing to choose.
+  await expect(page2.getByLabel('Scanner ou rechercher un produit (F2)')).toBeVisible({
     timeout: 15_000,
   });
-  // Other scenarios may have left sessions open: join the one of EVO4.
-  await page2
-    .locator('div.justify-between', { hasText: /EVO4, ouverte/ })
-    .getByRole('button', { name: 'Rejoindre cette session' })
-    .click();
-  await expect(page2.getByLabel('Scanner ou rechercher un produit (F2)')).toBeVisible();
+  await expect(page2.getByRole('button', { name: 'Ouvrir la session' })).toHaveCount(0);
 
   const scan2 = page2.getByLabel('Scanner ou rechercher un produit (F2)');
   await scan2.fill(SEED.chips.ean);
@@ -142,5 +137,17 @@ test('R-EVO-06: a second till joins the open session and sells in it', async ({
        where d.name = 'EVO5'`,
     );
   await expect.poll(sessions, { timeout: 20_000 }).toEqual([{ device: 'EVO5', opener: 'EVO4' }]);
+
+  // The first till sees what the second one sold: the session is the shop's.
+  await page.getByRole('link', { name: 'Tickets du jour' }).click();
+  const others = page.getByRole('region', { name: 'Tickets des autres caissiers' });
+  await expect(others.getByRole('row', { name: /Carl CAISSE/ }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await others
+    .getByRole('button', { name: /^T-\d{4}-/ })
+    .first()
+    .click();
+  await expect(page.getByRole('dialog', { name: /^Ticket / })).toContainText('Carl CAISSE');
   await other.close();
 });

@@ -9,8 +9,15 @@ import { hashPassword } from '../src/lib/tokens';
 export const PASSWORD = 'correct horse battery';
 
 export async function setupTestApp() {
-  const pool = createPool(inject('databaseUrl'), 4);
+  // The application writes through its own connections (labelled « app » in data_change); the
+  // tests prepare their data through others (« test »), so that the check below only looks at
+  // what the application wrote.
+  const appPool = createPool(inject('databaseUrl'), 4);
+  const pool = createPool(inject('databaseUrl'), 2, 'test');
   const db = createDb(pool);
+  // What the background jobs use in production: changes labelled « job » (see server.ts).
+  const jobsPool = createPool(inject('databaseUrl'), 2, 'job');
+  const jobsDb = createDb(jobsPool);
   const config = loadConfig({
     NODE_ENV: 'test',
     DATABASE_URL: inject('databaseUrl'),
@@ -18,22 +25,32 @@ export async function setupTestApp() {
     AUTH_RATE_LIMIT_MAX: '100000',
     BACKUP_REPORT_TOKEN: 'test-backup-token-0123456789',
   });
-  const app = await buildApp(db, config);
+  const app = await buildApp(createDb(appPool), config);
   await app.ready();
   return {
     app,
     db,
+    jobsDb,
     config,
     async reset() {
-      // audit_log is append-only (trigger), so TRUNCATE is the only way to clear it.
-      await db.execute(sql`truncate app.audit_log, app.login_log, app.session, app.password_reset_token,
+      const unattributed = await expectAllAttributed(db).catch((e: Error) => e);
+      // audit_log and data_change are append-only (trigger): TRUNCATE is the only way to clear them.
+      await db.execute(sql`truncate app.audit_log, app.data_change, app.login_log, app.session, app.password_reset_token,
         app.email_outbox, app.import_mapping, app.setting, app.user_role, app.member, app.household cascade`);
       // CASCADE reaches the catalogue (member → supplier → product): restore the seeds.
       await seedMembershipTypes(db);
+      // Reported once, by the test that follows the one that left them.
+      if (unattributed) throw unattributed;
     },
     async close() {
-      await app.close();
-      await pool.end();
+      try {
+        await expectAllAttributed(db);
+      } finally {
+        await app.close();
+        await appPool.end();
+        await pool.end();
+        await jobsPool.end();
+      }
     },
   };
 }
@@ -82,4 +99,25 @@ export async function login(
   if (res.statusCode !== 204) throw new Error(`login failed: ${res.statusCode} ${res.body}`);
   const cookie = res.cookies.find((c) => c.name === 'episoft_session')!;
   return { cookie: `${cookie.name}=${cookie.value}`, ...csrf };
+}
+
+/**
+ * R-ADM-05: every row the application changed belongs to a transaction that recorded an action
+ * in the journal. Fails with the tables concerned (an `audit()` forgotten, or called outside the
+ * transaction of the change).
+ */
+export async function expectAllAttributed(db: Db): Promise<void> {
+  const { rows } = await db.execute<{ table_name: string; op: string; n: number }>(sql`
+    select d.table_name, d.op, count(*)::int as n
+    from app.data_change d
+    where d.source = 'app'
+      -- the acknowledgement of an operation that changed nothing else (an opening replayed)
+      and d.table_name <> 'sync_receipt' and not exists (select 1 from app.audit_log a where a.xact = d.xact)
+    group by 1, 2 order by 1, 2`);
+  if (rows.length)
+    throw new Error(
+      `Modifications faites par l’application sans action dans le journal : ${rows
+        .map((r) => `${r.table_name} ${r.op} ×${r.n}`)
+        .join(', ')}`,
+    );
 }

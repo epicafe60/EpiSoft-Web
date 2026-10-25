@@ -66,7 +66,7 @@ const legacy = await openLegacySource({
   local: args.local ? true : args.remote ? false : undefined,
 });
 console.log(`Source : base ${legacy.description}`);
-const pool = createPool(requireEnv('DATABASE_URL'), 1);
+const pool = createPool(requireEnv('DATABASE_URL'), 1, 'legacy');
 const db = createDb(pool);
 const counts: Count[] = [];
 const issues: Issue[] = [];

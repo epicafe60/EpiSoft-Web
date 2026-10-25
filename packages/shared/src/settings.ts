@@ -116,16 +116,19 @@ export const settingSchemas = {
     ),
   }),
   /** Alert thresholds: what the till, the API and the daily check call « unusual ». */
+  // A threshold added by a later version is absent from what was saved before: it takes its
+  // default, and the values the administrators chose are kept (never all dropped).
   'controls.thresholds': z.object(
     Object.fromEntries(
-      Object.keys(DEFAULT_THRESHOLDS).map((k) => [
+      Object.entries(DEFAULT_THRESHOLDS).map(([k, v]) => [
         k,
         z
           .number({ invalid_type_error: 'Nombre attendu.' })
           .min(0, 'Pas de valeur négative.')
-          .max(100000),
+          .max(100000)
+          .default(v),
       ]),
-    ) as Record<keyof typeof DEFAULT_THRESHOLDS, z.ZodNumber>,
+    ) as Record<keyof typeof DEFAULT_THRESHOLDS, z.ZodDefault<z.ZodNumber>>,
   ),
 } as const;
 

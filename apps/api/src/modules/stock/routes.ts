@@ -613,6 +613,22 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .where(
             and(eq(inventoryLine.sessionId, s.id), eq(inventoryLine.productId, line!.productId)),
           );
+        const [p] = await tx
+          .select({ name: product.name })
+          .from(product)
+          .where(eq(product.id, line!.productId));
+        await audit(tx, req, {
+          action: 'inventory.count',
+          entity: 'inventory_session',
+          entityId: s.id,
+          before: { countedQty: line!.countedQty },
+          after: {
+            product: p?.name ?? null,
+            productId: line!.productId,
+            mode: req.body.mode,
+            countedQty: milliToDecimal(counted),
+          },
+        });
         return { productId: line!.productId, countedQty: milliToDecimal(counted) };
       }),
   );

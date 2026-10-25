@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Printer, Send } from 'lucide-react';
 import {
   centsToDecimal,
@@ -10,9 +10,12 @@ import {
   decimalToCents,
   DENOMINATIONS,
   formatEuro,
+  othersActive,
   parseAmountToCents,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
+  silentDevices,
+  type SessionPresence,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
@@ -22,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/inputs';
 import { Dialog } from '@/components/ui/dialog';
+import { confirmNow } from '@/components/confirm';
 import { setMeta } from './db';
 import { useTill } from './context';
 
@@ -58,14 +62,7 @@ interface ClosedReport {
 export function ClosingPage() {
   const { meta } = useTill();
   const [closed, setClosed] = useState<{ report: ClosedReport; openedAt: string } | null>(null);
-  if (closed)
-    return (
-      <Report
-        report={closed.report}
-        openedAt={closed.openedAt}
-        deviceName={meta.device?.name ?? ''}
-      />
-    );
+  if (closed) return <Report report={closed.report} openedAt={closed.openedAt} />;
   if (!meta.session) {
     return (
       <div className="mx-auto w-full max-w-2xl p-4">
@@ -88,7 +85,7 @@ function ClosingForm({
   session: { id: string; openedAt: string; openingFloat: string };
   onClosed: (r: ClosedReport) => void;
 }) {
-  const { sync, pendingCount, engine, settings } = useTill();
+  const { sync, pendingCount, engine, settings, cashierId, meta } = useTill();
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [deposit, setDeposit] = useState('');
   const [chequesCount, setChequesCount] = useState('');
@@ -97,6 +94,7 @@ function ClosingForm({
   const [comment, setComment] = useState('');
   const [force, setForce] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const queryClient = useQueryClient();
 
   const summary = useQuery({
     queryKey: ['session-summary', session.id, pendingCount],
@@ -104,6 +102,29 @@ function ClosingForm({
     enabled: sync.online,
     retry: false,
   });
+
+  // R-SES-06: anyone can close; the closing says who else is still there.
+  const presence = useQuery({
+    queryKey: ['session-presence', session.id],
+    queryFn: () => api.get<SessionPresence>(`/pos/sessions/${session.id}/presence`),
+    enabled: sync.online,
+    retry: false,
+    refetchInterval: 30_000,
+  });
+  const delay = (settings?.thresholds ?? DEFAULT_THRESHOLDS).closingOthersActiveMin;
+  const now = new Date();
+  const stillThere = presence.data
+    ? othersActive(presence.data.cashiers, cashierId, now, delay)
+    : [];
+  const silent = presence.data
+    ? silentDevices(
+        presence.data.devices.filter((d) => d.id !== meta.device?.id),
+        now,
+        delay,
+      )
+    : [];
+  const minutesAgo = (iso: string) =>
+    Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000));
 
   const intCounts = Object.fromEntries(
     DENOMINATIONS.map((d) => [String(d), Math.max(0, Math.trunc(Number(counts[String(d)] || 0)))]),
@@ -139,13 +160,25 @@ function ClosingForm({
       }),
     onSuccess: async (r) => {
       onClosed({ ...r, summary: summary.data! });
+      // The copy of « the open session » kept by the device state is no longer true.
+      queryClient.removeQueries({ queryKey: ['device-state'] });
       await setMeta('session', null);
     },
   });
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (pendingCount > 0 && !force) return;
+    if (
+      stillThere.length &&
+      !(await confirmNow({
+        title: 'Un autre caissier est encore actif',
+        message: `${stillThere.map((c) => c.name).join(', ')} ${stillThere.length > 1 ? 'ont' : 'a'} vendu il y a moins de ${delay} minutes dans cette caisse. Une fois la caisse clôturée, plus personne ne peut y vendre.`,
+        confirmLabel: 'Clôturer quand même',
+        cancelLabel: 'Pas encore',
+      }))
+    )
+      return;
     // R-EVO-05: the count is shown again and has to be confirmed before anything is saved.
     setConfirming(true);
   };
@@ -167,6 +200,26 @@ function ClosingForm({
           <Button size="sm" variant="outline" onClick={() => engine.kick()}>
             <Send /> Envoyer maintenant
           </Button>
+        </Alert>
+      ) : null}
+      {stillThere.length || silent.length ? (
+        <Alert variant="info" className="grid gap-1">
+          {stillThere.length ? (
+            <span>
+              Encore actif dans cette caisse :{' '}
+              {stillThere
+                .map((c) => `${c.name} (dernier ticket il y a ${minutesAgo(c.lastSaleAt)} min)`)
+                .join(', ')}
+              .
+            </span>
+          ) : null}
+          {silent.length ? (
+            <span>
+              Sans nouvelles depuis plus de {delay} minutes :{' '}
+              {silent.map((d) => d.label).join(', ')}. Des tickets peuvent y attendre d’être
+              envoyés.
+            </span>
+          ) : null}
         </Alert>
       ) : null}
       {summary.error ? (
@@ -212,16 +265,31 @@ function ClosingForm({
                 <CardTitle className="text-base">Contrôle</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-1 text-sm">
+                <Row
+                  label="Tickets de la session"
+                  value={`${summary.data.salesCount} (annulations : ${summary.data.cancellationsCount})`}
+                />
+                <Row label="Total des ventes" value={formatEuro(summary.data.salesTotal)} />
+                {PAYMENT_METHODS.filter(
+                  (m) => m !== 'CASH' && decimalToCents(summary.data.byMethod[m] ?? '0') !== 0,
+                ).map((m) => (
+                  <Row
+                    key={m}
+                    label={`dont ${PAYMENT_METHOD_LABELS[m]}`}
+                    value={formatEuro(summary.data.byMethod[m] ?? '0')}
+                  />
+                ))}
                 <Row label="Fond initial" value={formatEuro(summary.data.openingFloat)} />
                 <Row label="Ventes en espèces" value={formatEuro(summary.data.cashSales)} />
                 <Row
                   label="Encaissements hors ventes en espèces"
                   value={formatEuro(summary.data.cashOther)}
                 />
-                {summary.data.devices && summary.data.devices.length > 1 ? (
+                {summary.data.byCashier && summary.data.byCashier.length > 1 ? (
                   <p className="text-xs text-muted-foreground">
-                    Session partagée : ventes de {summary.data.devices.join(', ')} (un seul tiroir,
-                    une seule clôture). Vérifiez que chaque poste a tout envoyé.
+                    Session partagée : ventes de{' '}
+                    {summary.data.byCashier.map((c) => c.name).join(', ')} (un seul tiroir, une
+                    seule clôture). Vérifiez que chacun a tout envoyé.
                   </p>
                 ) : null}
                 {summary.data.byCashier && summary.data.byCashier.length > 1
@@ -394,15 +462,7 @@ function Row({
 }
 
 /** R-SES-02 step 6: the closing report, printable; also e-mailed to the treasurer. */
-function Report({
-  report,
-  openedAt,
-  deviceName,
-}: {
-  report: ClosedReport;
-  openedAt: string;
-  deviceName: string;
-}) {
+function Report({ report, openedAt }: { report: ClosedReport; openedAt: string }) {
   const s = report.summary;
   return (
     <div className="mx-auto grid w-full max-w-2xl gap-4 p-4">
@@ -411,7 +471,7 @@ function Report({
       </Alert>
       <Card className="print-area">
         <CardHeader>
-          <CardTitle>Rapport de clôture — {deviceName}</CardTitle>
+          <CardTitle>Rapport de clôture</CardTitle>
           <p className="text-sm text-muted-foreground">
             Du {formatDateTime(openedAt)} au {formatDateTime(report.closedAt)}
           </p>

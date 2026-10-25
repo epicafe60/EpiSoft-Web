@@ -54,15 +54,16 @@ const SECTIONS: Section[] = [
       {
         question: 'J’ai oublié de clôturer hier',
         answer: [
-          'Un bandeau le signale. Clôturez la session depuis la caisse : le comptage se fait sur le tiroir tel qu’il est aujourd’hui, et un commentaire explique le décalage.',
-          'Si le poste n’est plus disponible, un administrateur peut clôturer la session dans Administration › Caisse.',
+          'La caisse est celle de la journée : à la première connexion du lendemain, elle vous demande de clôturer celle de la veille avant de vendre. Comptez le tiroir tel qu’il est aujourd’hui ; un commentaire explique le décalage.',
+          'N’importe quel caissier peut le faire. Sinon, un administrateur peut clôturer la session dans Administration › Caisse.',
         ],
       },
       {
-        question: 'Une session est déjà ouverte sur une autre caisse',
+        question: 'Plusieurs personnes utilisent la caisse en même temps',
         answer: [
-          'À l’ouverture, « Rejoindre cette session » vous met dans la même session : un seul tiroir, une seule clôture, les ventes de chacun sont comptées par caissier.',
-          'N’ouvrez une session séparée que si ce poste a son propre tiroir.',
+          'Le premier caissier qui arrive ouvre la caisse de la journée ; les suivants la rejoignent tout seuls, d’où qu’ils se connectent. Il n’y a qu’un tiroir et qu’une clôture.',
+          'Chacun se connecte avec son propre compte : vos ventes sont comptées à votre nom. Les tickets de tous sont dans « Tickets du jour ».',
+          'N’importe quel caissier peut clôturer ; la clôture indique si un autre caissier a vendu il y a peu.',
         ],
       },
     ],
