@@ -12,6 +12,11 @@
 #   BACKUP_REPORT_TOKEN   same value as in the API environment (at least 16 characters)
 #   BACKUP_RSYNC_DEST     e.g. user@other-machine:/backups/episoft/   (off-site copy with rsync)
 #   BACKUP_RCLONE_DEST    e.g. mydrive:episoft-backups              (off-site copy with rclone)
+#   BACKUP_DISK_MOUNT     mount point of an external disk, e.g. /mnt/sauvegarde/disque: the dump is
+#                         copied there when it is mounted (BACKUP_DISK_DIR, default
+#                         <mount>/EpiSoft-Backups; BACKUP_DISK_KEEP_DAYS, default 30). A disk that is
+#                         not mounted is reported and makes the script exit 1, like the nightly
+#                         script this one replaces.
 #   BACKUP_KEEP_DAYS      default 14
 set -uo pipefail
 # shellcheck disable=SC1091
@@ -47,6 +52,24 @@ elif [ -n "${BACKUP_RCLONE_DEST:-}" ]; then
     OFFSITE=true || fail "la copie rclone a échoué"
 fi
 
+DISK_MISSING=false
+if [ -n "${BACKUP_DISK_MOUNT:-}" ]; then
+  if mountpoint -q "$BACKUP_DISK_MOUNT"; then
+    DISK_DIR="${BACKUP_DISK_DIR:-$BACKUP_DISK_MOUNT/EpiSoft-Backups}"
+    mkdir -p "$DISK_DIR" && cp "$FILE" "$FILE.sha256" "$DISK_DIR/" || fail "la copie sur le disque a échoué"
+    find "$DISK_DIR" -name 'episoft_*.dump*' -mtime +"${BACKUP_DISK_KEEP_DAYS:-30}" -delete
+    OFFSITE=true
+  else
+    DISK_MISSING=true
+  fi
+fi
+
+# Only the files this script names (episoft_…) are ever deleted.
 find "$DIR" -name 'episoft_*.dump*' -mtime +"$KEEP" -delete
 echo "Backup written: $FILE ($SIZE bytes, $ENTRIES entries, sha256 $SUM, off-site: $OFFSITE)"
+if [ "$DISK_MISSING" = true ]; then
+  echo "ERROR: external disk $BACKUP_DISK_MOUNT is not mounted, no copy outside the server" >&2
+  report BACKUP true "$SIZE" "$SUM" true false "$ENTRIES éléments ; disque externe non monté : pas de copie hors serveur"
+  exit 1
+fi
 report BACKUP true "$SIZE" "$SUM" true "$OFFSITE" "$ENTRIES éléments"

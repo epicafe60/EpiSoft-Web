@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { backupRun } from '@episoft/db';
 import { setupTestApp } from './helpers';
 
@@ -64,5 +66,45 @@ describe('the report of the backup scripts', () => {
         ['RESTORE_TEST', false, nasty],
       ]),
     );
+  });
+});
+
+describe('the report without curl (the server has none)', () => {
+  const run = promisify(execFile);
+
+  async function reportFrom(client: string, port: number, token: string, detail: string) {
+    // execFile, not execFileSync: the application listens in this very process.
+    return run(
+      'bash',
+      ['-c', `. "${LIB}"; report BACKUP true 1234 abc true false "$1"`, 'report', detail],
+      {
+        env: {
+          ...process.env,
+          BACKUP_ENV_FILE: '/dev/null',
+          MSYS_NO_PATHCONV: '1',
+          BACKUP_API_URL: `http://127.0.0.1:${port}`,
+          BACKUP_REPORT_TOKEN: token,
+          BACKUP_REPORT_CLIENT: client,
+        },
+      },
+    );
+  }
+
+  it('reaches the application through Node, and is recorded', async () => {
+    await t.app.listen({ host: '127.0.0.1', port: 0 });
+    const port = (t.app.server.address() as { port: number }).port;
+    const detail = 'envoi par node : « 587 éléments » avec "guillemets"\net une ligne';
+    const { stderr } = await reportFrom('node', port, 'test-backup-token-0123456789', detail);
+    expect(stderr).toBe('');
+    const rows = await t.db.select().from(backupRun).where(eq(backupRun.detail, detail));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: 'BACKUP', ok: true, sizeBytes: 1234, offsite: false });
+  });
+
+  it('says so, without failing the backup, when the application refuses', async () => {
+    const port = (t.app.server.address() as { port: number }).port;
+    const { stderr } = await reportFrom('node', port, 'un-mauvais-jeton-0123456789', 'refus');
+    expect(stderr).toContain('could not report to the application');
+    expect(await t.db.select().from(backupRun).where(eq(backupRun.detail, 'refus'))).toEqual([]);
   });
 });

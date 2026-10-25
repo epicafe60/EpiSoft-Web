@@ -22,7 +22,8 @@ What runs, and what tells you when it does not:
 
 - `deploy/db/backup.sh` dumps the database every night, **checks that the dump can be read back**,
   records a checksum, copies it **off the server** when `BACKUP_RSYNC_DEST` or `BACKUP_RCLONE_DEST`
-  is set, keeps the last 14 days, and **reports the result to the application** (Surveillance ›
+  is set, or onto an **external disk** when `BACKUP_DISK_MOUNT` is set and the disk is mounted (a disk
+  that is not mounted is reported and the script exits 1), keeps the last 14 days, and **reports the result to the application** (Surveillance ›
   Sauvegardes). A failed or missing backup shows in « À surveiller » and is e-mailed to the
   administrators.
 - `deploy/db/restore-test.sh` runs on the 1st of each month: it **restores the latest backup into a
@@ -40,7 +41,9 @@ Install on the production server (once, with sudo; it replaces the nightly dump 
 sudo install -m 600 /dev/null /etc/episoft/backup.env    # then edit it:
 #   BACKUP_API_URL=http://127.0.0.1:3000
 #   BACKUP_REPORT_TOKEN=<same value as in /etc/episoft/api.env>
-#   BACKUP_RSYNC_DEST=user@other-machine:/backups/episoft/   (or BACKUP_RCLONE_DEST=…)
+#   PG_MODE=native
+#   BACKUP_DISK_MOUNT=/mnt/sauvegarde/disque   (the external disk of the server; 30 days kept there)
+#   BACKUP_RSYNC_DEST=user@other-machine:/backups/episoft/   (or BACKUP_RCLONE_DEST=…, optional)
 sudo cp /opt/episoft-web/src/deploy/db/episoft-*.service /opt/episoft-web/src/deploy/db/episoft-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now episoft-backup.timer episoft-restore-test.timer
@@ -49,6 +52,11 @@ journalctl -u episoft-backup.service -n 20         # what it said
 systemctl list-timers 'episoft-*'                  # next runs
 ```
 
+- The server has **no `curl`**: the report is then sent with Node (`/opt/node/bin/node`, or `NODE_BIN`),
+  the token being read from the environment, never from a command line.
+- The nightly script set up at go-live (`/usr/local/bin/episoft-backup.sh`, files named
+  `episoft-…dump`) is kept as `.old` when this one takes over. Files named `episoft-…` are never
+  deleted by the new script (it only manages `episoft_…`): remove the old ones by hand when you wish.
 - **A copy outside the server is the whole point**: the dumps sit on the same eMMC as the database, and
   a backup on the same disk does not survive a dead disk. Check that the « copiée hors du serveur »
   line appears on the Sauvegardes page.

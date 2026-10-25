@@ -55,13 +55,47 @@ backup_payload() {
     "${6:-false}" "$(json_str "${7:-}")"
 }
 
-# Sends it. The token goes to curl through its configuration on standard input, never on the
-# command line (where any user of the machine could read it with ps).
-report() {
-  [ -n "${BACKUP_API_URL:-}" ] && [ -n "${BACKUP_REPORT_TOKEN:-}" ] || return 0
+# Sends it with curl, or with Node when the machine has no curl (the server does not; Node is
+# there since it runs the application: NODE_BIN, else /opt/node/bin/node, else node). The token
+# never goes on a command line, where any user of the machine could read it with ps: curl reads it
+# from its configuration on standard input, Node from its environment.
+report_with_curl() {
   printf 'header = "authorization: Bearer %s"\n' "$BACKUP_REPORT_TOKEN" |
     curl -K - -fsS -m 20 -X POST "${BACKUP_API_URL%/}/api/v1/internal/backup-report" \
       -H 'content-type: application/json' -H 'x-episoft-csrf: 1' \
-      --data-binary "$(backup_payload "$@")" >/dev/null ||
-    echo "warning: could not report to the application" >&2
+      --data-binary "$1" >/dev/null
+}
+
+report_with_node() {
+  local node="${NODE_BIN:-}"
+  [ -n "$node" ] || { [ -x /opt/node/bin/node ] && node=/opt/node/bin/node; }
+  [ -n "$node" ] || node="$(command -v node)" || return 1
+  BODY="$1" "$node" -e '
+    const url = process.env.BACKUP_API_URL.replace(/\/$/, "") + "/api/v1/internal/backup-report";
+    fetch(url, {
+      method: "POST",
+      headers: {
+        connection: "close",
+        "content-type": "application/json",
+        "x-episoft-csrf": "1",
+        authorization: "Bearer " + process.env.BACKUP_REPORT_TOKEN,
+      },
+      body: process.env.BODY,
+      signal: AbortSignal.timeout(20000),
+    }).then(
+      (r) => { process.exitCode = r.ok ? 0 : 1; },
+      () => { process.exitCode = 1; },
+    );
+  '
+}
+
+report() {
+  [ -n "${BACKUP_API_URL:-}" ] && [ -n "${BACKUP_REPORT_TOKEN:-}" ] || return 0
+  local body
+  body="$(backup_payload "$@")"
+  if command -v curl >/dev/null 2>&1 && [ "${BACKUP_REPORT_CLIENT:-}" != node ]; then
+    report_with_curl "$body"
+  else
+    report_with_node "$body"
+  fi || echo "warning: could not report to the application" >&2
 }
