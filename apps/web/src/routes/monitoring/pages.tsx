@@ -1,11 +1,21 @@
 import { Link, Outlet } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { formatEuro } from '@episoft/shared';
+import {
+  EMAIL_STATUS_LABELS,
+  EMAIL_STATUSES,
+  formatEuro,
+  type EmailDetail,
+  type EmailLog,
+  type EmailStatus,
+} from '@episoft/shared';
 import { api } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
+import { MailPreview } from '@/components/mail-preview';
 import { TabNav } from '@/components/tab-nav';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
 import { Alert } from '@/components/ui/form';
@@ -282,75 +292,198 @@ export function ErrorsPage() {
   );
 }
 
-// --- E-mails that did not leave ------------------------------------------------------------------
+// --- The journal of e-mails ----------------------------------------------------------------------
 
-interface FailedEmail {
-  id: string;
-  to: string;
-  subject: string;
-  lastError: string | null;
-  createdAt: string;
-}
+const EMAIL_BADGE: Record<EmailStatus, 'success' | 'muted' | 'destructive'> = {
+  SENT: 'success',
+  PENDING: 'muted',
+  FAILED: 'destructive',
+};
+const EMAIL_PAGE = 50;
+const EMAIL_FILTER_LABELS: Record<EmailStatus, string> = {
+  SENT: 'Envoyés',
+  PENDING: 'En attente',
+  FAILED: 'Non envoyés',
+};
 
+/** Every e-mail the application wrote, whether it left or not (sending can be switched off). */
 export function EmailsPage() {
   const queryClient = useQueryClient();
-  const { data, error } = useQuery({
-    queryKey: ['failed-emails'],
-    queryFn: () => api.get<FailedEmail[]>('/admin/emails/failed'),
+  const [status, setStatus] = useState<EmailStatus | ''>('');
+  const [opened, setOpened] = useState<string | null>(null);
+  const query = useInfiniteQuery({
+    queryKey: ['email-log', status],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: String(EMAIL_PAGE) });
+      if (status) params.set('status', status);
+      if (pageParam) params.set('cursor', pageParam);
+      return api.get<EmailLog>(`/admin/emails?${params}`);
+    },
+    getNextPageParam: (last) =>
+      last.rows.length === EMAIL_PAGE ? last.rows[last.rows.length - 1]!.id : undefined,
   });
   const resend = useMutation({
     mutationFn: (id: string) => api.post(`/admin/emails/${id}/resend`),
     onSuccess: () =>
       Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['failed-emails'] }),
+        queryClient.invalidateQueries({ queryKey: ['email-log'] }),
         queryClient.invalidateQueries({ queryKey: ['attention'] }),
       ]),
   });
+  const first = query.data?.pages[0];
+  const rows = query.data?.pages.flatMap((p) => p.rows) ?? [];
+  const total = first ? first.counts.SENT + first.counts.PENDING + first.counts.FAILED : 0;
+  const filters: { value: EmailStatus | ''; label: string; n: number }[] = [
+    { value: '', label: 'Tous', n: total },
+    ...EMAIL_STATUSES.map((s) => ({
+      value: s,
+      label: EMAIL_FILTER_LABELS[s],
+      n: first?.counts[s] ?? 0,
+    })),
+  ];
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Courriels non envoyés</CardTitle>
+        <CardTitle className="text-base">Journal des courriels</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
-        <p className="text-muted-foreground">
-          Le serveur de messagerie les a refusés après plusieurs essais. Vérifiez l’adresse du
-          destinataire ou le réglage de la messagerie, puis renvoyez.
-        </p>
-        {error ? <QueryError error={error} /> : null}
-        {data?.length === 0 ? <AllClear>Aucun courriel en échec.</AllClear> : null}
-        {data?.length ? (
+        {first && !first.sendingEnabled ? (
+          <Alert variant="info">
+            L’envoi des courriels est désactivé dans l’administration : ils sont enregistrés ici
+            comme « Non envoyé » et ne partiront pas.
+          </Alert>
+        ) : null}
+        <div role="group" aria-label="Filtrer par état" className="flex flex-wrap gap-2">
+          {filters.map((f) => (
+            <Button
+              key={f.value}
+              size="sm"
+              variant={status === f.value ? 'default' : 'outline'}
+              aria-pressed={status === f.value}
+              onClick={() => setStatus(f.value)}
+            >
+              {f.label} ({f.n})
+            </Button>
+          ))}
+        </div>
+        {query.error ? <QueryError error={query.error} /> : null}
+        {query.data && rows.length === 0 ? (
+          <AllClear>
+            {status ? 'Aucun courriel dans cet état.' : 'Aucun courriel enregistré.'}
+          </AllClear>
+        ) : null}
+        {rows.length ? (
           <Table>
             <thead>
               <tr>
+                <th>Date</th>
                 <th>Destinataire</th>
                 <th>Objet</th>
-                <th>Erreur</th>
+                <th>État</th>
                 <th className="w-0" />
               </tr>
             </thead>
             <tbody>
-              {data.map((m) => (
-                <tr key={m.id}>
+              {rows.map((m) => (
+                <tr key={m.id} className="align-top">
+                  <td className="whitespace-nowrap tabular-nums">{formatDateTime(m.createdAt)}</td>
+                  <td>{m.to}</td>
                   <td>
-                    {m.to}
-                    <span className="block text-xs text-muted-foreground">
-                      {formatDateTime(m.createdAt)}
-                    </span>
+                    <button
+                      type="button"
+                      className="text-left text-primary hover:underline"
+                      onClick={() => setOpened(m.id)}
+                    >
+                      {m.subject}
+                    </button>
+                    {m.attachments.length ? (
+                      <span className="block text-xs text-muted-foreground">
+                        Pièce jointe : {m.attachments.join(', ')}
+                      </span>
+                    ) : null}
                   </td>
-                  <td>{m.subject}</td>
-                  <td className="text-destructive">{m.lastError}</td>
                   <td>
-                    <Button size="sm" variant="outline" onClick={() => resend.mutate(m.id)}>
-                      Renvoyer
-                    </Button>
+                    <Badge variant={EMAIL_BADGE[m.status]}>{EMAIL_STATUS_LABELS[m.status]}</Badge>
+                    {m.status === 'SENT' && m.sentAt ? (
+                      <span className="block text-xs text-muted-foreground">
+                        le {formatDateTime(m.sentAt)}
+                      </span>
+                    ) : null}
+                    {m.status === 'FAILED' && m.lastError ? (
+                      <span className="block max-w-64 text-xs text-muted-foreground">
+                        {m.lastError}
+                      </span>
+                    ) : null}
+                    {m.status === 'PENDING' && m.attempts > 0 ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {m.attempts} essai(s) déjà
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>
+                    {m.status === 'FAILED' ? (
+                      <Button size="sm" variant="outline" onClick={() => resend.mutate(m.id)}>
+                        Renvoyer
+                      </Button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
         ) : null}
+        <EmailPreviewDialog id={opened} onClose={() => setOpened(null)} />
+        {query.hasNextPage ? (
+          <Button
+            variant="outline"
+            className="justify-self-center"
+            onClick={() => void query.fetchNextPage()}
+            disabled={query.isFetchingNextPage}
+          >
+            Afficher plus
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** « Aperçu » of one e-mail of the journal: header, body and attachments. */
+function EmailPreviewDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { data, error } = useQuery({
+    queryKey: ['email-detail', id],
+    queryFn: () => api.get<EmailDetail>(`/admin/emails/${id}`),
+    enabled: !!id,
+    // Looking at a mail is recorded in the journal: no silent second look when the window opens again.
+    gcTime: 0,
+  });
+  return (
+    <Dialog open={!!id} onClose={onClose} title="Aperçu du courriel" className="max-w-2xl">
+      {error ? <Alert>{error.message}</Alert> : null}
+      {data ? (
+        <MailPreview
+          from={data.from}
+          to={data.to}
+          subject={data.subject}
+          text={data.text ?? ''}
+          html={data.html}
+          attachments={data.files.map((f) => ({
+            filename: f.filename,
+            contentType: f.contentType,
+            sizeBytes: f.sizeBytes,
+            href: `/api/v1/admin/emails/${data.id}/attachments/${f.index}`,
+          }))}
+          note={`${EMAIL_STATUS_LABELS[data.status]}${
+            data.sentAt ? ` le ${formatDateTime(data.sentAt)}` : ''
+          } · écrit le ${formatDateTime(data.createdAt)}${
+            data.status === 'FAILED' && data.lastError ? ` · ${data.lastError}` : ''
+          } · l’expéditeur indiqué est celui du serveur aujourd’hui.`}
+        />
+      ) : error ? null : (
+        <p className="text-muted-foreground">Chargement…</p>
+      )}
+    </Dialog>
   );
 }
 

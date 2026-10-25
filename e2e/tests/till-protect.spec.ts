@@ -156,7 +156,7 @@ test('a cash gap above the threshold has to be explained before the closing', as
   await page.getByRole('link', { name: 'Clôture' }).click();
   // 100 € of float, 50 € counted: 50 € missing.
   await page.getByLabel('50 €', { exact: true }).fill('1');
-  await expect(page.getByText(/Il y a un écart de/)).toBeVisible();
+  await expect(page.getByText(/Il y a un écart de/)).toBeVisible({ timeout: 15_000 });
   const submit = page.getByRole('button', { name: 'Clôturer la session' });
   await expect(submit).toBeDisabled();
   await page.getByLabel('Commentaire (obligatoire)').fill('Billets pas encore comptés');

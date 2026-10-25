@@ -319,6 +319,7 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'wallet.report_export': none(CANNOT_UNSEND),
   'error.ack': restore,
   'email.resend': none(CANNOT_UNSEND),
+  'email.view': none('Une consultation ne change rien.'),
   'staff.notified': none(CANNOT_UNSEND),
   'backup.report': none('C’est un compte rendu de sauvegarde.'),
   'audit.revert': restore,

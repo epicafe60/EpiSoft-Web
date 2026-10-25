@@ -142,6 +142,7 @@ export const AUDIT_SENTENCES = {
   'error.ack': (a) => `a classé une erreur du serveur${named(a, 'ref')}`,
   'staff.notified': (a) => `Message envoyé aux responsables${named(a, 'subject')}`,
   'push.expired': () => 'Notifications retirées d’un appareil qui ne répond plus',
+  'email.view': (a) => `a consulté un courriel${named(a, 'subject')}`,
   'email.resend': () => 'a renvoyé un courriel non parti',
   'export.file': (a) => `a téléchargé un fichier${named(a, 'file')}`,
   'backup.report': (a) =>

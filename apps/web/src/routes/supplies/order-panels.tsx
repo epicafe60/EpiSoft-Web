@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { PackageCheck, Send, Trash2 } from 'lucide-react';
+import { Eye, PackageCheck, Pencil, Send, Trash2 } from 'lucide-react';
 import {
   centsToDecimal,
   formatQty,
@@ -11,9 +11,11 @@ import {
   parseQtyToMilli,
   purchasePriceFlag,
   salePriceForMarkup,
+  type MailSender,
   type PriceRounding,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
+import { MailPreview } from '@/components/mail-preview';
 import { useThresholds } from '@/lib/thresholds';
 import { euro, todayIso } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -320,8 +322,15 @@ export function SendDialog({
   const [to, setTo] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [previewing, setPreviewing] = useState(false);
+  const sender = useQuery({
+    queryKey: ['mail-sender'],
+    queryFn: () => api.get<MailSender>('/mail/sender'),
+    enabled: open,
+  });
   useEffect(() => {
     if (open) {
+      setPreviewing(false);
       setTo(order.supplier?.email ?? '');
       setSubject(`Commande ${order.number} d’Épicafé de Montjavoult`);
       // Like the window of the previous application: the text can be edited before it leaves.
@@ -352,6 +361,43 @@ export function SendDialog({
       onClose();
     },
   });
+  const warning = sender.data
+    ? !sender.data.sendingEnabled
+      ? 'L’envoi des courriels est désactivé dans l’administration : ce courriel sera enregistré dans le journal comme « Non envoyé » et ne partira pas.'
+      : !sender.data.smtpConfigured
+        ? 'Le compte d’envoi (SMTP) n’est pas configuré sur le serveur : le courriel restera « En attente ».'
+        : null
+    : null;
+  if (previewing)
+    return (
+      <Dialog open={open} onClose={onClose} title="Aperçu du courriel" className="max-w-2xl">
+        <div className="grid gap-3">
+          <MailPreview
+            from={sender.data?.from ?? ''}
+            to={to}
+            subject={subject}
+            text={message}
+            attachments={[
+              {
+                filename: `${order.number}.pdf`,
+                contentType: 'application/pdf',
+                href: `/api/v1/purchase-orders/${order.id}/pdf`,
+              },
+            ]}
+          />
+          {warning ? <Alert variant="info">{warning}</Alert> : null}
+          {send.error ? <Alert>{send.error.message}</Alert> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPreviewing(false)}>
+              <Pencil /> Modifier
+            </Button>
+            <Button onClick={() => void confirmSend()} disabled={!to || send.isPending}>
+              <Send /> Envoyer
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    );
   return (
     <Dialog open={open} onClose={onClose} title="Rédaction d’email" className="max-w-xl">
       <div className="grid gap-3">
@@ -378,10 +424,14 @@ export function SendDialog({
             />
           )}
         </Field>
+        {warning ? <Alert variant="info">{warning}</Alert> : null}
         {send.error ? <Alert>{send.error.message}</Alert> : null}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Annuler
+          </Button>
+          <Button variant="outline" onClick={() => setPreviewing(true)}>
+            <Eye /> Aperçu
           </Button>
           <Button onClick={() => void confirmSend()} disabled={!to || send.isPending}>
             <Send /> Envoyer

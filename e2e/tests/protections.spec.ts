@@ -34,7 +34,8 @@ test('« À surveiller » shows a refused ticket, which can be put aside from th
     await page.getByRole('link', { name: 'Erreurs du serveur' }).click();
     await expect(page.getByText('Aucune erreur enregistrée.')).toBeVisible();
     await page.getByRole('link', { name: 'Courriels' }).click();
-    await expect(page.getByText('Aucun courriel en échec.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Journal des courriels' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Filtrer par état' })).toBeVisible();
   } finally {
     await query(`delete from app.sync_rejection where op_id = 'e2e-op-1'`);
   }
@@ -198,4 +199,54 @@ test('receiving goods flags a purchase price that jumped and asks to check the d
     .getByRole('dialog', { name: /Supprimer la commande CF-/ })
     .getByRole('button', { name: 'Supprimer' })
     .click();
+});
+
+test('the e-mail journal shows every e-mail with its state, and filters on it', async ({
+  page,
+}) => {
+  await query(
+    `insert into app.email_outbox (id, "to", subject, html, text, status, sent_at, last_error, attachments) values
+       (gen_random_uuid(), 'a@example.org', 'JOURNAL parti', '<p><b>Bonjour</b> Marie</p>', 'Bonjour Marie', 'SENT', now(), null,
+        '[{"filename":"bon.pdf","contentType":"application/pdf","contentBase64":"JVBERi0xLjQ="}]'::jsonb),
+       (gen_random_uuid(), 'b@example.org', 'JOURNAL attend', '', null, 'PENDING', null, null, null),
+       (gen_random_uuid(), 'c@example.org', 'JOURNAL coupé', '', null, 'FAILED', null,
+        'Envoi des courriels désactivé dans l’administration.', null)`,
+  );
+  try {
+    await login(page, USERS.admin);
+    await page.goto('/surveillance/courriels');
+    const rows = page.getByRole('row').filter({ hasText: 'JOURNAL' });
+    await expect(rows).toHaveCount(3);
+    await expect(rows.filter({ hasText: 'JOURNAL parti' })).toContainText('Envoyé');
+    await expect(rows.filter({ hasText: 'JOURNAL attend' })).toContainText('En attente');
+    const off = rows.filter({ hasText: 'JOURNAL coupé' });
+    await expect(off).toContainText('Non envoyé');
+    await expect(off).toContainText('désactivé dans l’administration');
+
+    // « Aperçu »: the header lines, the body and the attachments of one e-mail.
+    await rows.filter({ hasText: 'JOURNAL parti' }).getByRole('button', { name: 'JOURNAL parti' }).click();
+    const preview = page.getByRole('dialog', { name: 'Aperçu du courriel' });
+    const head = preview.getByLabel('Aperçu du courriel');
+    await expect(head).toContainText('a@example.org');
+    await expect(head.getByText('Épicafé')).toBeVisible(); // the sender of the server
+    await expect(head).toContainText('JOURNAL parti');
+    await expect(head.getByRole('link', { name: 'bon.pdf' })).toHaveAttribute(
+      'href',
+      /\/api\/v1\/admin\/emails\/.+\/attachments\/0$/,
+    );
+    await expect(preview.frameLocator('iframe[title="Corps du message"]').getByText('Bonjour')).toBeVisible();
+    await preview.getByRole('button', { name: 'Texte brut' }).click();
+    await expect(preview.getByLabel('Corps du message')).toHaveText('Bonjour Marie');
+    await preview.getByRole('button', { name: 'Fermer' }).first().click();
+
+    // Filter on one state.
+    const filters = page.getByRole('group', { name: 'Filtrer par état' });
+    await filters.getByRole('button', { name: /^Non envoyés/ }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('JOURNAL coupé');
+    await filters.getByRole('button', { name: /^Envoyés/ }).click();
+    await expect(rows.first()).toContainText('JOURNAL parti');
+  } finally {
+    await query(`delete from app.email_outbox where subject like 'JOURNAL %'`);
+  }
 });

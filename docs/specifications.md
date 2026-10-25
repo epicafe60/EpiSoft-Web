@@ -989,6 +989,7 @@ Ce processus est aujourd'hui géré dans un tableur Google ; les classes `TCMDEC
   - impossible (connexion, courriel envoyé, export, anonymisation…) : la raison est affichée ;
   - si un élément a été modifié depuis, l'annulation est refusée et l'action plus récente est nommée, avec la possibilité de l'annuler d'abord ;
   - l'annulation est elle-même tracée et peut être annulée.
+- **R-ADM-08 [nouveau]** Journal des courriels (Surveillance › Courriels) : tout courriel écrit par l'application y figure, même quand l'envoi est désactivé, avec son état **Envoyé**, **En attente** ou **Non envoyé** (envoi désactivé, ou refusé par le serveur de messagerie, avec la raison), la date, le destinataire, l'objet et les pièces jointes ; filtre par état, pagination, « Renvoyer » pour un courriel non envoyé. Un clic ouvre l'**aperçu** du courriel : De (l'expéditeur SMTP du serveur), À, Objet, message (mise en forme dans un cadre isolé, ou texte brut) et pièces jointes à ouvrir ; ce texte pouvant être personnel, sa consultation est enregistrée dans le journal (`email.view`). La fenêtre « Rédaction d'email » (bon de commande) propose le même aperçu avant l'envoi et prévient quand l'envoi est désactivé ou le compte SMTP non configuré.
 - **R-ADM-07 [nouveau]** Contrôles : modifications non attribuées à une action du journal (AUD-01, avertissement), table qui n'enregistre pas ses modifications (AUD-02, erreur) ; liste « Modifications non attribuées » dans le journal.
 
 ### 4.16 Courriels et notifications

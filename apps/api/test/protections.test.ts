@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { emailOutbox, errorLog, integrityRun, product, sale, syncRejection } from '@episoft/db';
 import { DEFAULT_THRESHOLDS, type SyncOp } from '@episoft/shared';
+import { queueEmail } from '../src/lib/mail';
 import { createUser, login, setupTestApp } from './helpers';
 import { addProduct as addProductTo, openTill, type Till } from './till-fixtures';
 
@@ -330,6 +331,164 @@ describe('e-mails that did not leave', () => {
     expect((await post(`/admin/emails/${failed[0]!.id}/resend`)).statusCode).toBe(200);
     expect((await get('/admin/emails/failed')).json()).toHaveLength(0);
     expect((await post(`/admin/emails/${failed[0]!.id}/resend`)).statusCode).toBe(404);
+  });
+
+  it('keeps a journal of every e-mail with its state, whether sending is on or off', async () => {
+    const logged = async (qs = '') =>
+      (await get(`/admin/emails${qs}`)).json() as {
+        sendingEnabled: boolean;
+        counts: Record<string, number>;
+        rows: {
+          id: string;
+          subject: string;
+          status: string;
+          attachments: string[];
+          html?: string;
+        }[];
+      };
+    await t.db.insert(emailOutbox).values([
+      {
+        to: 'a@example.org',
+        subject: 'Parti',
+        html: '<p>secret</p>',
+        status: 'SENT',
+        sentAt: new Date(),
+      },
+      { to: 'b@example.org', subject: 'Attend', html: '', status: 'PENDING' },
+      {
+        to: 'c@example.org',
+        subject: 'Refusé',
+        html: '',
+        status: 'FAILED',
+        lastError: 'SMTP down',
+        attachments: [
+          { filename: 'CF-2026-0001.pdf', contentType: 'application/pdf', contentBase64: 'AA==' },
+        ],
+      },
+    ]);
+    const all = await logged();
+    expect(all.sendingEnabled).toBe(true);
+    expect(all.counts).toEqual({ SENT: 1, PENDING: 1, FAILED: 1 });
+    // Newest first, with the file names but never the text.
+    expect(all.rows.map((r) => [r.subject, r.status])).toEqual([
+      ['Refusé', 'FAILED'],
+      ['Attend', 'PENDING'],
+      ['Parti', 'SENT'],
+    ]);
+    expect(all.rows[0]!.attachments).toEqual(['CF-2026-0001.pdf']);
+    expect(JSON.stringify(all)).not.toContain('secret');
+
+    expect((await logged('?status=SENT')).rows.map((r) => r.subject)).toEqual(['Parti']);
+    // Paging goes on from the last one shown.
+    const first = await logged('?limit=2');
+    expect(first.rows).toHaveLength(2);
+    expect(
+      (await logged(`?limit=2&cursor=${first.rows[1]!.id}`)).rows.map((r) => r.subject),
+    ).toEqual(['Parti']);
+
+    // Switched off: what the application writes is still journalled, « Non envoyé ».
+    await t.app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/email.enabled',
+      headers: admin,
+      payload: { enabled: false },
+    });
+    // Written by the application itself: with sending off it lands as « Non envoyé », with the reason.
+    await queueEmail(t.db, { to: 'd@example.org', subject: 'Coupé', text: 'x', html: '<p>x</p>' });
+    const off = await logged();
+    expect(off.sendingEnabled).toBe(false);
+    expect(off.rows.find((r) => r.subject === 'Coupé')).toMatchObject({
+      status: 'FAILED',
+      lastError: 'Envoi des courriels désactivé dans l’administration.',
+    });
+    expect(off.counts.FAILED).toBe(2);
+  });
+
+  it('is reserved to the administrators and the treasury', async () => {
+    const stranger = await login(t.app, (await createUser(t.db, { roles: ['CAISSE'] })).username!);
+    expect((await get('/admin/emails', stranger)).statusCode).toBe(403);
+    const [m] = await t.db
+      .insert(emailOutbox)
+      .values({ to: 'z@example.org', subject: 'Privé', html: '<p>x</p>', text: 'x' })
+      .returning({ id: emailOutbox.id });
+    expect((await get(`/admin/emails/${m!.id}`, stranger)).statusCode).toBe(403);
+    expect((await get(`/admin/emails/${m!.id}/attachments/0`, stranger)).statusCode).toBe(403);
+  });
+
+  it('previews one e-mail: from, to, subject, text, HTML and attachments, and records the look', async () => {
+    const pdf = Buffer.from('%PDF-1.4 contenu de test');
+    const [m] = await t.db
+      .insert(emailOutbox)
+      .values({
+        to: 'ferme@example.org',
+        subject: 'Commande CF-2026-0001',
+        text: 'Bonjour,\nVoici la commande.',
+        html: '<div>Bonjour,<br>Voici la commande.</div>',
+        status: 'FAILED',
+        lastError: 'Envoi des courriels désactivé dans l’administration.',
+        attachments: [
+          {
+            filename: 'CF-2026-0001.pdf',
+            contentType: 'application/pdf',
+            contentBase64: pdf.toString('base64'),
+          },
+        ],
+      })
+      .returning({ id: emailOutbox.id });
+    const res = await get(`/admin/emails/${m!.id}`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({
+      from: t.config.SMTP_FROM,
+      to: 'ferme@example.org',
+      subject: 'Commande CF-2026-0001',
+      text: 'Bonjour,\nVoici la commande.',
+      html: '<div>Bonjour,<br>Voici la commande.</div>',
+      status: 'FAILED',
+      files: [
+        {
+          index: 0,
+          filename: 'CF-2026-0001.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: pdf.length,
+        },
+      ],
+    });
+    // Looking at an e-mail is recorded: its text may be personal.
+    const journal = (await get('/audit?limit=20')).json() as {
+      action: string;
+      after: { subject?: string };
+    }[];
+    expect(journal.find((e) => e.action === 'email.view')?.after).toMatchObject({
+      subject: 'Commande CF-2026-0001',
+    });
+
+    // The attachment is the file itself.
+    const file = await get(`/admin/emails/${m!.id}/attachments/0`);
+    expect(file.statusCode).toBe(200);
+    expect(file.headers['content-type']).toContain('application/pdf');
+    expect(file.rawPayload.equals(pdf)).toBe(true);
+    expect((await get(`/admin/emails/${m!.id}/attachments/3`)).statusCode).toBe(404);
+    expect((await get(`/admin/emails/${randomUUID()}`)).statusCode).toBe(404);
+  });
+
+  it('says who the next e-mails come from, and whether anything will leave', async () => {
+    const sender = (await get('/mail/sender')).json();
+    expect(sender).toEqual({
+      from: t.config.SMTP_FROM,
+      smtpConfigured: false,
+      sendingEnabled: true,
+    });
+    await t.app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/email.enabled',
+      headers: admin,
+      payload: { enabled: false },
+    });
+    expect((await get('/mail/sender')).json()).toMatchObject({ sendingEnabled: false });
+    const buyer = await login(t.app, (await createUser(t.db, { roles: ['APPROS'] })).username!);
+    expect((await get('/mail/sender', buyer)).statusCode).toBe(200);
+    const cashier = await login(t.app, (await createUser(t.db, { roles: ['CAISSE'] })).username!);
+    expect((await get('/mail/sender', cashier)).statusCode).toBe(403);
   });
 
   it('warns about e-mails waiting for more than an hour', async () => {

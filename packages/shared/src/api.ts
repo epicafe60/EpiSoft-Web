@@ -69,6 +69,53 @@ export interface AuditEntry {
   revertedBy: { id: string; at: string; actorName: string | null } | null;
 }
 
+/** The journal of e-mails (Surveillance › Courriels): what the application wrote and what became of it. */
+export const EMAIL_STATUSES = ['SENT', 'PENDING', 'FAILED'] as const;
+export type EmailStatus = (typeof EMAIL_STATUSES)[number];
+export const EMAIL_STATUS_LABELS: Record<EmailStatus, string> = {
+  SENT: 'Envoyé',
+  PENDING: 'En attente',
+  FAILED: 'Non envoyé',
+};
+
+export interface EmailLogEntry {
+  id: string;
+  to: string;
+  subject: string;
+  status: EmailStatus;
+  /** Why it did not leave (sending switched off, refused by the mail server…). */
+  lastError: string | null;
+  attempts: number;
+  createdAt: string;
+  sentAt: string | null;
+  /** File names of the attachments (the text itself is not shown: it may be personal). */
+  attachments: string[];
+}
+
+/** One e-mail as it will leave or left: what « Aperçu » shows. */
+export interface EmailDetail extends EmailLogEntry {
+  /** The sender of the server today (SMTP_FROM): the one stored nowhere, used at sending time. */
+  from: string;
+  text: string | null;
+  /** The HTML version, shown in a sandboxed frame. */
+  html: string;
+  files: { index: number; filename: string; contentType: string; sizeBytes: number }[];
+}
+
+/** Who the application writes as, and whether anything leaves (before writing an e-mail). */
+export interface MailSender {
+  from: string;
+  smtpConfigured: boolean;
+  sendingEnabled: boolean;
+}
+
+export interface EmailLog {
+  /** The administration switch: when off, e-mails are written here as « Non envoyé ». */
+  sendingEnabled: boolean;
+  counts: Record<EmailStatus, number>;
+  rows: EmailLogEntry[];
+}
+
 export const auditQuerySchema = z.object({
   actorId: z.string().uuid().optional(),
   /** Everything about a person: what they did, what was done on their behalf, and edits of their record. */

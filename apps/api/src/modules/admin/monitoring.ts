@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -16,9 +16,15 @@ import {
   type Db,
 } from '@episoft/db';
 import type { Config } from '../../config';
-import { describeAudit } from '@episoft/shared';
+import {
+  describeAudit,
+  EMAIL_STATUSES,
+  type EmailDetail,
+  type EmailLog,
+  type MailSender,
+} from '@episoft/shared';
 import { audit } from '../../lib/audit';
-import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
+import { EMAIL_DISABLED_NOTE, type EmailAttachment } from '../../lib/mail';
 import { notFound, unauthorized } from '../../lib/problem';
 import { computeAttention } from './attention';
 import { loadSettings } from './settings-store';
@@ -228,6 +234,144 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
 
   // --- E-mails that did not leave --------------------------------------------------------------
 
+  /**
+   * The journal of every e-mail the application wrote, sent or not, newest first: « Envoyé »,
+   * « En attente » or « Non envoyé » (sending switched off, or refused by the mail server).
+   * Bodies are not returned: they may hold personal data.
+   */
+  app.get(
+    '/admin/emails',
+    {
+      ...staff,
+      schema: {
+        querystring: z.object({
+          status: z.enum(EMAIL_STATUSES).optional(),
+          /** Id of the last entry already shown (UUID v7 ids are time-ordered). */
+          cursor: z.string().uuid().optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+        }),
+      },
+    },
+    async (req): Promise<EmailLog> => {
+      const q = req.query;
+      const rows = await db
+        .select({
+          id: emailOutbox.id,
+          to: emailOutbox.to,
+          subject: emailOutbox.subject,
+          status: emailOutbox.status,
+          lastError: emailOutbox.lastError,
+          attempts: emailOutbox.attempts,
+          createdAt: emailOutbox.createdAt,
+          sentAt: emailOutbox.sentAt,
+          attachments: sql<string[]>`coalesce((
+            select jsonb_agg(a ->> 'filename')
+            from jsonb_array_elements(case when jsonb_typeof(${emailOutbox.attachments}) = 'array'
+                                           then ${emailOutbox.attachments} else '[]'::jsonb end) a), '[]'::jsonb)`,
+        })
+        .from(emailOutbox)
+        .where(
+          and(
+            q.status ? eq(emailOutbox.status, q.status) : undefined,
+            q.cursor ? lt(emailOutbox.id, q.cursor) : undefined,
+          ),
+        )
+        .orderBy(desc(emailOutbox.id))
+        .limit(q.limit);
+      const counted = await db
+        .select({ status: emailOutbox.status, n: sql<number>`count(*)::int` })
+        .from(emailOutbox)
+        .groupBy(emailOutbox.status);
+      const counts = { SENT: 0, PENDING: 0, FAILED: 0 };
+      for (const c of counted) counts[c.status] = c.n;
+      return {
+        sendingEnabled: (await loadSettings(db))['email.enabled'].enabled,
+        counts,
+        rows: rows.map((r) => ({
+          ...r,
+          createdAt: r.createdAt.toISOString(),
+          sentAt: r.sentAt?.toISOString() ?? null,
+        })),
+      };
+    },
+  );
+
+  /** Before writing an e-mail: who it will come from, and whether anything will leave. */
+  app.get(
+    '/mail/sender',
+    { preHandler: app.requireRoles('ADMIN', 'COMPTA', 'APPROS') },
+    async (): Promise<MailSender> => ({
+      from: config.SMTP_FROM,
+      smtpConfigured: !!config.SMTP_HOST,
+      sendingEnabled: (await loadSettings(db))['email.enabled'].enabled,
+    }),
+  );
+
+  /**
+   * « Aperçu » of one e-mail of the journal: to, from, subject, text, HTML and attachments. The
+   * text may hold personal data: looking at it is recorded in the journal of changes.
+   */
+  app.get(
+    '/admin/emails/:id',
+    { ...staff, schema: idParams },
+    async (req): Promise<EmailDetail> => {
+      const [m] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, req.params.id));
+      if (!m) throw notFound('Courriel introuvable.');
+      const files = attachmentsOf(m.attachments);
+      await audit(db, req, {
+        action: 'email.view',
+        entity: 'email_outbox',
+        entityId: m.id,
+        after: { to: m.to, subject: m.subject },
+      });
+      return {
+        id: m.id,
+        to: m.to,
+        subject: m.subject,
+        status: m.status,
+        lastError: m.lastError,
+        attempts: m.attempts,
+        createdAt: m.createdAt.toISOString(),
+        sentAt: m.sentAt?.toISOString() ?? null,
+        attachments: files.map((f) => f.filename),
+        from: config.SMTP_FROM,
+        text: m.text,
+        html: m.html,
+        files: files.map((f, index) => ({
+          index,
+          filename: f.filename,
+          contentType: f.contentType,
+          sizeBytes: Buffer.from(f.contentBase64, 'base64').length,
+        })),
+      };
+    },
+  );
+
+  app.get(
+    '/admin/emails/:id/attachments/:index',
+    {
+      ...staff,
+      schema: {
+        params: z.object({ id: z.string().uuid(), index: z.coerce.number().int().min(0) }),
+      },
+    },
+    async (req, reply) => {
+      const [m] = await db
+        .select({ attachments: emailOutbox.attachments })
+        .from(emailOutbox)
+        .where(eq(emailOutbox.id, req.params.id));
+      const file = m ? attachmentsOf(m.attachments)[req.params.index] : undefined;
+      if (!file) throw notFound('Pièce jointe introuvable.');
+      return reply
+        .header(
+          'content-disposition',
+          `inline; filename="${file.filename.replace(/[^\w.\- ]+/g, '_')}"`,
+        )
+        .type(file.contentType)
+        .send(Buffer.from(file.contentBase64, 'base64'));
+    },
+  );
+
   app.get('/admin/emails/failed', staff, async () => {
     const rows = await db
       .select({
@@ -336,3 +480,8 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
     };
   });
 };
+
+/** The attachments of an outbox row (a JSON array, or nothing). */
+function attachmentsOf(value: unknown): EmailAttachment[] {
+  return Array.isArray(value) ? (value as EmailAttachment[]) : [];
+}

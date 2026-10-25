@@ -72,6 +72,8 @@ const STAFF_PAGES = [
 ];
 
 test('staff screens do not overflow a phone screen', async ({ page }) => {
+  // About thirty screens in a row: close to the default limit on a busy machine.
+  test.setTimeout(120_000);
   await login(page, USERS.admin);
   const problems: string[] = [];
   for (const path of STAFF_PAGES) {
