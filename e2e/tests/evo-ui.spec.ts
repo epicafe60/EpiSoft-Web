@@ -108,7 +108,7 @@ test('R-EVO-44: the image consent is ticked on the member sheet and dated', asyn
   expect(m!.image_consent_at).not.toBeNull();
 });
 
-test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, mail link, delete a cancelled order', async ({
+test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail, delete a cancelled order', async ({
   page,
 }) => {
   await login(page, USERS.admin);
@@ -122,9 +122,29 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, mail link, del
   await expect(page.getByRole('columnheader', { name: 'Qté commandée' })).toBeVisible();
   await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('6');
 
-  // The mail window opens with the supplier address.
-  const mail = page.getByRole('link', { name: 'Ouvrir dans ma messagerie' });
-  await expect(mail).toHaveAttribute('href', /^mailto:ferme@example\.org\?subject=/);
+  // No mail client is opened: the order leaves from the application's own e-mail account, in a
+  // window where the recipient, the subject and the text can be changed (as in the previous app).
+  await expect(page.getByRole('link', { name: 'Ouvrir dans ma messagerie' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Envoyer par courriel' }).click();
+  const mail = page.getByRole('dialog', { name: 'Rédaction d’email' });
+  await expect(mail.getByLabel('Adresse du destinataire')).toHaveValue('ferme@example.org');
+  await expect(mail.getByLabel('Sujet du message')).toHaveValue(
+    /^Commande CF-\d{4}-\d+ d’Épicafé de Montjavoult$/,
+  );
+  const body = mail.getByLabel('Message', { exact: true });
+  await expect(body).toHaveValue(/^Bonjour,\nVeuillez trouver ci-joint notre commande CF-/);
+  const edited = 'Bonjour,\nMerci de livrer mardi matin.\n\nBien cordialement !';
+  await body.fill(edited);
+  await mail.getByRole('button', { name: 'Envoyer', exact: true }).click();
+  await expect(mail).toBeHidden();
+  await expect(page.getByText('Envoyée', { exact: true })).toBeVisible();
+  // The mail is queued for the SMTP account, with the text as edited and the PDF attached.
+  const [queued] = await query<{ to: string; text: string; attachments: { filename: string }[] }>(
+    `select "to", text, attachments from app.email_outbox where subject like 'Commande CF-%' order by created_at desc limit 1`,
+  );
+  expect(queued!.to).toBe('ferme@example.org');
+  expect(queued!.text).toBe(edited);
+  expect(queued!.attachments[0]!.filename).toMatch(/^CF-.*\.pdf$/);
 
   // Cancel, then delete: the order is gone.
   await page.getByRole('button', { name: 'Annuler', exact: true }).click();

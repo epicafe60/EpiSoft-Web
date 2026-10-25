@@ -301,7 +301,11 @@ export function DraftEditor({
   );
 }
 
-/** R-CMD-04: e-mail with an editable text; the PDF is attached by the server. */
+/**
+ * R-CMD-04, R-EVO-14: « Rédaction d'email » as in the previous application: the recipient, the
+ * subject and the text can be changed, then the mail leaves from the application's own account
+ * (the server's SMTP) with the order form in PDF attached. No mail client is opened.
+ */
 export function SendDialog({
   order,
   open,
@@ -319,9 +323,11 @@ export function SendDialog({
   useEffect(() => {
     if (open) {
       setTo(order.supplier?.email ?? '');
-      setSubject(`Commande ${order.number} — Épicafé de Montjavoult`);
+      setSubject(`Commande ${order.number} d’Épicafé de Montjavoult`);
+      // Like the window of the previous application: the text can be edited before it leaves.
+      const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
       setMessage(
-        `Bonjour,\n\nVeuillez trouver ci-joint notre bon de commande ${order.number}.\n\nMerci de nous confirmer la date de livraison.\n\nCordialement,\nL’Épicafé de Montjavoult`,
+        `Bonjour,\nVeuillez trouver ci-joint notre commande ${order.number} du ${now}.\n\n\nBien cordialement !\nL’équipe Épicafé de Montjavoult`,
       );
     }
   }, [open, order]);
@@ -347,10 +353,10 @@ export function SendDialog({
     },
   });
   return (
-    <Dialog open={open} onClose={onClose} title="Envoyer le bon de commande" className="max-w-xl">
+    <Dialog open={open} onClose={onClose} title="Rédaction d’email" className="max-w-xl">
       <div className="grid gap-3">
         <Field
-          label="Destinataire"
+          label="Adresse du destinataire"
           hint={
             order.supplier?.email
               ? undefined
@@ -359,14 +365,14 @@ export function SendDialog({
         >
           {(p) => <Input {...p} type="email" value={to} onChange={(e) => setTo(e.target.value)} />}
         </Field>
-        <Field label="Objet">
+        <Field label="Sujet du message">
           {(p) => <Input {...p} value={subject} onChange={(e) => setSubject(e.target.value)} />}
         </Field>
-        <Field label="Message">
+        <Field label="Message" hint="Le bon de commande (PDF) est joint automatiquement.">
           {(p) => (
             <Textarea
               {...p}
-              className="min-h-40"
+              className="min-h-48"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
@@ -378,7 +384,7 @@ export function SendDialog({
             Annuler
           </Button>
           <Button onClick={() => void confirmSend()} disabled={!to || send.isPending}>
-            <Send /> Envoyer avec le PDF
+            <Send /> Envoyer
           </Button>
         </div>
       </div>

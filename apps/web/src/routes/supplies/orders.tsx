@@ -271,28 +271,9 @@ export function OrderPage() {
           >
             <FileDown /> Bon de commande
           </a>
-          {/* R-EVO-14: opens the mail client; the PDF is downloaded above, to be attached. */}
-          <a
-            className={buttonVariants({ variant: 'outline' })}
-            href={`mailto:${o.supplier?.email ?? ''}?${new URLSearchParams({
-              subject: `Commande ${o.number} — Épicafé de Montjavoult`,
-              body: `Bonjour,
-
-Veuillez trouver ci-joint notre bon de commande ${o.number}.
-
-Merci de nous confirmer la date de livraison.
-
-Cordialement,
-L’Épicafé de Montjavoult`,
-            })
-              .toString()
-              .replace(/\+/g, '%20')}`}
-          >
-            <Send /> Ouvrir dans ma messagerie
-          </a>
           {o.status === 'DRAFT' || o.status === 'SENT' ? (
-            <Button variant="outline" onClick={() => setDialog('send')} disabled={!o.lines.length}>
-              <Send /> Envoyer
+            <Button onClick={() => setDialog('send')} disabled={!o.lines.length}>
+              <Send /> {o.status === 'SENT' ? 'Renvoyer par courriel' : 'Envoyer par courriel'}
             </Button>
           ) : null}
           {['DRAFT', 'SENT', 'PARTIAL'].includes(o.status) ? (

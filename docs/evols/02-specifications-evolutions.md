@@ -69,7 +69,7 @@ Complète `docs/specifications.md`. Chaque règle `R-EVO-nn` renvoie à un besoi
 
 **R-EVO-14 — Bon de commande et courriel (EV-A01, EV-A02).**
 - Le PDF reprend la mise en page du bon de commande de la v1 (comparaison sur un exemple réel avant clôture du point).
-- Un bouton « Ouvrir dans ma messagerie » génère un lien `mailto:` (destinataire, objet et corps préremplis) ; le PDF est téléchargé pour être joint. L'envoi serveur reste disponible.
+- ~~Lien `mailto:`~~ *(remplacé)* : le bouton « Envoyer par courriel » ouvre une fenêtre « Rédaction d'email » comme dans la v1 (adresse du destinataire, sujet et texte modifiables, texte proposé « Veuillez trouver ci-joint notre commande … ») ; le courriel part du compte SMTP du serveur avec le bon de commande en PDF joint. Aucun client de messagerie n'est ouvert.
 
 **R-EVO-15 — Données fournisseurs (EV-A09).** Un rapport de migration liste les produits sans fournisseur, les fournisseurs sans produit et les produits à stock positif dont le fournisseur manque. Un produit garde un seul fournisseur (Q6).
 
