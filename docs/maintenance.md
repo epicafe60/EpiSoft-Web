@@ -137,12 +137,17 @@ person in charge):
 ```
 sudo systemctl stop episoft-web
 sudo systemctl start episoft-backup.service
-pw=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
-sudo -u postgres psql -d episoft -v ON_ERROR_STOP=1 -v owner_pw="$pw" \
-  -f /opt/episoft-web/src/deploy/db/split-roles.sql
-sudo install -m 600 /dev/null /etc/episoft/migrate.env
-echo "MIGRATION_DATABASE_URL=postgresql://episoft_owner:$pw@127.0.0.1:5432/episoft" | sudo tee /etc/episoft/migrate.env >/dev/null
+pw=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' 
+')
+# postgres cannot read /opt/episoft-web (mode 750): the script goes through standard input, and the
+# password too (never on the command line).
+{ printf '\set owner_pw %s
+' "'$pw'"; cat /opt/episoft-web/src/deploy/db/split-roles.sql; }   | sudo -u postgres psql -d episoft -v ON_ERROR_STOP=1 -X -q -f -
+sudo install -m 600 -o root -g root /dev/null /etc/episoft/migrate.env
+printf 'MIGRATION_DATABASE_URL=postgresql://episoft_owner:%s@127.0.0.1:5432/episoft
+' "$pw" | sudo tee /etc/episoft/migrate.env >/dev/null
 unset pw
+sudo sed -i 's/^MIGRATE_ON_START=.*/MIGRATE_ON_START=false/' /etc/episoft/api.env
 sudo systemctl start episoft-web
 ```
 
@@ -150,7 +155,10 @@ The last lines of `split-roles.sql` show the result: `episoft_app` must read `ca
 `can_write_members = t`, `can_rewrite_journal = f`.
 
 Then, at each deployment, the migrations are applied by the owner, before the restart, from a root
-shell: `set -a; . /etc/episoft/api.env; . /etc/episoft/migrate.env; set +a; pnpm db:migrate`. Keep
+shell on the server (`sudo bash`, since `migrate.env` is readable by root only), in the folder of the new
+version: `set -a; . /etc/episoft/api.env; . /etc/episoft/migrate.env; set +a; corepack pnpm --filter @episoft/db migrate`.
+Done on 2026-11-08: the switch ran with the shop's application not yet in use, the check by the owner
+account found 28 migrations and nothing pending. Keep
 `MIGRATE_ON_START=false` in `api.env`: the owner's password then never sits in the environment of the
 running application. The test suite of the API replays `split-roles.sql` on a copy of the go-live
 layout and runs every test as `episoft_app`: a migration that needs more rights shows there first.
