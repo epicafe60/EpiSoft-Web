@@ -158,7 +158,14 @@ export class SyncEngine {
       await this.adoptJoinedSession(results);
       // The health banners compare it with the till's own clock: kept in local time.
       await setMeta('lastPushAt', new Date().toISOString(), this.db);
-      this.set({ online: true, authRequired: false, deviceProblem: null, lastError: null });
+      // A request that was already on its way when the network dropped must not bring the
+      // « online » state back: the browser's own word wins (it says so again when it is back).
+      this.set({
+        online: navigator.onLine,
+        authRequired: false,
+        deviceProblem: null,
+        lastError: null,
+      });
       // New balances and stock: refresh the replicated data at once.
       void this.refresh();
       return true;
@@ -291,7 +298,7 @@ export class SyncEngine {
         },
       );
       await this.dropClosedSession(snap.settings.openSessions);
-      this.set({ online: true, authRequired: false });
+      this.set({ online: navigator.onLine, authRequired: false });
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) this.set({ authRequired: true });
