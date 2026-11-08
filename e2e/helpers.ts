@@ -41,6 +41,9 @@ export async function startTill(page: Page, device: string, float = '50') {
   await login(page, USERS.cashier);
   await page.goto('/caisse');
   await page.getByLabel('Fond de caisse (€)').fill(float);
+  // Another client may have opened a session since the cleanup above (the shop has one drawer:
+  // the till would join it and ignore this float). Closed again just before ours is sent.
+  await closeAllSessions();
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
   await expect(page.getByLabel('Scanner ou rechercher un produit (F2)')).toBeVisible();
 }

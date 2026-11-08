@@ -47,6 +47,8 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
 
   // First use: declare the device, then open the session.
   await page.getByLabel('Fond de caisse (€)').fill('100');
+  // A session opened meanwhile by another client would be joined, and the 100 € ignored.
+  await closeAllSessions();
   await page.getByRole('button', { name: 'Ouvrir la session' }).click();
 
   // Online sale: unknown code first (never adds anything), then the real EAN.
