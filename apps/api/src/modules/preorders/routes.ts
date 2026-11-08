@@ -155,7 +155,12 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
   /** R-PRE-01: the signed-in member orders for themselves; a volunteer may order for a member. */
   app.post(
     '/preorders',
-    { preHandler: shopOpen(db), schema: { body: preorderSchema } },
+    {
+      preHandler: shopOpen(db),
+      schema: { body: preorderSchema },
+      // A member orders a few times a week: a script cannot fill the list of the volunteers.
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
     async (req) => {
       const b = req.body;
       const user = req.user!;

@@ -8,6 +8,7 @@ import {
 } from './catalog';
 import type { MemberStatus } from './api';
 import { PAYMENT_METHODS } from './pos';
+import { CASHIER_CHECKS } from './till-pin';
 
 // Till ↔ server contract (spec §8.3). Operations are created on the device, stored in
 // its outbox, and pushed in deviceSeq order. The operation id is the idempotency key.
@@ -21,6 +22,12 @@ const base = {
   id: z.string().uuid(),
   deviceSeq: z.number().int().positive(),
 };
+
+/**
+ * R-SES-07: how the till established the cashier of the operation: the signed-in person, a
+ * cashier who typed their code, or a cashier only declared. Absent from an older till: SESSION.
+ */
+const cashierCheck = z.enum(CASHIER_CHECKS).optional();
 
 export const saleLineSchema = z.object({
   productId: z.string().uuid(),
@@ -48,6 +55,7 @@ export const saleOpSchema = z.object({
   payload: z.object({
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
+    cashierCheck,
     memberId: z.string().uuid().nullable(),
     soldAt: isoDateTime,
     provisionalNumber: z.string().max(40),
@@ -71,6 +79,7 @@ export const saleCancelOpSchema = z.object({
     saleId: z.string().uuid(),
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
+    cashierCheck,
     at: isoDateTime,
     provisionalNumber: z.string().max(40),
     reason: z.string().max(300).optional(),
@@ -83,6 +92,7 @@ export const walletTopupOpSchema = z.object({
   payload: z.object({
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
+    cashierCheck,
     householdId: z.string().uuid(),
     amount,
     method: z.enum(MEMBER_PAYMENT_METHODS),
@@ -169,6 +179,11 @@ export interface SnapshotMember {
   qrTokenHash: string | null;
   isCashier: boolean;
   hasEmail: boolean;
+  /**
+   * R-SES-07: the cashier's code, hashed (PBKDF2 with its salt), for cashiers only; null when
+   * they have none. Absent from an older snapshot.
+   */
+  tillPin?: { hash: string; salt: string } | null;
 }
 
 export interface SnapshotHousehold {
@@ -213,6 +228,8 @@ export interface TillSettings {
   /** R-VTE-04: null when scale labels are not decoded. */
   scaleBarcodes: 'PRICE' | 'WEIGHT' | null;
   associationName: string;
+  /** R-SES-07: the chosen cashier types their code. Absent from an older snapshot: true. */
+  cashierPinRequired?: boolean;
 }
 
 export interface Snapshot {

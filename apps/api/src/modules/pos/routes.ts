@@ -12,6 +12,7 @@ import {
   sale,
   saleLine,
   salePayment,
+  session,
   type Db,
 } from '@episoft/db';
 import {
@@ -23,6 +24,10 @@ import {
   DENOMINATIONS,
   CASHIER_CONNECTED_MIN,
   syncPushSchema,
+  hashTillPin,
+  newTillPinSalt,
+  tillPinSchema,
+  type CashierCheck,
   type SessionPresence,
   type PaymentMethod,
 } from '@episoft/shared';
@@ -33,9 +38,10 @@ import { escapeHtml, queueEmail } from '../../lib/mail';
 import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
 import { euros, saleReceiptEmail } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
+import { assertCashier, checkCashierPin, checkMemberPassword } from '../../lib/till-cashier';
 import { sessionSummary, type SessionSummary } from './closing';
 import { closingPdf } from './closing-pdf';
-import { generateSessionEntry } from '../accounting/auto';
+import { generateSessionEntry, regularizeSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
 import { DeviceRefused, NotYet, processOps, Rejected } from './sync-service';
@@ -114,6 +120,82 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     return rows.map((r) => ({ ...r, lastSyncAt: r.lastSyncAt?.toISOString() ?? null }));
   });
 
+  // --- The cashier keeping the till (R-SES-07) ------------------------------------
+  //
+  // The cashier changes on the till without signing out. The session then reaches the till's
+  // routes only (TILL_LOCKED elsewhere) until its holder types their password (/auth/unlock).
+
+  app.post(
+    '/pos/cashier',
+    {
+      ...cashier,
+      schema: {
+        body: z.object({ cashierId: z.string().uuid(), pin: z.string().max(10).optional() }),
+      },
+      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const holder = req.user!;
+      const { cashierId, pin } = req.body;
+      if (cashierId === holder.id) {
+        if (holder.tillCashierId)
+          throw conflict(
+            'Pour reprendre la caisse à votre nom, retapez votre mot de passe (« Revenir à mon compte »).',
+          );
+        return { cashierId, check: 'SESSION' as const };
+      }
+      await assertCashier(db, cashierId);
+      const check = await checkCashierPin(db, holder.id, cashierId, pin);
+      await db.transaction(async (tx) => {
+        await tx
+          .update(session)
+          .set({ tillCashierId: cashierId })
+          .where(eq(session.id, holder.sessionId));
+        await audit(tx, req, {
+          action: 'till.cashier',
+          entity: 'member',
+          entityId: cashierId,
+          cashier: { id: cashierId },
+          after: { cashierCheck: check },
+        });
+      });
+      return { cashierId, check };
+    },
+  );
+
+  /** A cashier chooses their code, with their own password (at the till or on their account). */
+  app.put(
+    '/pos/cashiers/:id/pin',
+    {
+      ...cashier,
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        body: z.object({ password: z.string().min(1).max(200), pin: tillPinSchema }),
+      },
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      await assertCashier(db, req.params.id);
+      await checkMemberPassword(db, req, req.params.id, req.body.password);
+      const salt = newTillPinSalt();
+      const hash = await hashTillPin(req.body.pin, salt);
+      await db.transaction(async (tx) => {
+        // updatedAt: the incremental snapshot carries the new code to the tills.
+        await tx
+          .update(member)
+          .set({ tillPasswordHash: hash, tillPasswordSalt: salt, updatedAt: new Date() })
+          .where(eq(member.id, req.params.id));
+        await audit(tx, req, {
+          action: 'member.till_pin',
+          entity: 'member',
+          entityId: req.params.id,
+          cashier: { id: req.params.id },
+        });
+      });
+      return reply.status(204).send();
+    },
+  );
+
   /** What the till needs at start-up: the device, its open session and the float to propose. */
   app.get(
     '/pos/devices/:id/state',
@@ -166,7 +248,10 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     },
     async (req) => {
       try {
-        return { results: await processOps(db, req, config, req.body.deviceId, req.body.ops) };
+        const results = await processOps(db, req, config, req.body.deviceId, req.body.ops);
+        // C06: the server's time once the operations are recorded. The till dates them with it,
+        // not with its own clock, to know whether a snapshot already includes them.
+        return { results, serverTime: new Date().toISOString() };
       } catch (e) {
         if (e instanceof DeviceRefused)
           throw new HttpProblem(400, 'Poste refusé', e.message, undefined, e.code);
@@ -181,6 +266,14 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
   // --- Sessions (§4.5) --------------------------------------------------------------
 
   const sessionParams = { params: z.object({ id: z.string().uuid() }) };
+
+  /**
+   * C02: until when the closing of a session counts its operations: the closing, or its last
+   * regularization (the database time read under the lock, `regularizedAt`, when recorded).
+   */
+  const countedUntil = sql`greatest(${cashSession.closedAt}, (
+    select max(coalesce((a.after ->> 'regularizedAt')::timestamptz, a.at)) from app.audit_log a
+    where a.action = 'session.regularize' and a.entity_id = ${cashSession.id}::text))`;
 
   app.get(
     '/pos/sessions',
@@ -205,6 +298,13 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           difference: cashCount.difference,
           salesCount: sql<number>`(select count(*)::int from app.sale x where x.session_id = ${cashSession.id} and x.cancels_sale_id is null)`,
           salesTotal: sql<string>`(select coalesce(sum(total), 0)::numeric(12,2)::text from app.sale x where x.session_id = ${cashSession.id})`,
+          // C02: tickets and till top-ups recorded after the closing (or its last
+          // regularization), which the closing does not count yet.
+          lateSales: sql<number>`((select count(*) from app.sale x
+              where x.session_id = ${cashSession.id} and x.created_at > ${countedUntil})
+            + (select count(*) from app.member_payment y
+              where y.cash_session_id = ${cashSession.id} and y.sale_id is null
+                and y.created_at > ${countedUntil}))::int`,
         })
         .from(cashSession)
         .innerJoin(posDevice, eq(posDevice.id, cashSession.deviceId))
@@ -302,7 +402,7 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
   );
 
   const closeSchema = z.object({
-    denominations: z.record(
+    denominations: z.partialRecord(
       z.enum(DENOMINATIONS.map(String) as [string, ...string[]]),
       z.number().int().min(0).max(100_000),
     ),
@@ -313,6 +413,12 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     comment: z.string().max(1000).optional(),
     /** R-OFF-07: the device still had operations waiting to be sent. */
     forced: z.boolean().default(false),
+    /**
+     * R-SES-07: the cashier who counted the drawer, when not the person signed in, with their
+     * code (checked here: the closing is always online).
+     */
+    cashierId: z.string().uuid().optional(),
+    pin: z.string().max(10).optional(),
   });
 
   type CloseBody = z.infer<typeof closeSchema>;
@@ -327,6 +433,18 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     b: CloseBody,
     administrative = false,
   ) => {
+    // R-SES-07: who counted the drawer. The cashier keeping the till when the body does not say;
+    // the code is checked for anyone else than the person signed in.
+    const holder = req.user!;
+    const closerId = administrative
+      ? holder.id
+      : (b.cashierId ?? holder.tillCashierId ?? holder.id);
+    let closerCheck: CashierCheck = 'SESSION';
+    if (closerId !== holder.id) {
+      await assertCashier(db, closerId);
+      closerCheck = await checkCashierPin(db, holder.id, closerId, b.pin);
+    }
+    const asCashier = closerId !== holder.id ? { cashier: { id: closerId } } : {};
     const report = await db.transaction(async (tx) => {
       const [s] = await tx.select().from(cashSession).where(eq(cashSession.id, id)).for('update');
       if (!s) throw notFound('Session inconnue.');
@@ -375,16 +493,24 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         comment: b.comment ?? null,
       };
       await tx.insert(cashCount).values(values);
-      const closedAt = new Date();
-      await tx
+      // C02: the database clock, read under the lock: every operation counted above was written
+      // before it, every operation that waited for this closing is written after it.
+      const [{ closedAt }] = (await tx
         .update(cashSession)
-        .set({ status: 'CLOSED', closedAt, closedBy: req.user!.id })
-        .where(eq(cashSession.id, s.id));
+        .set({ status: 'CLOSED', closedAt: sql`clock_timestamp()`, closedBy: closerId })
+        .where(eq(cashSession.id, s.id))
+        .returning({ closedAt: cashSession.closedAt })) as [{ closedAt: Date }];
       await audit(tx, req, {
         action: 'session.close',
         entity: 'cash_session',
         entityId: s.id,
-        after: { ...values, summary: undefined, forced: b.forced },
+        ...asCashier,
+        after: {
+          ...values,
+          summary: undefined,
+          forced: b.forced,
+          ...(closerId !== holder.id ? { cashierCheck: closerCheck } : {}),
+        },
       });
 
       // R-CPT-08: the VTE draft. In a savepoint: an accounting problem never blocks the cash closing.
@@ -459,10 +585,14 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           .for('update');
         if (!s) throw notFound('Session inconnue.');
         if (s.status !== 'CLOSED') throw conflict('Cette session n’est pas clôturée.');
+        // R-SES-05: one session open at a time, for the whole shop.
         const other = await tx.query.cashSession.findFirst({
-          where: and(eq(cashSession.deviceId, s.deviceId), eq(cashSession.status, 'OPEN')),
+          where: eq(cashSession.status, 'OPEN'),
         });
-        if (other) throw conflict('Une autre session est ouverte sur ce poste.');
+        if (other)
+          throw conflict(
+            'Une autre session de caisse est ouverte : clôturez-la avant de rouvrir celle-ci.',
+          );
         // A validated accounting entry has to be reversed first; a draft is dropped and regenerated at the next closing.
         if (s.entryId) {
           const [e] = await tx.select().from(entry).where(eq(entry.id, s.entryId));
@@ -487,6 +617,66 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
       });
       return { ok: true };
     },
+  );
+
+  /**
+   * Audit KV2, C02: tickets arrived after the closing (a till that was offline). The closing is
+   * brought in line with the tickets: summary and expected cash recomputed (the count itself is
+   * what was counted, it does not change), accounting draft regenerated, or a regularization entry
+   * when the entry is already validated.
+   */
+  app.post(
+    '/pos/sessions/:id/regularize',
+    { preHandler: app.requireRoles('ADMIN', 'COMPTA'), schema: sessionParams },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const [s] = await tx
+          .select()
+          .from(cashSession)
+          .where(eq(cashSession.id, req.params.id))
+          .for('update');
+        if (!s) throw notFound('Session inconnue.');
+        if (s.status !== 'CLOSED') throw conflict('Cette session n’est pas clôturée.');
+        const [count] = await tx.select().from(cashCount).where(eq(cashCount.sessionId, s.id));
+        if (!count) throw conflict('Cette session n’a pas de comptage de clôture.');
+        // Read under the lock, as for the closing: what is counted below was written before it.
+        const { rows } = await tx.execute<{ at: string }>(
+          sql`select clock_timestamp()::text as at`,
+        );
+        const regularizedAt = rows[0]!.at;
+        const summary = await sessionSummary(tx, s.id);
+        const expected =
+          decimalToCents(s.openingFloat) +
+          decimalToCents(summary.cashSales) +
+          decimalToCents(summary.cashOther);
+        const difference = decimalToCents(count.countedCash) - expected;
+        await tx
+          .update(cashCount)
+          .set({
+            summary,
+            expectedCash: centsToDecimal(expected),
+            difference: centsToDecimal(difference),
+          })
+          .where(eq(cashCount.sessionId, s.id));
+        const accounting = await regularizeSessionEntry(tx, s.id, req.user!.id);
+        await audit(tx, req, {
+          action: 'session.regularize',
+          entity: 'cash_session',
+          entityId: s.id,
+          before: { expectedCash: count.expectedCash, difference: count.difference },
+          after: {
+            expectedCash: centsToDecimal(expected),
+            difference: centsToDecimal(difference),
+            accounting,
+            regularizedAt,
+          },
+        });
+        return {
+          expectedCash: centsToDecimal(expected),
+          difference: centsToDecimal(difference),
+          accounting,
+        };
+      }),
   );
 
   app.get(

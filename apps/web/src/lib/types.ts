@@ -52,6 +52,8 @@ export interface MemberDetail {
   imageConsentAt: string | null;
   username: string | null;
   hasPassword: boolean;
+  /** R-SES-07: the cashier has chosen a code. */
+  hasTillPin?: boolean;
   hasQr: boolean;
   roles: RoleCode[];
   createdAt: string;

@@ -13,6 +13,8 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { revokeResetLinks } from '../../lib/identity';
+import { checkMemberPassword } from '../../lib/till-cashier';
 import { HttpProblem, badRequest } from '../../lib/problem';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { hashPassword, hashToken, newToken, verifyDummy, verifyPassword } from '../../lib/tokens';
@@ -21,6 +23,32 @@ import { loadSettings } from '../admin/settings-store';
 import type { DbOrTx } from '@episoft/db';
 
 const INVALID_CREDENTIALS = 'Identifiant ou mot de passe incorrect.';
+
+/**
+ * R-EVO-42: the account of a user name or of an e-mail. The user name wins over the e-mail, so
+ * that the answer never depends on the order of the rows if one account's user name were another
+ * account's e-mail.
+ */
+async function findAccount(db: Db, identifier: string) {
+  const [account] = await db
+    .select({
+      id: member.id,
+      passwordHash: member.passwordHash,
+      status: member.status,
+      email: member.email,
+      firstName: member.firstName,
+    })
+    .from(member)
+    .where(
+      sql`lower(${member.username}) = lower(${identifier}) or lower(${member.email}) = lower(${identifier})`,
+    )
+    .orderBy(
+      sql`case when lower(${member.username}) = lower(${identifier}) then 0 else 1 end`,
+      member.number,
+    )
+    .limit(1);
+  return account;
+}
 
 export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
   app,
@@ -36,11 +64,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       const { username, password } = req.body;
       const now = new Date();
 
-      const user = await db.query.member.findFirst({
-        // R-EVO-42: the e-mail of the membership works as an identifier.
-        where: sql`lower(${member.username}) = lower(${username}) or lower(${member.email}) = lower(${username})`,
-        columns: { id: true, passwordHash: true, status: true },
-      });
+      const user = await findAccount(db, username);
 
       // The lockout counts the attempts on the account, whether its user name or its e-mail was
       // typed: switching from one to the other must not double the number of tries.
@@ -104,6 +128,33 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
     return reply.status(204).send();
   });
 
+  /**
+   * R-SES-07: the holder of the session takes the till back, and with it the rest of their
+   * rights, by typing their password again. It counts like a sign-in attempt (lockout).
+   */
+  app.post(
+    '/auth/unlock',
+    {
+      schema: { body: z.object({ password: z.string().min(1).max(200) }) },
+      config: { ...authRateLimit },
+    },
+    async (req, reply) => {
+      const u = req.user!;
+      await checkMemberPassword(db, req, u.impersonator?.id ?? u.id, req.body.password);
+      if (u.tillCashierId)
+        await db.transaction(async (tx) => {
+          await tx.update(session).set({ tillCashierId: null }).where(eq(session.id, u.sessionId));
+          await audit(tx, req, {
+            action: 'till.unlock',
+            entity: 'member',
+            entityId: u.id,
+            before: { cashierId: u.tillCashierId },
+          });
+        });
+      return reply.status(204).send();
+    },
+  );
+
   app.get('/me', async (req): Promise<Me> => {
     const u = req.user!;
     return {
@@ -115,6 +166,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       roles: u.roles,
       impersonator: u.impersonator,
       shopEnabled: (await loadSettings(db))['shop.enabled'].enabled,
+      tillCashierId: u.tillCashierId,
     };
   });
 
@@ -123,10 +175,7 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
     '/auth/password/forgot',
     { schema: { body: forgotPasswordSchema }, config: { public: true, ...authRateLimit } },
     async (req, reply) => {
-      const user = await db.query.member.findFirst({
-        where: sql`lower(${member.username}) = lower(${req.body.username}) or lower(${member.email}) = lower(${req.body.username})`,
-        columns: { id: true, email: true, firstName: true, status: true },
-      });
+      const user = await findAccount(db, req.body.username);
       if (user?.email && canLogIn(user.status)) {
         await db.transaction(async (tx) => {
           await sendPasswordLink(tx, config, user);
@@ -168,8 +217,10 @@ export const authRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
           .returning({ memberId: passwordResetToken.memberId });
         if (!token) throw badRequest('Ce lien n’est plus valide. Demandez-en un nouveau.');
         await tx.update(member).set({ passwordHash }).where(eq(member.id, token.memberId));
-        // A new password closes every open session of the member.
+        // A new password closes every open session of the member, and every other reset link
+        // already sent: an old link that leaked must not change the password again (audit KV2, S04).
         await tx.delete(session).where(eq(session.memberId, token.memberId));
+        await revokeResetLinks(tx, token.memberId);
         await audit(tx, req, {
           action: 'password.reset',
           entity: 'member',
@@ -200,6 +251,8 @@ export async function sendPasswordLink(
   user: { id: string; email: string | null; firstName: string },
 ): Promise<string> {
   const token = newToken();
+  // Only the latest link works: asking again makes the previous ones unusable.
+  await revokeResetLinks(tx, user.id);
   await tx.insert(passwordResetToken).values({
     id: hashToken(token),
     memberId: user.id,

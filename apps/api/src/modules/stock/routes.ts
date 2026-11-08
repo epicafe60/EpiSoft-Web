@@ -655,6 +655,18 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .select()
           .from(inventoryLine)
           .where(eq(inventoryLine.sessionId, s.id));
+        // C04: the products are locked before their movements are read. A sale being recorded
+        // meanwhile (it locks the product to take it off the stock) is either waited for, and its
+        // movement counted here, or waits, and then sees this inventory validated and gives the
+        // product back. Never both missed. Locked in id order, as the sales do.
+        const productIds = [...new Set(lines.map((l) => l.productId))].sort();
+        if (productIds.length)
+          await tx
+            .select({ id: product.id })
+            .from(product)
+            .where(inArray(product.id, productIds))
+            .orderBy(product.id)
+            .for('update');
         let adjusted = 0;
         for (const l of lines) {
           let adjustment: number | null = null;

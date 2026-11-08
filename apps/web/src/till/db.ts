@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
+  CashierCheck,
   SnapshotHousehold,
   SnapshotMember,
   SnapshotMembershipType,
@@ -97,6 +98,12 @@ export interface MetaValues {
   lastPushAt: string | null;
   settings: TillSettings | null;
   activeDraftId: string | null;
+  /**
+   * R-SES-07: the cashier keeping the till when it is not the person signed in, how it was
+   * established, and the last ticket they made (the till asks again after a while). Null: the
+   * person signed in keeps the till.
+   */
+  cashier: { id: string; check: CashierCheck; lastActivityAt: string } | null;
 }
 
 const DEFAULTS: MetaValues = {
@@ -108,6 +115,7 @@ const DEFAULTS: MetaValues = {
   lastPushAt: null,
   settings: null,
   activeDraftId: null,
+  cashier: null,
 };
 
 export async function getMeta<K extends keyof MetaValues>(
@@ -124,4 +132,29 @@ export async function setMeta<K extends keyof MetaValues>(
   db = tillDb,
 ): Promise<void> {
   await db.meta.put({ key, value });
+}
+
+/**
+ * Audit KV2, S05: on sign-out, the browser forgets the members and households it copied for the
+ * offline till (names, numbers, badges, balances), the tickets being entered and the operations
+ * the server already has. What the server does not have yet is kept: the pending operations, and
+ * the refused tickets nobody has dealt with, sent or shown at the next sign-in. The device, its
+ * open session and its sequence number are kept too (a sequence reused would be refused). The
+ * next snapshot is a full one.
+ */
+export async function forgetPersonalData(db = tillDb): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.members, db.households, db.drafts, db.outbox, db.meta],
+    async () => {
+      await db.members.clear();
+      await db.households.clear();
+      await db.drafts.clear();
+      await db.outbox
+        .filter((e) => e.status === 'DONE' || (e.status === 'REJECTED' && e.acknowledged === true))
+        .delete();
+      // The cashier keeping the till goes with the person signed in (R-SES-07).
+      await db.meta.bulkDelete(['cursor', 'lastSnapshotAt', 'activeDraftId', 'cashier']);
+    },
+  );
 }

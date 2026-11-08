@@ -297,7 +297,9 @@ export async function reverseEntry(
   entryId: string,
   opts: { date?: string; label?: string; userId: string; source?: { type: string; id: string } },
 ): Promise<string> {
-  const [orig] = await tx.select().from(entry).where(eq(entry.id, entryId));
+  // Locked: two reversals asked at once (two people, a double click, a bank line reassigned
+  // meanwhile), the second one waits and sees the first. Never two counter entries.
+  const [orig] = await tx.select().from(entry).where(eq(entry.id, entryId)).for('update');
   if (!orig) throw notFound('Écriture introuvable.');
   if (orig.status !== 'VALIDATED')
     throw conflict(

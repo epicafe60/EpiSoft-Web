@@ -44,6 +44,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { headerFileName } from '../../lib/files';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { sendTopupReceipt } from '../pos/sync-service';
 import { lockedBalanceCents } from '../pos/wallet';
@@ -181,7 +182,7 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       const body = req.body as unknown;
       if (!Buffer.isBuffer(body) || body.length === 0)
         throw badRequest('Fichier absent : envoyez-le en application/octet-stream.');
-      const fileName = decodeURIComponent(String(req.headers['x-file-name'] ?? 'releve'));
+      const fileName = headerFileName(req.headers['x-file-name'], 'releve');
       const hash = createHash('sha256').update(body).digest('hex');
       let parsed;
       try {
@@ -632,11 +633,65 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       if (!l) throw notFound('Ligne bancaire introuvable.');
       const [st] = await tx.select().from(bankStatement).where(eq(bankStatement.id, l.statementId));
       if (st!.status === 'CLOSED') throw conflict('Ce relevé est clos.');
-      await tx
-        .update(bankLine)
-        .set({ status: 'NEW', entryLineId: null, ruleId: null })
-        .where(eq(bankLine.id, l.id));
-      await audit(tx, req, { action: 'bank_line.unmatch', entity: 'bank_line', entityId: l.id });
+      if (l.status !== 'MATCHED') throw conflict('Cette ligne n’est pas rapprochée.');
+      // What the match created must not survive a new match of the same line: the transfer would
+      // be counted twice (audit KV2, « réaffectation bancaire »).
+      const [credited] = await tx
+        .select({ householdId: memberPayment.householdId })
+        .from(memberPayment)
+        .where(eq(memberPayment.bankLineId, l.id));
+      if (credited) {
+        const h = await tx.query.household.findFirst({
+          where: eq(household.id, credited.householdId),
+        });
+        throw conflict(
+          `Ce virement a crédité la cagnotte du foyer n° ${h?.number ?? '?'} : la ligne reste rapprochée, sinon un nouveau rapprochement le compterait deux fois. Pour le reporter sur un autre foyer, faites une correction sur les deux cagnottes.`,
+        );
+      }
+      const [made] = l.entryLineId
+        ? await tx
+            .select({ id: entry.id, status: entry.status, label: entry.label })
+            .from(entryLine)
+            .innerJoin(entry, eq(entry.id, entryLine.entryId))
+            .where(
+              and(
+                eq(entryLine.id, l.entryLineId),
+                eq(entry.sourceType, 'bank_line'),
+                eq(entry.sourceId, l.id),
+              ),
+            )
+        : [];
+      let droppedEntry: string | null = null;
+      if (made) {
+        const [reversal] = await tx
+          .select({ id: entry.id })
+          .from(entry)
+          .where(eq(entry.reversesEntryId, made.id));
+        if (made.status === 'DRAFT') {
+          // Created by the match and never validated: undone with it.
+          await tx
+            .update(bankLine)
+            .set({ status: 'NEW', entryLineId: null, ruleId: null })
+            .where(eq(bankLine.id, l.id));
+          await tx.delete(entryLine).where(eq(entryLine.entryId, made.id));
+          await tx.delete(entry).where(eq(entry.id, made.id));
+          droppedEntry = made.label;
+        } else if (!reversal)
+          throw conflict(
+            `L’écriture « ${made.label} » créée par ce rapprochement est validée : contre-passez-la d’abord, puis détachez la ligne.`,
+          );
+      }
+      if (!droppedEntry)
+        await tx
+          .update(bankLine)
+          .set({ status: 'NEW', entryLineId: null, ruleId: null })
+          .where(eq(bankLine.id, l.id));
+      await audit(tx, req, {
+        action: 'bank_line.unmatch',
+        entity: 'bank_line',
+        entityId: l.id,
+        ...(droppedEntry ? { after: { droppedEntry } } : {}),
+      });
       return { ok: true };
     }),
   );

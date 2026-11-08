@@ -85,6 +85,9 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
           onBehalfOf: sql<
             string | null
           >`(select m2.first_name || ' ' || m2.last_name from app.member m2 where m2.id = ${auditLog.onBehalfOfId})`,
+          viaSessionOf: sql<
+            string | null
+          >`(select m3.first_name || ' ' || m3.last_name from app.member m3 where m3.id = ${auditLog.viaSessionOfId})`,
         })
         .from(auditLog)
         .leftJoin(member, eq(member.id, auditLog.actorId))
@@ -96,6 +99,7 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
         at: r.at.toISOString(),
         actor: r.actor ?? 'Le système',
         onBehalfOf: r.onBehalfOf,
+        viaSessionOf: r.viaSessionOf,
         sentence: describeAudit(r.action, r.after),
       }));
     },

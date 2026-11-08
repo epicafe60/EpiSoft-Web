@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { expectIntegrity } from './integrity-helper';
-import { account, bankLine, entry, household, type Db } from '@episoft/db';
+import { account, bankLine, entry, household, journal, type Db } from '@episoft/db';
 import { createUser, login, setupTestApp } from './helpers';
 
 let t: Awaited<ReturnType<typeof setupTestApp>>;
@@ -150,6 +150,95 @@ describe('bank import (R-CPT-12)', () => {
     expect((await post(`/api/v1/bank/statements/${res.json().statementId}/close`)).statusCode).toBe(
       409,
     );
+  });
+});
+
+describe('unmatching a line (audit KV2, « réaffectation bancaire »)', () => {
+  async function matched() {
+    const id = await bankAccountId();
+    const imp = await importFile(id, OFX);
+    const [hh] = await t.db.insert(household).values({}).returning();
+    const detail = (await get(`/api/v1/bank/statements/${imp.json().statementId}`)).json();
+    const credit = detail.lines.find((l: { amount: string }) => l.amount === '50.00');
+    const debit = detail.lines.find((l: { amount: string }) => l.amount === '-12.30');
+    const res = await post('/api/v1/bank/lines/match', {
+      items: [
+        { lineId: credit.id, action: 'HOUSEHOLD', householdId: hh!.id },
+        { lineId: debit.id, action: 'ACCOUNT', accountId: (await acct('658000')).id },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    return { creditId: credit.id as string, debitId: debit.id as string, householdId: hh!.id };
+  }
+  const balance = async (householdId: string) =>
+    (
+      (
+        await t.db.execute(
+          sql`select balance from app.household_balance where household_id = ${householdId}`,
+        )
+      ).rows[0] as { balance: string }
+    ).balance;
+  const entriesOf = async (lineId: string) =>
+    t.db.select().from(entry).where(eq(entry.sourceId, lineId));
+
+  it('keeps a transfer credited to a cagnotte matched: a new match would credit it twice', async () => {
+    const { creditId, householdId } = await matched();
+    const res = await post(`/api/v1/bank/lines/${creditId}/unmatch`);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().detail).toMatch(/cagnotte/);
+    expect(await balance(householdId)).toBe('50.00');
+    const [l] = await t.db.select().from(bankLine).where(eq(bankLine.id, creditId));
+    expect(l!.status).toBe('MATCHED');
+  });
+
+  it('undoes the draft entry the match created, so a new match leaves one entry', async () => {
+    const { debitId } = await matched();
+    expect(await entriesOf(debitId)).toHaveLength(1);
+    expect((await post(`/api/v1/bank/lines/${debitId}/unmatch`)).statusCode).toBe(200);
+    expect(await entriesOf(debitId)).toHaveLength(0);
+    await post('/api/v1/bank/lines/match', {
+      items: [{ lineId: debitId, action: 'ACCOUNT', accountId: (await acct('627100')).id }],
+    });
+    expect(await entriesOf(debitId)).toHaveLength(1);
+  });
+
+  it('asks to reverse a validated entry of the match before detaching the line', async () => {
+    const { debitId } = await matched();
+    const [e] = await entriesOf(debitId);
+    expect((await post('/api/v1/entries/validate', { ids: [e!.id] })).statusCode).toBe(200);
+    const refused = await post(`/api/v1/bank/lines/${debitId}/unmatch`);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().detail).toMatch(/contre-passez/);
+    expect((await post(`/api/v1/entries/${e!.id}/reverse`, {})).statusCode).toBe(200);
+    expect((await post(`/api/v1/bank/lines/${debitId}/unmatch`)).statusCode).toBe(200);
+  });
+});
+
+describe('a validated entry reversed twice at once', () => {
+  it('gets one counter entry, the other request is refused', async () => {
+    const [od] = await t.db.select().from(journal).where(eq(journal.code, 'OD'));
+    const res = await post('/api/v1/entries', {
+      journalId: od!.id,
+      date: '2026-03-10',
+      pieceRef: null,
+      mode: null,
+      label: 'Écriture à contre-passer',
+      lines: [
+        { accountId: (await acct('658000')).id, label: 'x', debit: '10.00', credit: '0.00' },
+        { accountId: (await acct('512001')).id, label: 'x', debit: '0.00', credit: '10.00' },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const id = res.json().id as string;
+    expect((await post('/api/v1/entries/validate', { ids: [id] })).statusCode).toBe(200);
+    const codes = (
+      await Promise.all([
+        post(`/api/v1/entries/${id}/reverse`, {}),
+        post(`/api/v1/entries/${id}/reverse`, {}),
+      ])
+    ).map((r) => r.statusCode);
+    expect(codes.sort()).toEqual([200, 409]);
+    expect(await t.db.select().from(entry).where(eq(entry.reversesEntryId, id))).toHaveLength(1);
   });
 });
 

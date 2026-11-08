@@ -42,6 +42,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
+import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
 import { sendTopupReceipt } from '../pos/sync-service';
@@ -298,7 +299,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       .select({ code: userRole.roleCode })
       .from(userRole)
       .where(eq(userRole.memberId, m.id));
-    const { passwordHash, qrTokenHash, ...rest } = m;
+    const { passwordHash, qrTokenHash, tillPasswordHash, tillPasswordSalt: _s, ...rest } = m;
     return {
       ...rest,
       newsletter: m.newsletterOptInAt !== null,
@@ -313,6 +314,8 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       imageConsent: m.imageConsentAt !== null,
       imageConsentAt: m.imageConsentAt?.toISOString() ?? null,
       hasPassword: passwordHash !== null,
+      // R-SES-07: whether the cashier has chosen a code (never the code itself).
+      hasTillPin: tillPasswordHash !== null,
       hasQr: qrTokenHash !== null,
       roles: roles.map((r) => r.code),
       newsletterOptInAt: m.newsletterOptInAt?.toISOString() ?? null,
@@ -377,6 +380,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         if (!before) throw notFound('Membre introuvable.');
         assertFresh(before.updatedAt, updatedAt);
         await assertUniqueContacts(tx, fields.username, fields.email, before.id);
+        const identity = await checkIdentityChange(tx, req.user!.roles, before, fields);
         const set: Partial<typeof member.$inferInsert> = { ...fields };
         // R-MBR-08: consent is dated when given, cleared when withdrawn.
         if (newsletter !== undefined && newsletter !== (before.newsletterOptInAt !== null)) {
@@ -410,6 +414,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           before: Object.fromEntries(changed.map((k) => [k, before[k]])),
           after: Object.fromEntries(changed.map((k) => [k, after![k]])),
         });
+        await afterIdentityChange(tx, before, identity);
         return { id: after!.id, updatedAt: after!.updatedAt.toISOString() };
       });
     },
@@ -433,7 +438,13 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   app.get('/members/:id/export', { ...adherents, schema: idParams }, async (req, reply) => {
     const m = await db.query.member.findFirst({ where: eq(member.id, req.params.id) });
     if (!m) throw notFound('Membre introuvable.');
-    const { passwordHash: _p, qrTokenHash: _q, ...data } = m;
+    const {
+      passwordHash: _p,
+      qrTokenHash: _q,
+      tillPasswordHash: _t,
+      tillPasswordSalt: _s,
+      ...data
+    } = m;
     const roles = await db
       .select({ code: userRole.roleCode })
       .from(userRole)
@@ -492,6 +503,8 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             username: null,
             passwordHash: null,
             qrTokenHash: null,
+            tillPasswordHash: null,
+            tillPasswordSalt: null,
             newsletterOptInAt: null,
             publicVisible: false,
             status: 'ARCHIVED',

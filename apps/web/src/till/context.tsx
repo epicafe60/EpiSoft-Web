@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { estimatedBalanceCents, decimalToCents } from '@episoft/shared';
 import { api } from '@/lib/api';
 import { useMe } from '@/lib/auth';
-import { getMeta, tillDb, type MetaValues } from './db';
+import { getMeta, setMeta, tillDb, type MetaValues } from './db';
 import { pendingWalletMoves } from './logic';
 import { SyncEngine, type SyncState } from './sync';
 import { TillContext, type TillContextValue } from './context-core';
@@ -18,6 +18,7 @@ const META_KEYS: (keyof MetaValues)[] = [
   'lastPushAt',
   'settings',
   'activeDraftId',
+  'cashier',
 ];
 
 export function TillProvider({ children }: { children: ReactNode }) {
@@ -44,6 +45,17 @@ export function TillProvider({ children }: { children: ReactNode }) {
     const entries = await Promise.all(META_KEYS.map(async (k) => [k, await getMeta(k)] as const));
     return Object.fromEntries(entries) as unknown as MetaValues;
   });
+  // R-SES-07: the server says another cashier keeps the till with this session (chosen on this
+  // till before its data was cleared, or on another one): the till takes it as its cashier.
+  const serverCashier = me.tillCashierId ?? null;
+  useEffect(() => {
+    if (!serverCashier || !meta || meta.cashier) return;
+    void setMeta('cashier', {
+      id: serverCashier,
+      check: 'DECLARED',
+      lastActivityAt: new Date().toISOString(),
+    });
+  }, [serverCashier, meta]);
   const outbox = useLiveQuery(() => tillDb.outbox.toArray(), []);
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const households = useLiveQuery(() => tillDb.households.toArray(), []);
@@ -61,7 +73,14 @@ export function TillProvider({ children }: { children: ReactNode }) {
     settings: meta.settings,
     pendingCount: outbox.filter((o) => o.status === 'PENDING').length,
     rejectedCount: outbox.filter((o) => o.status === 'REJECTED' && !o.acknowledged).length,
-    cashierId: me.id,
+    // R-SES-07: another cashier, chosen on the till, or the person signed in.
+    cashierId: meta.cashier?.id ?? me.id,
+    cashierCheck: meta.cashier?.check ?? 'SESSION',
+    sessionUserId: me.id,
+    noteCashierActivity: async () => {
+      const c = await getMeta('cashier');
+      if (c) await setMeta('cashier', { ...c, lastActivityAt: new Date().toISOString() });
+    },
     balanceCents: (householdId) => {
       const h = households.find((x) => x.id === householdId);
       return h ? estimatedBalanceCents(householdId, decimalToCents(h.balance), moves) : null;

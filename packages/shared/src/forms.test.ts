@@ -3,6 +3,7 @@ import {
   memberCreateSchema,
   memberPatchSchema,
   productCreateSchema,
+  productPatchSchema,
   purchasePriceIncl,
   walletCorrectionSchema,
 } from './forms';
@@ -39,6 +40,18 @@ describe('member forms (R-MBR-01, R-MBR-09)', () => {
       updatedAt: '2026-10-03T10:00:00Z',
     });
     expect(Object.keys(p).sort()).toEqual(['phone', 'updatedAt']);
+  });
+
+  it('a patch never fills in a default value (zod 4: consent and shop visibility kept)', () => {
+    const at = '2026-10-03T10:00:00Z';
+    expect(memberPatchSchema.parse({ updatedAt: at })).toEqual({ updatedAt: at });
+    expect(productPatchSchema.parse({ name: 'Pain', updatedAt: at })).toEqual({
+      name: 'Pain',
+      updatedAt: at,
+    });
+    // An explicit value is still taken, and still validated.
+    expect(memberPatchSchema.parse({ imageConsent: true, updatedAt: at }).imageConsent).toBe(true);
+    expect(productPatchSchema.safeParse({ shopVisible: 'oui', updatedAt: at }).success).toBe(false);
   });
 });
 

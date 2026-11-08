@@ -64,6 +64,27 @@ export function hasAnyRole(userRoles: readonly RoleCode[], required: readonly Ro
   return required.some((r) => userRoles.includes(r));
 }
 
+/** Roles that only open the online shop: holding them gives no access to anyone else's data. */
+const SHOP_ONLY_ROLES: readonly RoleCode[] = ['COMMANDES_EN_LIGNE'];
+
+/** A staff account: it holds a role beyond the online shop. */
+export function isStaffAccount(roles: readonly RoleCode[]): boolean {
+  return roles.some((r) => !SHOP_ONLY_ROLES.includes(r));
+}
+
+/**
+ * Who may change the sign-in identity (e-mail, user name) of an account. The e-mail receives the
+ * « mot de passe oublié » link: changing it on a staff account hands that account over. Only an
+ * administrator may do it (audit KV2, S02); any member card of a non-staff account stays editable
+ * by the team in charge of the members.
+ */
+export function identityChangeAllowed(
+  actorRoles: readonly RoleCode[],
+  targetRoles: readonly RoleCode[],
+): boolean {
+  return actorRoles.includes('ADMIN') || !isStaffAccount(targetRoles);
+}
+
 /** Application modules and the roles that open them. Shared so the menu and the API guards agree. */
 export const MODULES = [
   { key: 'caisse', label: 'Caisse', path: '/caisse', roles: ['CAISSE'] },

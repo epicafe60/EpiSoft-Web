@@ -62,8 +62,17 @@ const SECTIONS: Section[] = [
         question: 'Plusieurs personnes utilisent la caisse en même temps',
         answer: [
           'Le premier caissier qui arrive ouvre la caisse de la journée ; les suivants la rejoignent tout seuls, d’où qu’ils se connectent. Il n’y a qu’un tiroir et qu’une clôture.',
-          'Chacun se connecte avec son propre compte : vos ventes sont comptées à votre nom. Les tickets de tous sont dans « Tickets du jour ».',
+          'Les ventes sont comptées au nom du caissier affiché en haut de la caisse (« Encaissé par »). Les tickets de tous sont dans « Tickets du jour ».',
           'N’importe quel caissier peut clôturer ; la clôture indique si un autre caissier a vendu il y a peu.',
+        ],
+      },
+      {
+        question: 'Je prends la caisse après quelqu’un d’autre',
+        answer: [
+          'Pas besoin de déconnecter le poste : touchez « Changer de caissier » (ou le nom affiché en haut), puis votre nom. Si l’association le demande, tapez votre code caissier de 4 chiffres.',
+          'La première fois, choisissez votre code : 4 chiffres, puis votre mot de passe EpiSoft pour confirmer. Code oublié : un administrateur l’efface, vous en choisissez un autre.',
+          'Tant qu’un autre caissier tient la caisse, le reste de l’application est fermé : la personne connectée retape son mot de passe (« Revenir à mon compte ») pour y accéder.',
+          'Après un quart d’heure sans ticket, la caisse redemande qui encaisse.',
         ],
       },
     ],

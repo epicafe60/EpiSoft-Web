@@ -13,6 +13,7 @@ import {
   productBarcode,
   priceHistory,
   supplier,
+  userRole,
   walletEntry,
   type Db,
   type Tx,
@@ -25,6 +26,7 @@ import {
   autoMapColumns,
   centsToDecimal,
   hasAnyRole,
+  identityChangeAllowed,
   inclFromExcl4,
   looksLikeHeader,
   milliToDecimal,
@@ -37,24 +39,45 @@ import {
   type MemberImport,
   type ProductImport,
   type ProductUpdateField,
+  type RoleCode,
+  zipProblem,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { afterIdentityChange, rolesOf } from '../../lib/identity';
+import { headerFileName } from '../../lib/files';
 import { badRequest, forbidden } from '../../lib/problem';
+import { lockedBalanceCents } from '../pos/wallet';
 import { recordMovement } from '../stock/ledger';
 
 const MAX_FILE = 10 * 1024 * 1024;
 const PREVIEW_ROWS = 300;
 
 const params = z.object({ kind: z.enum(IMPORT_KINDS) });
+
+/** A JSON value passed in the query string: malformed JSON is a 400, never a server error. */
+const jsonParam = <T extends z.ZodType>(schema: T) =>
+  z
+    .string()
+    .max(20_000)
+    .transform((s, ctx) => {
+      try {
+        return JSON.parse(s) as unknown;
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'JSON invalide.' });
+        return z.NEVER;
+      }
+    })
+    .pipe(schema);
+
 const query = z.object({
   profile: z.enum(['epicerio', 'custom']).default('epicerio'),
   /** custom profile: JSON {field: columnIndex}; omitted = automatic mapping by header. */
-  mapping: z.string().optional(),
+  mapping: jsonParam(z.record(z.string().max(50), z.number().int().min(0).max(500))).optional(),
   /** products: comma list of purchasePrice,salePrice,stock to overwrite on existing products. */
   fields: z.string().default(''),
   /** products: JSON {supplierNameInFile: supplierId}, remembered for next imports. */
-  supplierMap: z.string().optional(),
+  supplierMap: jsonParam(z.record(z.string().max(200), z.string().uuid())).optional(),
   /** members: apply balance corrections (R-IMP-02). */
   confirmBalance: z
     .enum(['true', 'false'])
@@ -78,6 +101,8 @@ function decodeText(buf: Buffer): string {
 /** CSV or XLSX (first sheet) as rows of strings. */
 async function readTable(buf: Buffer, fileName: string): Promise<string[][]> {
   if (/\.xlsx$/i.test(fileName)) {
+    const problem = zipProblem(buf);
+    if (problem) throw badRequest(problem);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf as never);
     const ws = wb.worksheets[0];
@@ -127,7 +152,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const body = req.body as unknown;
     if (!Buffer.isBuffer(body) || body.length === 0)
       throw badRequest('Fichier absent : envoyez-le en application/octet-stream.');
-    const fileName = decodeURIComponent(String(req.headers['x-file-name'] ?? 'import.csv'));
+    const fileName = headerFileName(req.headers['x-file-name'], 'import.csv');
     const table = await readTable(body, fileName);
     if (table.length === 0) throw badRequest('Le fichier est vide.');
     let headers: string[];
@@ -141,9 +166,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     } else {
       headers = table[0]!;
       rows = table.slice(1);
-      mapping = q.mapping
-        ? (JSON.parse(q.mapping) as Record<string, number>)
-        : autoMapColumns(headers, kind);
+      mapping = q.mapping ?? autoMapColumns(headers, kind);
     }
     const missing = IMPORT_FIELDS[kind].filter((f) => f.required && mapping[f.key] === undefined);
     if (missing.length)
@@ -268,9 +291,20 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
 
   // --- Members (R-IMP-02) -----------------------------------------------------------------------
 
-  async function planMembers(tx: Db | Tx, records: Record<string, string>[]) {
+  async function planMembers(
+    tx: Db | Tx,
+    records: Record<string, string>[],
+    actorRoles: readonly RoleCode[],
+  ) {
     const parsed = records.map((r, i) => ({ line: i + 1, ...normalizeMember(r) }));
     const all = await tx.select().from(member);
+    // S02: the e-mail of a staff account is its recovery address; only an ADMIN changes it.
+    const rolesByMember = new Map<string, RoleCode[]>();
+    for (const r of await tx.select().from(userRole))
+      rolesByMember.set(r.memberId, [
+        ...(rolesByMember.get(r.memberId) ?? []),
+        r.roleCode as RoleCode,
+      ]);
     const bal = await tx.select().from(householdBalance);
     const balanceOf = new Map(bal.map((b) => [b.householdId, Math.round(Number(b.balance) * 100)]));
     const byEmail = new Map(
@@ -286,6 +320,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       currentBalance?: number;
     })[] = [];
     const taken = new Set<string>();
+    const targetOf = new Map<string, { cents: number; line: number; index: number }>();
     for (const p of parsed) {
       if (!p.value) {
         plan.push({ line: p.line, label: '', action: 'error', changes: {}, error: p.error! });
@@ -336,13 +371,42 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         continue;
       }
       const changes: PlanRow['changes'] = {};
-      if (v.email && v.email !== cur.email?.toLowerCase())
+      if (v.email && v.email !== cur.email?.toLowerCase()) {
+        if (!identityChangeAllowed(actorRoles, rolesByMember.get(cur.id) ?? [])) {
+          plan.push({
+            line: p.line,
+            label,
+            action: 'error',
+            changes: {},
+            error:
+              'Courriel d’un compte de l’équipe (bénévole avec un rôle) : seul un administrateur peut le changer.',
+          });
+          continue;
+        }
         changes.email = { from: cur.email, to: v.email };
+      }
       if (v.phone && v.phone !== (cur.phone ?? '').replace(/\s/g, ''))
         changes.phone = { from: cur.phone, to: v.phone };
       const current = cur.householdId ? (balanceOf.get(cur.householdId) ?? 0) : 0;
-      if (v.balanceCents !== null && v.balanceCents !== current)
+      // C03: the balance belongs to the household, not to each member. Two lines of the same
+      // household give one target: applied once, and refused when they disagree.
+      const earlier = cur.householdId ? targetOf.get(cur.householdId) : undefined;
+      if (v.balanceCents !== null && earlier && earlier.cents !== v.balanceCents) {
+        const msg = `Solde différent d’une autre ligne du même foyer (ligne ${earlier.line}).`;
+        const first = plan[earlier.index]!;
+        plan[earlier.index] = {
+          ...first,
+          action: 'error',
+          changes: {},
+          error: `Solde différent d’une autre ligne du même foyer (ligne ${p.line}).`,
+        };
+        plan.push({ line: p.line, label, action: 'error', changes: {}, error: msg });
+        continue;
+      }
+      if (v.balanceCents !== null && !earlier && v.balanceCents !== current)
         changes.balance = { from: centsToDecimal(current), to: centsToDecimal(v.balanceCents) };
+      if (v.balanceCents !== null && cur.householdId && !earlier)
+        targetOf.set(cur.householdId, { cents: v.balanceCents, line: p.line, index: plan.length });
       plan.push({
         line: p.line,
         label,
@@ -379,13 +443,14 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const kind = req.params.kind;
     guard(kind, req.user!.roles);
     const file = await load(kind, req, req.query);
-    const supplierMap = req.query.supplierMap
-      ? (JSON.parse(req.query.supplierMap) as Record<string, string>)
-      : {};
+    const supplierMap = req.query.supplierMap ?? {};
     const out =
       kind === 'products'
         ? await planProducts(db, file.records, supplierMap)
-        : { ...(await planMembers(db, file.records)), unknownSuppliers: [] as string[] };
+        : {
+            ...(await planMembers(db, file.records, req.user!.roles)),
+            unknownSuppliers: [] as string[],
+          };
     return {
       fileName: file.fileName,
       headers: file.headers,
@@ -411,9 +476,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           (PRODUCT_UPDATE_FIELDS as readonly string[]).includes(f),
         ),
     );
-    const supplierMap = req.query.supplierMap
-      ? (JSON.parse(req.query.supplierMap) as Record<string, string>)
-      : {};
+    const supplierMap = req.query.supplierMap ?? {};
     return db.transaction(async (tx) => {
       const result = {
         created: 0,
@@ -529,7 +592,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           result.updated++;
         }
       } else {
-        const { plan } = await planMembers(tx, file.records);
+        const { plan } = await planMembers(tx, file.records, req.user!.roles);
         for (const r of plan) {
           const v = r.value;
           if (r.action === 'error' || !v) {
@@ -557,6 +620,12 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
               .where(eq(household.id, householdId));
             result.created++;
           } else if (r.action === 'update' && (r.changes.email || r.changes.phone)) {
+            if (r.changes.email)
+              await afterIdentityChange(tx, r.existing!, {
+                emailChanged: true,
+                usernameChanged: false,
+                targetRoles: await rolesOf(tx, r.existing!.id),
+              });
             await tx
               .update(member)
               .set({
@@ -568,9 +637,13 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           } else result.unchanged++;
           // R-IMP-02: the imported balance is compared, and an explicit CORRECTION fixes the gap.
           if (r.changes.balance && req.query.confirmBalance && householdId) {
+            // C03: the gap is measured now, on the locked balance, not on the figure of the
+            // preview: the household ends exactly at the imported balance, with one correction.
+            const gap = v.balanceCents! - (await lockedBalanceCents(tx, householdId));
+            if (gap === 0) continue;
             await tx.insert(walletEntry).values({
               householdId,
-              amount: centsToDecimal(v.balanceCents! - (r.currentBalance ?? 0)),
+              amount: centsToDecimal(gap),
               kind: 'CORRECTION',
               comment: `Import ${file.fileName}`,
               createdBy: req.user!.id,

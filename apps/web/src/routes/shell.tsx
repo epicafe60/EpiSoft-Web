@@ -23,12 +23,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { hasAnyRole, visibleModules, type ModuleKey } from '@episoft/shared';
-import { api } from '@/lib/api';
-import { useMe, writeCachedMe } from '@/lib/auth';
+import { useMe } from '@/lib/auth';
+import { signOut } from '@/lib/sign-out';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ImpersonateDialog, stopImpersonation } from './admin/impersonate-dialog';
+import { UnlockForm, useCashierName, useLocalCashier } from '@/till/cashier-switch';
 
 export const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
   caisse: ShoppingCart,
@@ -122,15 +123,40 @@ function ImpersonationBanner() {
   );
 }
 
+/**
+ * R-SES-07: another cashier keeps the till with this session. The rest of the application (and the
+ * server) waits for the password of the person signed in; the till stays usable.
+ */
+function TillLocked({ cashierId }: { cashierId: string | null }) {
+  const me = useMe();
+  const name = useCashierName(cashierId);
+  return (
+    <div className="mx-auto grid max-w-md gap-4 py-10">
+      <h1 className="text-xl font-semibold">
+        La caisse est tenue par {name ?? 'un autre caissier'}
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        La session est celle de {me.firstName} {me.lastName}. Pour accéder au reste de
+        l’application, {me.firstName} retape son mot de passe ; sinon, revenez à la caisse.
+      </p>
+      <UnlockForm onDone={() => undefined} />
+      <Link to="/caisse" className="text-sm text-primary underline">
+        Retour à la caisse
+      </Link>
+    </div>
+  );
+}
+
 export function AppShell() {
   const me = useMe();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const localCashier = useLocalCashier();
+  const lockedBy = localCashier?.id ?? me.tillCashierId ?? null;
 
   const logout = async () => {
-    await api.post('/auth/logout').catch(() => undefined);
-    writeCachedMe(null);
+    if (!(await signOut())) return;
     queryClient.clear();
     await navigate({ to: '/connexion', search: {} });
   };
@@ -174,9 +200,7 @@ export function AppShell() {
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-dvh flex-col gap-6 border-r bg-card p-3 lg:flex">
         {brand}
-        <div className="flex-1 overflow-y-auto">
-          <Nav />
-        </div>
+        <div className="flex-1 overflow-y-auto">{lockedBy ? null : <Nav />}</div>
         {userBox}
       </aside>
 
@@ -214,7 +238,7 @@ export function AppShell() {
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <Nav onNavigate={() => setOpen(false)} />
+              {lockedBy ? null : <Nav onNavigate={() => setOpen(false)} />}
             </div>
             {userBox}
           </div>
@@ -224,7 +248,7 @@ export function AppShell() {
       <main id="contenu" className={cn('min-w-0 px-4 py-6 sm:px-6 lg:px-8')}>
         <div className="mx-auto max-w-6xl">
           <ImpersonationBanner />
-          <Outlet />
+          {lockedBy ? <TillLocked cashierId={lockedBy} /> : <Outlet />}
         </div>
       </main>
     </div>

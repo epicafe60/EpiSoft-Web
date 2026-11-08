@@ -124,7 +124,9 @@ describe('R-AUTH-03 lockout', () => {
     }
     const res = await post('/api/v1/auth/login', { username: u.username, password: PASSWORD });
     expect(res.statusCode).toBe(429);
-    expect(res.json().detail).toMatch(/Réessayez dans 15 min/);
+    // The attempts are dated by the database: in a test container its clock may lead the
+    // application's by a moment, and the rounded-up delay then reads 16 minutes.
+    expect(res.json().detail).toMatch(/Réessayez dans 1[56] min/);
   });
 });
 

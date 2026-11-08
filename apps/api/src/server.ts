@@ -17,7 +17,11 @@ const jobsPool = createPool(config.DATABASE_URL, 3, 'job');
 const jobsDb = createDb(jobsPool);
 
 if (config.MIGRATE_ON_START) {
-  const migrationPool = createPool(config.DATABASE_URL, 1, 'migration');
+  const migrationPool = createPool(
+    config.MIGRATION_DATABASE_URL ?? config.DATABASE_URL,
+    1,
+    'migration',
+  );
   await migrateAndSeed(createDb(migrationPool), config.MIGRATIONS_DIR);
   await migrationPool.end();
 }

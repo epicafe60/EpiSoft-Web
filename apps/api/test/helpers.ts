@@ -12,17 +12,19 @@ export async function setupTestApp() {
   // The application writes through its own connections (labelled « app » in data_change); the
   // tests prepare their data through others (« test »), so that the check below only looks at
   // what the application wrote.
-  const appPool = createPool(inject('databaseUrl'), 4);
+  // D01: the application runs with the restricted role, as in production.
+  const appPool = createPool(inject('appDatabaseUrl'), 4);
   const pool = createPool(inject('databaseUrl'), 2, 'test');
   const db = createDb(pool);
   // What the background jobs use in production: changes labelled « job » (see server.ts).
-  const jobsPool = createPool(inject('databaseUrl'), 2, 'job');
+  const jobsPool = createPool(inject('appDatabaseUrl'), 2, 'job');
   const jobsDb = createDb(jobsPool);
   const config = loadConfig({
     NODE_ENV: 'test',
-    DATABASE_URL: inject('databaseUrl'),
+    DATABASE_URL: inject('appDatabaseUrl'),
     APP_URL: 'http://test.local',
     AUTH_RATE_LIMIT_MAX: '100000',
+    API_RATE_LIMIT_MAX: '1000000',
     BACKUP_REPORT_TOKEN: 'test-backup-token-0123456789',
   });
   const app = await buildApp(createDb(appPool), config);

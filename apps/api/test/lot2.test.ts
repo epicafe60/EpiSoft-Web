@@ -113,7 +113,10 @@ describe('suppliers (R-FNR-01, R-FNR-02)', () => {
     ).json();
     expect([a.code, b.code]).toEqual(['0701', '0702']);
     const rows = await t.db.select().from(supplier).orderBy(supplier.code);
-    expect(rows.map((r) => r.accountNumber)).toEqual(['401001', '401002']);
+    // Accounts outlive the reset between tests: another file may already have used 401001.
+    const [first, second] = rows.map((r) => Number(r.accountNumber));
+    expect(String(first)).toMatch(/^401\d{3}$/);
+    expect(second).toBe(first! + 1);
   });
 });
 

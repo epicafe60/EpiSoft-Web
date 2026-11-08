@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, RotateCcw } from 'lucide-react';
+import { Lock, RotateCcw, Scale } from 'lucide-react';
 import {
   formatEuro,
   PAYMENT_METHOD_LABELS,
@@ -36,6 +36,8 @@ interface SessionRow {
   difference: string | null;
   salesCount: number;
   salesTotal: string;
+  /** Tickets recorded after the closing (a till that was offline). */
+  lateSales: number;
 }
 
 interface SessionReport {
@@ -98,6 +100,13 @@ export function TillAdminPage() {
     mutationFn: (id: string) => api.post(`/pos/sessions/${id}/reopen`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
   });
+  const regularize = useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ expectedCash: string; difference: string; accounting: string }>(
+        `/pos/sessions/${id}/regularize`,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+  });
 
   return (
     <div className="grid gap-6">
@@ -145,6 +154,18 @@ export function TillAdminPage() {
           <CardTitle className="text-base">Sessions de caisse</CardTitle>
         </CardHeader>
         {reopen.error ? <Alert className="mx-5">{reopen.error.message}</Alert> : null}
+        {regularize.error ? <Alert className="mx-5">{regularize.error.message}</Alert> : null}
+        {regularize.data ? (
+          <Alert variant="success" className="mx-5">
+            Clôture régularisée : espèces attendues {euro(regularize.data.expectedCash)}, écart{' '}
+            {euro(regularize.data.difference)}.{' '}
+            {regularize.data.accounting === 'regularized'
+              ? 'L’écriture étant validée, une écriture de régularisation a été créée.'
+              : regularize.data.accounting === 'regenerated'
+                ? 'L’écriture brouillon a été recalculée.'
+                : ''}
+          </Alert>
+        ) : null}
         {forceClose.error ? <Alert className="mx-5">{forceClose.error.message}</Alert> : null}
         <Table>
           <thead>
@@ -200,6 +221,28 @@ export function TillAdminPage() {
                       }}
                     >
                       <Lock /> Clôturer
+                    </Button>
+                  ) : null}
+                  {s.status === 'CLOSED' && s.lateSales > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        if (
+                          await confirmNow({
+                            title: 'Régulariser la clôture ?',
+                            message: `${s.lateSales} ticket(s) sont arrivés après la clôture (poste resté hors ligne). La synthèse et l’écart sont recalculés avec eux ; le comptage du tiroir ne change pas.`,
+                            impact: [
+                              'Écriture comptable en brouillon : recalculée.',
+                              'Écriture déjà validée : une écriture de régularisation est ajoutée, l’écriture validée ne change pas.',
+                            ],
+                            confirmLabel: 'Régulariser',
+                          })
+                        )
+                          regularize.mutate(s.id);
+                      }}
+                    >
+                      <Scale /> Régulariser ({s.lateSales})
                     </Button>
                   ) : null}
                   {s.status === 'CLOSED' && s.difference !== null ? (

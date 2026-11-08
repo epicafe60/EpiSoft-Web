@@ -10,7 +10,7 @@ type Row = Record<string, unknown>;
 
 /** Never leave the server: credentials, sessions, mail queue and binary media. */
 const EXCLUDED_TABLES = new Set(['session', 'password_reset_token', 'email_outbox', 'media']);
-const SENSITIVE_COLUMN = /hash|token|secret/i;
+const SENSITIVE_COLUMN = /hash|token|secret|salt|password/i;
 
 const cell = (v: unknown) =>
   v === null || v === undefined

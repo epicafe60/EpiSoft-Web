@@ -12,6 +12,7 @@ import {
 } from './catalog';
 import { centsToDecimal, parseAmountToCents } from './money';
 import { isValidEan, parseQtyToMilli, milliToDecimal } from './pos';
+import { patchOf } from './patch';
 import { isValidEmail } from './text';
 
 // Back-office forms (members, households, catalogue). Shared by the web forms and the API.
@@ -75,20 +76,17 @@ export const memberCreateSchema = z.object({
 export type MemberCreate = z.input<typeof memberCreateSchema>;
 
 /** R-MBR-09: only the fields present are changed. `updatedAt` guards against lost updates (§8.1). */
-export const memberPatchSchema = z
-  .object({ ...memberFields, householdId: z.string().uuid() })
-  .partial()
-  .extend({ updatedAt: z.string().datetime({ offset: true }) });
+export const memberPatchSchema = patchOf({
+  ...memberFields,
+  householdId: z.string().uuid(),
+}).extend({ updatedAt: z.string().datetime({ offset: true }) });
 export type MemberPatch = z.input<typeof memberPatchSchema>;
 
-export const householdPatchSchema = z
-  .object({
-    notes: text(2000),
-    transferReference: text(100),
-    referentMemberId: z.string().uuid(),
-  })
-  .partial()
-  .extend({ updatedAt: z.string().datetime({ offset: true }) });
+export const householdPatchSchema = patchOf({
+  notes: text(2000),
+  transferReference: text(100),
+  referentMemberId: z.string().uuid(),
+}).extend({ updatedAt: z.string().datetime({ offset: true }) });
 
 export const walletTopupSchema = z.object({
   amount: positiveAmountInput,
@@ -159,16 +157,13 @@ export const productCreateSchema = z.object({
 });
 export type ProductCreate = z.input<typeof productCreateSchema>;
 
-export const productPatchSchema = z
-  .object({
-    ...productFields,
-    code: z
-      .string()
-      .trim()
-      .regex(/^\d{5,6}$/, 'Code à 5 ou 6 chiffres.'),
-  })
-  .partial()
-  .extend({ updatedAt: z.string().datetime({ offset: true }) });
+export const productPatchSchema = patchOf({
+  ...productFields,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{5,6}$/, 'Code à 5 ou 6 chiffres.'),
+}).extend({ updatedAt: z.string().datetime({ offset: true }) });
 export type ProductPatch = z.input<typeof productPatchSchema>;
 
 /** R-PRD-04: PA TTC = PA HT × (1 + TVA), to 4 decimals. */

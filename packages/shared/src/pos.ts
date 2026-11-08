@@ -92,6 +92,31 @@ export function paymentState(totalCents: number, payments: readonly PaymentInput
  * Applies a payment typed by the cashier. Only cash can exceed the remaining amount;
  * the excess is the change (R-VTE-09). Other methods are capped at the remaining amount.
  */
+/**
+ * R-CAG-05 and R-VTE-09 on the server (audit KV2, C01): what the till sent about the cash given and
+ * the change must add up, whatever the client. Change only exists for cash, it is exactly « cash
+ * given − amount », and only change can be paid into the cagnotte. Returns why it does not hold, or
+ * null. A till that works normally always sends consistent values (see `applyPayment`).
+ */
+export function paymentProblem(p: {
+  method: PaymentMethod;
+  amountCents: number;
+  tenderedCents: number | null;
+  changeCents: number | null;
+  changeToWallet: boolean;
+}): string | null {
+  const hasCash = p.tenderedCents !== null || p.changeCents !== null;
+  if (!hasCash) return p.changeToWallet ? 'Monnaie versée en cagnotte sans espèces remises.' : null;
+  if (p.method !== 'CASH') return 'Somme remise et monnaie ne concernent que les espèces.';
+  if (p.tenderedCents === null || p.changeCents === null)
+    return 'Somme remise ou monnaie manquante pour un règlement en espèces.';
+  if (p.tenderedCents < p.amountCents) return 'La somme remise est inférieure au montant réglé.';
+  if (p.changeCents !== p.tenderedCents - p.amountCents)
+    return 'La monnaie ne correspond pas à la somme remise moins le montant réglé.';
+  if (p.changeToWallet && p.changeCents <= 0) return 'Aucune monnaie à verser en cagnotte.';
+  return null;
+}
+
 export function applyPayment(
   remainingCents: number,
   method: PaymentMethod,
@@ -190,7 +215,7 @@ export const DENOMINATIONS = [
   20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1,
 ] as const;
 
-export function countedCashCents(counts: Readonly<Record<string, number>>): number {
+export function countedCashCents(counts: Readonly<Partial<Record<string, number>>>): number {
   return DENOMINATIONS.reduce((s, d) => s + d * Math.max(0, Math.trunc(counts[String(d)] ?? 0)), 0);
 }
 

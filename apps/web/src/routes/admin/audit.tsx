@@ -31,6 +31,24 @@ const FACTS = new Set([
 const OPS: Record<RowChange['op'], string> = { I: 'créé', U: 'modifié', D: 'supprimé' };
 
 /** R-ADM-02: filter by entity and period. */
+/**
+ * R-SES-07: a till operation of a cashier sent through the session of someone else: whose session,
+ * and whether the cashier typed their code.
+ */
+function CashierProof({ entry }: { entry: AuditEntry }) {
+  const check = (entry.after as { cashierCheck?: string } | null)?.cashierCheck;
+  if (!entry.viaSessionOfName && !check) return null;
+  return (
+    <span className="block text-xs text-muted-foreground">
+      {entry.viaSessionOfName ? `poste ouvert par ${entry.viaSessionOfName}` : null}
+      {check === 'PIN' ? ' · code vérifié' : null}
+      {check === 'DECLARED' ? (
+        <span className="text-amber-700"> · caissier déclaré, non vérifié</span>
+      ) : null}
+    </span>
+  );
+}
+
 export function AuditPage() {
   // ?membre=<id> (link from a member's page) narrows the journal to one person.
   const [memberId, setMemberId] = useState(
@@ -127,6 +145,7 @@ export function AuditPage() {
                       en tant que {r.onBehalfOfName}
                     </span>
                   ) : null}
+                  <CashierProof entry={r} />
                 </td>
                 <td className="min-w-48">
                   {describeAudit(r.action, r.after)}

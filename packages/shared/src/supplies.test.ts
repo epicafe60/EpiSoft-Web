@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   inclFromExcl4,
   inventoryAdjustmentMilli,
+  saleAlreadyCounted,
   invoiceDueDate,
   margin,
   nextSupplierCode,
@@ -117,5 +118,26 @@ describe('inventory (R-STK-04) and valuation (R-STK-06)', () => {
   it('values positive stock at the purchase price', () => {
     expect(stockValueCents(2500, 12_000)).toBe(300);
     expect(stockValueCents(-2000, 12_000)).toBe(0);
+  });
+});
+
+describe('saleAlreadyCounted (audit KV2, C04)', () => {
+  const inv = {
+    openedAt: new Date('2026-11-07T09:00:00Z'),
+    countedAt: new Date('2026-11-07T10:00:00Z'),
+  };
+
+  it('is true for a sale between the opening and the count of the product', () => {
+    expect(saleAlreadyCounted(new Date('2026-11-07T09:30:00Z'), inv)).toBe(true);
+    expect(saleAlreadyCounted(new Date('2026-11-07T10:00:00Z'), inv)).toBe(true);
+  });
+
+  it('is false before the opening, after the count, or for a product never counted', () => {
+    expect(saleAlreadyCounted(new Date('2026-11-07T09:00:00Z'), inv)).toBe(false);
+    expect(saleAlreadyCounted(new Date('2026-11-07T08:00:00Z'), inv)).toBe(false);
+    expect(saleAlreadyCounted(new Date('2026-11-07T10:00:01Z'), inv)).toBe(false);
+    expect(saleAlreadyCounted(new Date('2026-11-07T09:30:00Z'), { ...inv, countedAt: null })).toBe(
+      false,
+    );
   });
 });

@@ -74,4 +74,13 @@ describe('normalizeMember (R-IMP-02)', () => {
   it('rejects a bad email', () => {
     expect(normalizeMember({ firstName: 'A', lastName: 'B', email: 'nope' }).error).toBeDefined();
   });
+  it('refuses what the member form refuses: a user name like an e-mail, too long values', () => {
+    // The sign-in accepts a user name or an e-mail: one account's user name must never be
+    // another account's address.
+    const base = { firstName: 'A', lastName: 'B' };
+    expect(normalizeMember({ ...base, username: 'admin@epicafe.fr' }).error).toMatch(/Identifiant/);
+    expect(normalizeMember({ ...base, username: 'Ann_ROY' }).value?.username).toBe('Ann_ROY');
+    expect(normalizeMember({ ...base, firstName: 'x'.repeat(101) }).error).toBeDefined();
+    expect(normalizeMember({ ...base, phone: '0'.repeat(31) }).error).toBeDefined();
+  });
 });

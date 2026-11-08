@@ -53,7 +53,7 @@ function Status({ e }: { e: OutboxEntry }) {
 
 /** The tickets of the current session, from this device's outbox: works offline. */
 export function TicketsPage() {
-  const { meta, cashierId, engine, sync } = useTill();
+  const { meta, cashierId, cashierCheck, engine, sync } = useTill();
   const entries = useLiveQuery(() => tillDb.outbox.orderBy('seq').reverse().toArray(), []);
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const [selected, setSelected] = useState<SaleEntry | null>(null);
@@ -119,6 +119,7 @@ export function TicketsPage() {
         saleId,
         sessionId: sessionId!,
         cashierId,
+        cashierCheck,
         at: new Date().toISOString(),
         provisionalNumber: provisionalNumber(meta.device!.name, deviceSeq),
         reason: reason.trim() || undefined,

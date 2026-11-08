@@ -3,6 +3,7 @@ import webpush from 'web-push';
 import type { FastifyBaseLogger } from 'fastify';
 import { auditSystem } from './audit';
 import { pushSubscription, type Db } from '@episoft/db';
+import { pushEndpointAllowed } from '@episoft/shared';
 import type { Config } from '../config';
 
 // Web Push (§4.16): a best-effort notification next to the e-mail. Without VAPID keys it does nothing.
@@ -35,6 +36,11 @@ export async function sendPush(
     let sent = 0;
     await Promise.all(
       subs.map(async (s) => {
+        // S07: a subscription recorded before the check (or by hand) is never called.
+        if (!pushEndpointAllowed(s.endpoint)) {
+          gone.push(s.id);
+          return;
+        }
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
@@ -46,6 +52,8 @@ export async function sendPush(
                 privateKey: config.VAPID_PRIVATE_KEY!,
               },
               TTL: 24 * 3600,
+              // S07: a push service that does not answer does not hold the request.
+              timeout: 10_000,
             },
           );
           sent++;

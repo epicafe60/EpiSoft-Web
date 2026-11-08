@@ -164,7 +164,8 @@ describe('the new integrity checks', () => {
       checks: { id: string; samples: { ref: string; detail: string }[] }[];
     };
     const sample = report.checks.find((c) => c.id === 'REF-01')!.samples[0]!;
-    expect(sample.ref).toBe('app.cash_session → app.pos_device');
+    // The schema shows only when it is not on the search path (it is, for the application role).
+    expect(sample.ref).toMatch(/^(app\.)?cash_session → (app\.)?pos_device$/);
     expect(sample.detail).toContain('1 ligne(s) orpheline(s)');
 
     // Repaired by recreating the missing till: nothing to report any more.

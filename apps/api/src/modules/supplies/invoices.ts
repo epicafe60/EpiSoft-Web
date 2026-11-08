@@ -24,6 +24,7 @@ import {
   parsePrice4,
   parseQtyToMilli,
   probableDuplicates,
+  contentMatchesType,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -313,10 +314,41 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       }),
   );
 
+  /**
+   * The invoice document, for the people who handle invoices only. Private: never kept by the
+   * browser or the offline cache (audit KV2, C05 and S03). Downloads are recorded (`export.file`).
+   */
+  app.get(
+    '/supplier-invoices/:id/document',
+    { ...editors, schema: idParams },
+    async (req, reply) => {
+      const inv = await db.query.supplierInvoice.findFirst({
+        where: eq(supplierInvoice.id, req.params.id),
+      });
+      const doc = inv?.documentMediaId
+        ? await db.query.media.findFirst({ where: eq(media.id, inv.documentMediaId) })
+        : undefined;
+      if (!inv || !doc) throw notFound('Aucun document pour cette facture.');
+      const ext = doc.mime === 'application/pdf' ? 'pdf' : (doc.mime.split('/')[1] ?? 'bin');
+      return reply
+        .header('cache-control', 'private, no-store')
+        .header(
+          'content-disposition',
+          `inline; filename="facture-${inv.pieceRef.replace(/[^\w.-]+/g, '_')}.${ext}"`,
+        )
+        .type(doc.mime)
+        .send(doc.bytes);
+    },
+  );
+
   /** R-FAC-01 [nouveau]: the invoice document is stored by the application. */
   app.put('/supplier-invoices/:id/document', { ...editors, schema: idParams }, async (req) => {
     const mime = req.headers['content-type']?.split(';')[0] ?? '';
-    if (!DOC_TYPES.includes(mime) || !Buffer.isBuffer(req.body))
+    if (
+      !DOC_TYPES.includes(mime) ||
+      !Buffer.isBuffer(req.body) ||
+      !contentMatchesType(req.body, mime)
+    )
       throw badRequest('Document PDF ou photo attendu.');
     return db.transaction(async (tx) => {
       const inv = await tx.query.supplierInvoice.findFirst({

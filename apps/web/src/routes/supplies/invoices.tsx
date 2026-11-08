@@ -492,7 +492,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
             <CardContent className="grid gap-2">
               {invoice.documentMediaId ? (
                 <a
-                  href={`/api/v1/media/${invoice.documentMediaId}`}
+                  href={`/api/v1/supplier-invoices/${invoice.id}/document`}
                   target="_blank"
                   rel="noreferrer"
                   className="text-sm text-primary hover:underline"

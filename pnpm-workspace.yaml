@@ -5,3 +5,12 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - "@node-rs/argon2"
+# Optional native parts of the Docker client used by the tests (ssh2): not needed, never built.
+ignoredBuiltDependencies:
+  - cpu-features
+  - protobufjs
+  - ssh2
+overrides:
+  # ExcelJS pins uuid 8, which has a moderate advisory (audit KV2, D02). It only calls v4(), the
+  # same in uuid 11, which still loads with require().
+  "exceljs>uuid": "^11.1.1"
