@@ -25,7 +25,7 @@ import { loadSettings } from '../admin/settings-store';
 /**
  * R-OFF-02: data replicated on the till. Products and members are incremental (`since`);
  * households (balance, membership end) are always complete. No address, no password,
- * the badge token only hashed (R-SYNC-06).
+ * the badge token only hashed (R-SYNC-06), the cashier code of the cashiers only, hashed (R-SES-07).
  */
 export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapshot> {
   const serverTime = new Date();
@@ -66,6 +66,8 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
       householdId: member.householdId,
       status: member.status,
       qrTokenHash: member.qrTokenHash,
+      tillPasswordHash: member.tillPasswordHash,
+      tillPasswordSalt: member.tillPasswordSalt,
       // R-EVO-40: true when the member receives the ticket (an address, no opt-out).
       hasEmail: sql<boolean>`${member.email} is not null and not ${member.ticketEmailOptOut}`,
     })
@@ -110,10 +112,15 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
       eans: barcodes.filter((b) => b.productId === p.id).map((b) => b.ean),
       membershipTypeId: types.find((t) => t.productId === p.id)?.id ?? null,
     })),
-    members: memberRows.map((m) => ({
+    members: memberRows.map(({ tillPasswordHash, tillPasswordSalt, ...m }) => ({
       ...m,
       status: m.status as MemberStatus,
       isCashier: cashiers.has(m.id),
+      // R-SES-07: the code of the cashiers only, hashed, for the till to check it offline.
+      tillPin:
+        cashiers.has(m.id) && tillPasswordHash && tillPasswordSalt
+          ? { hash: tillPasswordHash, salt: tillPasswordSalt }
+          : null,
     })),
     households: households.map((h) => ({ ...h, membershipEnd: endBy.get(h.id) ?? null })),
     membershipTypes: types.map((t) => ({
@@ -135,6 +142,7 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
         ? settings['pos.scaleBarcodes'].valueKind
         : null,
       associationName: settings['association.identity'].name,
+      cashierPinRequired: settings['pos.cashierSwitch'].requirePin,
       thresholds: settings['controls.thresholds'],
       // R-EVO-06: the open sessions of the shop (one drawer, several tills).
       openSessions: (

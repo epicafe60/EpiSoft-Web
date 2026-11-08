@@ -12,30 +12,30 @@
   },
   "dependencies": {
     "@episoft/shared": "workspace:*",
-    "@tanstack/react-query": "^5.62.8",
-    "@tanstack/react-router": "^1.92.1",
+    "@tanstack/react-query": "^5.107.1",
+    "@tanstack/react-router": "^1.170.46",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dexie": "^4.4.6",
+    "dexie": "^4.4.7",
     "dexie-react-hooks": "^1.1.7",
     "lucide-react": "^0.468.0",
     "qrcode": "^1.5.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "tailwind-merge": "^2.6.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwind-merge": "^2.6.1",
     "workbox-window": "^7.4.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0",
+    "@tailwindcss/vite": "^4.3.5",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "fake-indexeddb": "^6.2.5",
-    "tailwindcss": "^4.0.0",
-    "vite": "^6.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "fake-indexeddb": "^6.2.7",
+    "tailwindcss": "^4.3.5",
+    "vite": "^6.4.5",
     "vite-plugin-pwa": "^0.21.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.12"
   }
 }

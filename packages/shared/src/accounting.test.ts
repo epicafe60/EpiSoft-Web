@@ -8,6 +8,7 @@ import {
   buildInvoicePaymentEntry,
   buildResultEntry,
   buildSessionEntry,
+  regularizationLines,
   buildStockVariationEntry,
   checkEntry,
   DEFAULT_ACCOUNTS as A,
@@ -284,5 +285,48 @@ describe('closing (R-CPT-18)', () => {
     const lines = buildCarryForwardEntry(afterAllocation);
     expect(lines.map((l) => l.account).sort()).toEqual(['101000', '120000', '512001']);
     expect(checkEntry(asInput(lines)).balanced).toBe(true);
+  });
+});
+
+describe('regularizationLines (audit KV2, C02)', () => {
+  const line = (account: string, debitCents: number, creditCents: number) => ({
+    account,
+    label: 'Caisse',
+    debitCents,
+    creditCents,
+  });
+
+  it('moves each account by what the late tickets add, and stays balanced', () => {
+    // Validated: 50 € cash sales. Expected now: 52,50 € (a 2,50 € ticket arrived later).
+    const recorded = [line('530000', 5000, 0), line('707000', 0, 5000)];
+    const expected = [line('530000', 5250, 0), line('707000', 0, 5250)];
+    const out = regularizationLines(recorded, expected, 'Régularisation');
+    expect(out).toEqual([
+      { account: '530000', label: 'Régularisation', debitCents: 250, creditCents: 0 },
+      { account: '707000', label: 'Régularisation', debitCents: 0, creditCents: 250 },
+    ]);
+    expect(out.reduce((s, l) => s + l.debitCents - l.creditCents, 0)).toBe(0);
+  });
+
+  it('handles an account that appears or disappears, and gives nothing when all matches', () => {
+    const recorded = [line('530000', 5000, 0), line('707000', 0, 5000)];
+    const expected = [
+      line('530000', 5000, 0),
+      line('512000', 300, 0),
+      line('707000', 0, 5000),
+      line('756000', 0, 300),
+    ];
+    expect(regularizationLines(recorded, expected, 'R').map((l) => l.account)).toEqual([
+      '512000',
+      '756000',
+    ]);
+    expect(regularizationLines(recorded, recorded, 'R')).toEqual([]);
+    // A ticket cancelled late: the regularization goes the other way.
+    expect(
+      regularizationLines(expected, recorded, 'R').map((l) => [l.account, l.creditCents]),
+    ).toEqual([
+      ['512000', 300],
+      ['756000', 0],
+    ]);
   });
 });

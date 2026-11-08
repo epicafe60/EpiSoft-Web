@@ -224,7 +224,10 @@ test('the e-mail journal shows every e-mail with its state, and filters on it', 
     await expect(off).toContainText('désactivé dans l’administration');
 
     // « Aperçu »: the header lines, the body and the attachments of one e-mail.
-    await rows.filter({ hasText: 'JOURNAL parti' }).getByRole('button', { name: 'JOURNAL parti' }).click();
+    await rows
+      .filter({ hasText: 'JOURNAL parti' })
+      .getByRole('button', { name: 'JOURNAL parti' })
+      .click();
     const preview = page.getByRole('dialog', { name: 'Aperçu du courriel' });
     const head = preview.getByLabel('Aperçu du courriel');
     await expect(head).toContainText('a@example.org');
@@ -234,7 +237,9 @@ test('the e-mail journal shows every e-mail with its state, and filters on it', 
       'href',
       /\/api\/v1\/admin\/emails\/.+\/attachments\/0$/,
     );
-    await expect(preview.frameLocator('iframe[title="Corps du message"]').getByText('Bonjour')).toBeVisible();
+    await expect(
+      preview.frameLocator('iframe[title="Corps du message"]').getByText('Bonjour'),
+    ).toBeVisible();
     await preview.getByRole('button', { name: 'Texte brut' }).click();
     await expect(preview.getByLabel('Corps du message')).toHaveText('Bonjour Marie');
     await preview.getByRole('button', { name: 'Fermer' }).first().click();

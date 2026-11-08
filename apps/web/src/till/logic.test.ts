@@ -5,6 +5,7 @@ import {
   newDeviceName,
   addProduct,
   backoffMs,
+  cashierStep,
   draftTotalCents,
   linesFromSale,
   pendingWalletMoves,
@@ -186,5 +187,19 @@ describe('newDeviceName', () => {
 
   it('draws different names', () => {
     expect(new Set(Array.from({ length: 30 }, () => newDeviceName())).size).toBeGreaterThan(25);
+  });
+});
+
+describe('cashierStep (R-SES-07)', () => {
+  const base = { holderId: 'a', activeId: 'a', pinRequired: true, hasPin: true, online: true };
+  it('asks the code of another cashier, or to choose one, or flags them offline', () => {
+    expect(cashierStep({ ...base, chosenId: 'b' })).toBe('pin');
+    expect(cashierStep({ ...base, chosenId: 'b', hasPin: false })).toBe('create');
+    expect(cashierStep({ ...base, chosenId: 'b', hasPin: false, online: false })).toBe('declare');
+    expect(cashierStep({ ...base, chosenId: 'b', pinRequired: false })).toBe('done');
+  });
+  it('asks the password of the person signed in to take the till back, nothing if they keep it', () => {
+    expect(cashierStep({ ...base, chosenId: 'a', activeId: 'b' })).toBe('unlock');
+    expect(cashierStep({ ...base, chosenId: 'a' })).toBe('done');
   });
 });

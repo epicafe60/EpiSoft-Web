@@ -54,6 +54,8 @@ export const AUDIT_SENTENCES = {
     a?.forced && typeof a.comment === 'string' && a.comment.startsWith('Clôture administrative')
       ? 'a clôturé d’office une session de caisse'
       : 'a clôturé une session de caisse',
+  'session.regularize': () =>
+    'a régularisé une clôture de caisse après des tickets arrivés en retard',
   'session.reopen': () => 'a rouvert une session de caisse clôturée',
   'session.entry_failed': () => 'La clôture de caisse n’a pas pu générer son écriture comptable',
   'sale.create': (a) =>
@@ -94,6 +96,11 @@ export const AUDIT_SENTENCES = {
   'review.write': () => 'a donné son avis sur un produit',
   'impersonate.start': () => 'a pris la place d’un utilisateur (aide à distance)',
   'impersonate.stop': () => 'a repris sa propre place',
+  // R-SES-07: the cashier keeping the till
+  'till.cashier': () => 'a pris la caisse',
+  'till.unlock': () => 'a repris la caisse et son compte (mot de passe retapé)',
+  'member.till_pin': () => 'a choisi son code caissier',
+  'member.till_pin_clear': () => 'a effacé le code caissier d’un bénévole',
   // Catalogue and supplies
   'product.create': (a) => `a créé un produit${named(a, 'name')}`,
   'product.update': (a) => `a modifié un produit${named(a, 'name')}`,

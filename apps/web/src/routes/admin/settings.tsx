@@ -553,6 +553,30 @@ export function SettingsPage() {
             </div>
           )}
         </SettingCard>
+
+        <SettingCard
+          settingKey="pos.cashierSwitch"
+          title="Changement de caissier"
+          initial={data['pos.cashierSwitch']}
+        >
+          {(v, set) => (
+            <div className="grid gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="cashier-pin"
+                  checked={v.requirePin}
+                  onChange={(e) => set({ requirePin: e.target.checked })}
+                />
+                <Label htmlFor="cashier-pin">Code caissier exigé (4 chiffres)</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Les caissiers se relaient sans se déconnecter : chacun touche son nom en caisse.
+                Avec le code, personne ne peut encaisser au nom d’un autre ; sans code, le caissier
+                est seulement déclaré, et le journal le signale « non vérifié ».
+              </p>
+            </div>
+          )}
+        </SettingCard>
       </div>
     </div>
   );

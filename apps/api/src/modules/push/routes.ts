@@ -1,14 +1,30 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { pushSubscription, type Db } from '@episoft/db';
+import { MAX_PUSH_DEVICES, pushEndpointAllowed } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { pushEnabled } from '../../lib/push';
 
 const subscription = z.object({
-  endpoint: z.string().url().max(1000),
-  keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+  // S07: only the push services of the browsers (the server calls this address).
+  endpoint: z
+    .string()
+    .max(1000)
+    .refine(pushEndpointAllowed, 'Service de notification non reconnu.'),
+  keys: z.object({
+    p256dh: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[A-Za-z0-9_-]+=*$/),
+    auth: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[A-Za-z0-9_-]+=*$/),
+  }),
 });
 
 export const pushRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
@@ -34,6 +50,20 @@ export const pushRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
             is distinct from (excluded.member_id, excluded.p256dh, excluded.auth)`,
         })
         .returning({ id: pushSubscription.id });
+      // S07: a bounded number of devices per account, the most recent ones.
+      const extra = await tx
+        .select({ id: pushSubscription.id })
+        .from(pushSubscription)
+        .where(eq(pushSubscription.memberId, req.user!.id))
+        .orderBy(desc(pushSubscription.createdAt), desc(pushSubscription.id))
+        .offset(MAX_PUSH_DEVICES);
+      if (extra.length)
+        await tx.delete(pushSubscription).where(
+          inArray(
+            pushSubscription.id,
+            extra.map((r) => r.id),
+          ),
+        );
       if (changed.length)
         await audit(tx, req, {
           action: 'push.subscribe',

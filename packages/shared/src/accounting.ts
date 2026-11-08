@@ -243,6 +243,34 @@ function mergeSameLines(lines: PlannedLine[]): PlannedLine[] {
 }
 
 /** R-FAC-03: ACH draft. The association is presumed not liable to VAT (Q1): TTC is the cost. */
+/**
+ * Audit KV2, C02: what is missing from the accounts of a closed session once tickets arrived after
+ * its entry was validated (a validated entry is never changed, R-CPT-05). `recorded` are the lines
+ * already written for the session, `expected` what the entry would be today: the result moves each
+ * account by the difference, debit or credit. Balanced whenever both sides are.
+ */
+export function regularizationLines(
+  recorded: readonly { account: string; debitCents: number; creditCents: number }[],
+  expected: readonly PlannedLine[],
+  label: string,
+): PlannedLine[] {
+  const net = new Map<string, number>();
+  for (const l of expected)
+    net.set(l.account, (net.get(l.account) ?? 0) + l.debitCents - l.creditCents);
+  for (const l of recorded)
+    net.set(l.account, (net.get(l.account) ?? 0) - (l.debitCents - l.creditCents));
+  const out: PlannedLine[] = [];
+  for (const [account, cents] of [...net.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (cents === 0) continue;
+    out.push(
+      cents > 0
+        ? { account, label, debitCents: cents, creditCents: 0 }
+        : { account, label, debitCents: 0, creditCents: -cents },
+    );
+  }
+  return out;
+}
+
 export function buildInvoiceEntry(a: {
   supplierAccount: string;
   expenseLines: { account: string; cents: number }[];

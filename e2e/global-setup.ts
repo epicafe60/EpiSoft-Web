@@ -77,6 +77,7 @@ export default async function globalSetup() {
     LOG_LEVEL: 'warn',
     // Every test logs in again: the production limit (20 a minute) would make the suite flaky.
     AUTH_RATE_LIMIT_MAX: '1000',
+    API_RATE_LIMIT_MAX: '100000',
   });
   const web = start('web', join(REPO_ROOT, 'apps/web'), ['exec', 'vite'], {
     WEB_PORT: String(WEB_PORT),

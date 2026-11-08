@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Printer, Send } from 'lucide-react';
 import {
   centsToDecimal,
@@ -18,6 +19,7 @@ import {
   type SessionPresence,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { useMe } from '@/lib/auth';
 import { formatDateTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -26,7 +28,7 @@ import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/inputs';
 import { Dialog } from '@/components/ui/dialog';
 import { confirmNow } from '@/components/confirm';
-import { setMeta } from './db';
+import { setMeta, tillDb } from './db';
 import { useTill } from './context';
 
 const eur = (c: number) => formatEuro(centsToDecimal(c));
@@ -95,6 +97,16 @@ function ClosingForm({
   const [force, setForce] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const queryClient = useQueryClient();
+  // R-SES-07: another cashier keeps the till: the closing is in their name, with their code
+  // (checked by the server).
+  const me = useMe();
+  const closer = useLiveQuery(
+    () => (cashierId === me.id ? undefined : tillDb.members.get(cashierId)),
+    [cashierId, me.id],
+  );
+  const closerPinNeeded =
+    cashierId !== me.id && (settings?.cashierPinRequired ?? true) && !!closer?.tillPin;
+  const [closerPin, setCloserPin] = useState('');
 
   const summary = useQuery({
     queryKey: ['session-summary', session.id, pendingCount],
@@ -157,6 +169,9 @@ function ClosingForm({
         cardTotalDeclared: card || '0',
         comment: comment || undefined,
         forced: pendingCount > 0,
+        ...(cashierId !== me.id
+          ? { cashierId, ...(closerPinNeeded ? { pin: closerPin } : {}) }
+          : {}),
       }),
     onSuccess: async (r) => {
       onClosed({ ...r, summary: summary.data! });
@@ -388,12 +403,34 @@ function ClosingForm({
                     </Label>
                   </div>
                 ) : null}
+                {closerPinNeeded ? (
+                  <Field
+                    label={`Code caissier de ${closer!.firstName} ${closer!.lastName}`}
+                    hint="La clôture est enregistrée au nom de la personne qui a compté le tiroir."
+                  >
+                    {(p) => (
+                      <Input
+                        {...p}
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={4}
+                        autoComplete="off"
+                        className="w-32"
+                        value={closerPin}
+                        onChange={(e) =>
+                          setCloserPin(e.target.value.replace(/\D/g, '').slice(0, 4))
+                        }
+                      />
+                    )}
+                  </Field>
+                ) : null}
                 {close.error ? <Alert>{close.error.message}</Alert> : null}
                 <Button
                   type="submit"
                   size="lg"
                   disabled={
                     close.isPending ||
+                    (closerPinNeeded && closerPin.length !== 4) ||
                     (pendingCount > 0 && !force) ||
                     result.nextFloatCents < 0 ||
                     commentMissing

@@ -9,7 +9,6 @@ import {
   entryLine,
   memberPayment,
   numberCounter,
-  posDevice,
   sale,
   salePayment,
   supplier,
@@ -22,6 +21,8 @@ import {
   buildInvoicePaymentEntry,
   buildSessionEntry,
   decimalToCents,
+  regularizationLines,
+  type PlannedLine,
   type MoneyMethod,
   type PaymentMethod,
   type SupplierPaymentMethod,
@@ -59,8 +60,27 @@ export async function generateSessionEntry(
   if (s.legacyDate) return null;
   const existing = await entryBySource(tx, 'session', sessionId);
   if (existing) return existing.id;
+  const lines = await sessionEntryPlan(tx, sessionId);
+  if (!lines.length) return null;
+  const date = toParisDate(s.closedAt ?? new Date());
+  const id = await createEntry(tx, {
+    journalCode: 'VTE',
+    date,
+    label: `Caisse du ${date.split('-').reverse().join('/')}`,
+    pieceRef: null,
+    mode: 'OTHER',
+    lines: plannedToLines(lines),
+    source: { type: 'session', id: sessionId },
+    userId,
+    autoFiscalYear: true,
+  });
+  await tx.update(cashSession).set({ entryId: id }).where(eq(cashSession.id, sessionId));
+  return id;
+}
+
+/** What the VTE entry of a session is, from its tickets, top-ups and cash count as they are now. */
+async function sessionEntryPlan(tx: Tx, sessionId: string): Promise<PlannedLine[]> {
   const a = await accountMap(tx);
-  const [device] = await tx.select().from(posDevice).where(eq(posDevice.id, s.deviceId));
   const [count] = await tx.select().from(cashCount).where(eq(cashCount.sessionId, sessionId));
 
   const pays = await tx
@@ -110,7 +130,7 @@ export async function generateSessionEntry(
     if (t.method && t.method !== 'WALLET')
       topups[t.method as MoneyMethod] = decimalToCents(t.cents);
 
-  const lines = buildSessionEntry(
+  return buildSessionEntry(
     {
       payments,
       revenue,
@@ -119,21 +139,73 @@ export async function generateSessionEntry(
     },
     a,
   );
-  if (!lines.length) return null;
-  const date = toParisDate(s.closedAt ?? new Date());
-  const id = await createEntry(tx, {
+}
+
+export type Regularization = 'created' | 'regenerated' | 'regularized' | 'unchanged' | 'legacy';
+
+/**
+ * Audit KV2, C02: brings the accounts of a closed session in line with its tickets after some
+ * arrived late. A draft entry is regenerated; a validated entry is never touched (R-CPT-05): a
+ * regularization entry carries the difference, so the session's lines add up to today's figures.
+ */
+export async function regularizeSessionEntry(
+  tx: Tx,
+  sessionId: string,
+  userId: string,
+): Promise<Regularization> {
+  const [s] = await tx.select().from(cashSession).where(eq(cashSession.id, sessionId));
+  if (!s) throw notFound('Session inconnue.');
+  if (s.legacyDate) return 'legacy';
+  const existing = await entryBySource(tx, 'session', sessionId);
+  if (!existing)
+    return (await generateSessionEntry(tx, sessionId, userId)) ? 'created' : 'unchanged';
+  if (existing.status !== 'VALIDATED') {
+    await tx.update(cashSession).set({ entryId: null }).where(eq(cashSession.id, sessionId));
+    await tx.delete(entry).where(eq(entry.id, existing.id));
+    await generateSessionEntry(tx, sessionId, userId);
+    return 'regenerated';
+  }
+  // Every line already written for the session: its entry and the earlier regularizations.
+  const recorded = await tx
+    .select({
+      account: account.number,
+      debit: entryLine.debit,
+      credit: entryLine.credit,
+    })
+    .from(entryLine)
+    .innerJoin(entry, eq(entry.id, entryLine.entryId))
+    .innerJoin(account, eq(account.id, entryLine.accountId))
+    .where(
+      sql`(${entry.sourceType} = 'session' and ${entry.sourceId} = ${sessionId})
+        or (${entry.sourceType} = 'session_regularization' and ${entry.sourceId} like ${sessionId + ':%'})`,
+    );
+  const date = toParisDate(new Date());
+  const label = `Régularisation caisse du ${toParisDate(s.closedAt ?? new Date())
+    .split('-')
+    .reverse()
+    .join('/')}`;
+  const lines = regularizationLines(
+    recorded.map((r) => ({
+      account: r.account,
+      debitCents: decimalToCents(r.debit),
+      creditCents: decimalToCents(r.credit),
+    })),
+    await sessionEntryPlan(tx, sessionId),
+    label,
+  );
+  if (!lines.length) return 'unchanged';
+  await createEntry(tx, {
     journalCode: 'VTE',
     date,
-    label: `Caisse ${device?.name ?? ''} du ${date.split('-').reverse().join('/')}`.trim(),
+    label,
     pieceRef: null,
     mode: 'OTHER',
     lines: plannedToLines(lines),
-    source: { type: 'session', id: sessionId },
+    source: { type: 'session_regularization', id: `${sessionId}:${Date.now()}` },
     userId,
     autoFiscalYear: true,
   });
-  await tx.update(cashSession).set({ entryId: id }).where(eq(cashSession.id, sessionId));
-  return id;
+  return 'regularized';
 }
 
 // --- R-FAC-03: supplier invoices -------------------------------------------------------------------

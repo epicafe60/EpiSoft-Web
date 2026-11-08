@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   walletAlert,
   applyPayment,
+  paymentProblem,
   closing,
   countedCashCents,
   DENOMINATIONS,
@@ -264,5 +265,65 @@ describe('R-EVO-06 session closed from another till', () => {
   it('never drops with an old server, or without a session', () => {
     expect(shouldDropSession('s1', undefined, [])).toBe(false);
     expect(shouldDropSession(null, ['s2'], [])).toBe(false);
+  });
+});
+
+describe('paymentProblem (R-CAG-05, audit KV2 C01)', () => {
+  const cash = (amount: number, tendered: number | null, change: number | null, toWallet = false) =>
+    paymentProblem({
+      method: 'CASH',
+      amountCents: amount,
+      tenderedCents: tendered,
+      changeCents: change,
+      changeToWallet: toWallet,
+    });
+
+  it('accepts what a till sends: exact cash, cash with change, change into the cagnotte', () => {
+    expect(cash(250, 250, 0)).toBeNull();
+    expect(cash(250, 1000, 750)).toBeNull();
+    expect(cash(250, 1000, 750, true)).toBeNull();
+    // Card, cheque, cagnotte: no cash given, no change.
+    for (const method of ['CARD', 'CHEQUE', 'WALLET'] as const)
+      expect(
+        paymentProblem({
+          method,
+          amountCents: 250,
+          tenderedCents: null,
+          changeCents: null,
+          changeToWallet: false,
+        }),
+      ).toBeNull();
+    // A cash payment without the detail (older tills).
+    expect(cash(250, null, null)).toBeNull();
+  });
+
+  it('refuses change that does not come from the cash given', () => {
+    // The case of the audit: 1 € ticket, 1 € given, 1 000 € of change into the cagnotte.
+    expect(cash(100, 100, 100_000, true)).toMatch(/ne correspond pas/);
+    expect(cash(250, 1000, 800)).toMatch(/ne correspond pas/);
+    expect(cash(250, 200, -50)).toMatch(/inférieure/);
+    expect(cash(250, 250, 0, true)).toMatch(/Aucune monnaie/);
+    expect(cash(250, 1000, null)).toMatch(/manquante/);
+  });
+
+  it('refuses change on anything but cash, and change into the cagnotte without cash', () => {
+    expect(
+      paymentProblem({
+        method: 'CARD',
+        amountCents: 100,
+        tenderedCents: 100,
+        changeCents: 100_000,
+        changeToWallet: true,
+      }),
+    ).toMatch(/espèces/);
+    expect(
+      paymentProblem({
+        method: 'CASH',
+        amountCents: 100,
+        tenderedCents: null,
+        changeCents: null,
+        changeToWallet: true,
+      }),
+    ).toMatch(/sans espèces/);
   });
 });

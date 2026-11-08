@@ -8,14 +8,25 @@ const envSchema = z.object({
   API_HOST: z.string().default('127.0.0.1'),
   API_PORT: z.coerce.number().int().default(3000),
   APP_URL: z.string().url().default('http://localhost:5173'),
-  COOKIE_SECURE: bool.default('false'),
+  COOKIE_SECURE: bool.default(false),
   /** Folder of the built web app, served by the API in production. */
   WEB_DIST: z.string().optional(),
   /** Overrides the Drizzle migrations folder (Docker image). */
   MIGRATIONS_DIR: z.string().optional(),
   /** Login attempts per minute and instance (§5.5); the test suite raises it. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
-  MIGRATE_ON_START: bool.default('false'),
+  /**
+   * Requests per minute for one session (or one address when signed out), on every route. Far
+   * above what a till or a volunteer does; it stops a script hammering the server.
+   */
+  API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1200),
+  MIGRATE_ON_START: bool.default(false),
+  /**
+   * Audit KV2, D01: the owner of the schema, used for the migrations only. When it is set, the
+   * application (DATABASE_URL) can run with a role that has no right on the structure (see
+   * docs/maintenance.md, « Rôles de la base »). Without it, the migrations use DATABASE_URL.
+   */
+  MIGRATION_DATABASE_URL: z.string().url().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   // SMTP (§4.16). Without SMTP_HOST, e-mails stay in the outbox and are logged in development.
   SMTP_HOST: z.string().optional(),

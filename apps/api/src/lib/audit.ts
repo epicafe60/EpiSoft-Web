@@ -19,6 +19,11 @@ export interface AuditInput {
   revertsId?: string | null;
   /** The person, when the request is not signed in yet (log-in, forgotten password). */
   actorId?: string;
+  /**
+   * R-SES-07: a till operation is recorded in the name of its cashier. When the cashier is not
+   * the holder of the session, the holder is kept as « via the session of ».
+   */
+  cashier?: { id: string };
 }
 
 /**
@@ -28,10 +33,13 @@ export interface AuditInput {
  */
 export async function audit(db: DbOrTx, req: FastifyRequest, input: AuditInput): Promise<void> {
   req.audited = true;
+  // While an administrator impersonates someone, the real person is the actor.
+  const holder = req.user?.impersonator?.id ?? req.user?.id ?? input.actorId ?? null;
+  const cashier = input.cashier?.id ?? null;
   await db.insert(auditLog).values({
-    // While an administrator impersonates someone, the real person is the actor.
-    actorId: req.user?.impersonator?.id ?? req.user?.id ?? input.actorId ?? null,
+    actorId: cashier ?? holder,
     onBehalfOfId: req.user?.impersonator ? req.user.id : null,
+    viaSessionOfId: cashier && cashier !== holder ? holder : null,
     action: input.action,
     entity: input.entity,
     entityId: input.entityId ?? null,

@@ -24,8 +24,8 @@ export function LoginPage() {
       await api.post('/auth/login', { username, password });
       await queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
       await queryClient.fetchQuery(meQuery);
-      // Only same-site paths are accepted as a redirect target.
-      const target = redirect?.startsWith('/') && !redirect.startsWith('//') ? redirect : '/';
+      // Only same-site paths are accepted as a redirect target (« //x » and « /\x » lead elsewhere).
+      const target = redirect && /^\/(?![/\\])/.test(redirect) ? redirect : '/';
       await navigate({ to: target });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Connexion impossible.');

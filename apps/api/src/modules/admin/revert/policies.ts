@@ -194,6 +194,9 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
     '/admin/caisse',
   ),
   'session.join': none('Un poste qui rejoint la session ouverte n’a rien changé à la caisse.'),
+  'session.regularize': none(
+    'La régularisation recalcule la clôture à partir des tickets : relancez-la si de nouveaux tickets arrivent.',
+  ),
   'session.reopen': via(
     'La session rouverte se clôture de nouveau depuis la caisse.',
     '/admin/caisse',
@@ -248,6 +251,14 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'review.write': restore,
   'impersonate.start': none(CONNECTION),
   'impersonate.stop': none(CONNECTION),
+  'till.cashier': none(CONNECTION),
+  'till.unlock': none(CONNECTION),
+  'member.till_pin': none(
+    'Le code précédent n’est pas conservé : le bénévole en choisit un autre.',
+  ),
+  'member.till_pin_clear': none(
+    'Le code effacé n’est pas conservé : le bénévole en choisit un autre.',
+  ),
   // Catalogue and supplies
   'product.create': restore,
   'product.update': restore,

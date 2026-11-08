@@ -575,6 +575,8 @@ interface Activity {
   at: string;
   actor: string;
   onBehalfOf: string | null;
+  /** R-SES-07: a till operation sent through the session of this person. */
+  viaSessionOf?: string | null;
   sentence: string;
 }
 
@@ -606,6 +608,9 @@ export function ActivityPage() {
                 <span>
                   <strong>{a.actor}</strong>
                   {a.onBehalfOf ? ` (pour ${a.onBehalfOf})` : ''} {a.sentence}
+                  {a.viaSessionOf ? (
+                    <span className="text-muted-foreground"> · poste de {a.viaSessionOf}</span>
+                  ) : null}
                 </span>
               </li>
             ))}

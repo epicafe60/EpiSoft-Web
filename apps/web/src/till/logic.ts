@@ -4,6 +4,7 @@ import {
   lineTotalCents,
   milliToDecimal,
   parseQtyToMilli,
+  type CashierCheck,
   type PaymentMethod,
   type PendingWalletMove,
   type SnapshotProduct,
@@ -81,6 +82,8 @@ export function saleOp(args: {
   draft: Draft;
   sessionId: string;
   cashierId: string;
+  /** R-SES-07: how the cashier was established (the person signed in when absent). */
+  cashierCheck?: CashierCheck;
   provisionalNumber: string;
   payments: PaymentDraft[];
   emailReceipt: boolean;
@@ -95,6 +98,7 @@ export function saleOp(args: {
     payload: {
       sessionId: args.sessionId,
       cashierId: args.cashierId,
+      cashierCheck: args.cashierCheck ?? 'SESSION',
       memberId: draft.memberId,
       preorderId: draft.preorderId ?? null,
       soldAt: args.now.toISOString(),
@@ -162,4 +166,26 @@ export function pendingWalletMoves(
 /** R-OFF-03: exponential back-off between push attempts, 2 s to 2 min. */
 export function backoffMs(failures: number): number {
   return Math.min(120_000, 2000 * 2 ** Math.max(0, failures - 1));
+}
+
+/**
+ * R-SES-07: what the till asks when a cashier is chosen. `unlock`: the person signed in takes the
+ * till back (their password, online); `pin`: the cashier types their code; `create`: the code is
+ * required but the cashier has none yet, they choose it (online); `declare`: same, offline, the
+ * tickets are flagged; `done`: nothing to ask.
+ */
+export type CashierStep = 'unlock' | 'pin' | 'create' | 'declare' | 'done';
+
+export function cashierStep(a: {
+  chosenId: string;
+  holderId: string;
+  activeId: string;
+  pinRequired: boolean;
+  hasPin: boolean;
+  online: boolean;
+}): CashierStep {
+  if (a.chosenId === a.holderId) return a.activeId === a.holderId ? 'done' : 'unlock';
+  if (!a.pinRequired) return 'done';
+  if (a.hasPin) return 'pin';
+  return a.online ? 'create' : 'declare';
 }

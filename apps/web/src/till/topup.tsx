@@ -27,7 +27,7 @@ export function TopupDialog({
   householdId: string;
   member: SnapshotMember;
 }) {
-  const { meta, cashierId, engine, balanceCents } = useTill();
+  const { meta, cashierId, cashierCheck, engine, balanceCents } = useTill();
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<MemberPaymentMethod>('CASH');
   const [receipt, setReceipt] = useState(member.hasEmail);
@@ -52,6 +52,7 @@ export function TopupDialog({
       payload: {
         sessionId: meta.session!.id,
         cashierId,
+        cashierCheck,
         householdId,
         amount: centsToDecimal(cents),
         method,

@@ -1,7 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_THRESHOLDS, tillHealth } from '@episoft/shared';
 import { ArrowLeft, CloudOff, LogIn, RefreshCw, Wifi } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { getMeta, tillDb } from './db';
 import { TillProvider, useTill } from './context';
+import { CashierSwitchDialog, useCashierName, useCashierSwitchRequests } from './cashier-switch';
 
 /** R-OFF-05: permanent indicator — online or not, operations waiting, last synchronisation. */
 function StatusIndicator() {
@@ -59,39 +60,80 @@ function StatusIndicator() {
 }
 
 /**
- * R-VTE-01 and R-SES-06: the cashier recorded on the tickets is the signed-in user, nobody else.
- * Badges name the cashiers connected to the shop's till (the signed-in user first, highlighted),
- * so each one sees who else is there. Offline, only the signed-in user is known.
+ * R-VTE-01, R-SES-06 and R-SES-07: the cashier recorded on the tickets is the one keeping the till,
+ * highlighted (the person signed in unless another was chosen). Touching a badge asks « Qui
+ * encaisse ? »: the cashier changes without signing out. The other badges name the cashiers
+ * connected lately.
  */
 function ConnectedCashiers() {
   const me = useMe();
-  const { sync } = useTill();
+  const { sync, cashierId, settings } = useTill();
+  const [open, setOpen] = useState(false);
+  const show = useCallback(() => setOpen(true), []);
+  useCashierSwitchRequests(show);
   const { data } = useQuery({
     queryKey: ['till-connected'],
     queryFn: () => api.get<{ id: string; name: string }[]>('/pos/connected'),
     enabled: sync.online,
     refetchInterval: 30_000,
   });
-  const mine = { id: me.id, name: `${me.firstName} ${me.lastName}` };
-  const others = (data ?? []).filter((c) => c.id !== me.id);
+  const activeName = useCashierName(cashierId);
+  const active = {
+    id: cashierId,
+    name: cashierId === me.id ? `${me.firstName} ${me.lastName}` : (activeName ?? 'Caissier'),
+  };
+  const others = (data ?? []).filter((c) => c.id !== active.id);
   return (
-    <ul className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Caissiers connectés">
-      <li
-        className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-medium text-primary-foreground"
-        title="Vous : vos ventes sont comptées à votre nom"
-      >
-        {mine.name}
-      </li>
-      {others.map((c) => (
-        <li
-          key={c.id}
-          className="rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
-          title="Connecté à la caisse"
-        >
-          {c.name}
+    <>
+      <ul className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Caissiers connectés">
+        <li>
+          <button
+            type="button"
+            onClick={show}
+            className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-medium text-primary-foreground"
+            title="Caissier : les ventes sont enregistrées à ce nom. Touchez pour changer de caissier."
+          >
+            {active.name}
+            {cashierId !== me.id ? (
+              <>
+                {' '}
+                <span className="opacity-80">
+                  · poste de {me.firstName} {me.lastName}
+                </span>
+              </>
+            ) : null}
+          </button>
         </li>
-      ))}
-    </ul>
+        {others.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={show}
+              className="rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground"
+              title="Connecté récemment. Touchez pour changer de caissier."
+            >
+              {c.name}
+            </button>
+          </li>
+        ))}
+        <li>
+          <button
+            type="button"
+            onClick={show}
+            className="rounded-full border border-dashed px-2.5 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Changer de caissier
+          </button>
+        </li>
+      </ul>
+      <CashierSwitchDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        online={sync.online}
+        pinRequired={settings?.cashierPinRequired ?? true}
+        activeId={cashierId}
+      />
+    </>
   );
 }
 

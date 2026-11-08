@@ -12,10 +12,12 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import type { Db } from '@episoft/db';
+import type { RoleCode } from '@episoft/shared';
 import type { Config } from './config';
 import { audit } from './lib/audit';
-import auth from './plugins/auth';
+import auth, { guardedRoles, isApiRequest } from './plugins/auth';
 import errors from './plugins/errors';
+import { TILL_ROUTES } from './plugins/till-routes';
 import { authRoutes } from './modules/auth/routes';
 import { adminRoutes } from './modules/admin/routes';
 import { posRoutes } from './modules/pos/routes';
@@ -49,6 +51,21 @@ import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
 
+export interface RouteAccess {
+  method: string;
+  url: string;
+  public: boolean;
+  roles: RoleCode[] | null;
+  /** R-SES-07: reachable while another cashier keeps the till with the session. */
+  till: boolean;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    routeAccess: readonly RouteAccess[];
+  }
+}
+
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
   const app = Fastify({
     // Behind Caddy in production: trust it for the client IP (R-AUTH-07).
@@ -70,7 +87,16 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
     hsts: config.COOKIE_SECURE,
   });
   await app.register(cookie);
-  await app.register(rateLimit, { global: false });
+  // Every route has a ceiling: per session when signed in (the tills of the shop share one public
+  // address), per address otherwise. Sign-in, exports and the like have tighter limits of their own.
+  // The session is the one the auth hook resolved, never the raw cookie: a made-up cookie on each
+  // request would otherwise get a fresh counter each time, and sign-in attempts no limit at all.
+  await app.register(rateLimit, {
+    global: true,
+    max: config.API_RATE_LIMIT_MAX,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => (req.user ? `s:${req.user.sessionId}` : `ip:${req.ip}`),
+  });
 
   // OpenAPI description generated from the Zod schemas (spec §8.1). Browsable outside production.
   await app.register(swagger, {
@@ -96,6 +122,25 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
     });
     return payload;
   });
+
+  // Who may call each route, recorded as the routes are declared. test/route-access.test.ts checks
+  // that every route is public, guarded by roles, or explicitly open to any signed-in member.
+  const routes: RouteAccess[] = [];
+  app.addHook('onRoute', (r) => {
+    const methods = [r.method].flat().filter((m) => m !== 'HEAD');
+    // R-SES-07: the routes of the till stay reachable while another cashier keeps it.
+    if (methods.some((m) => TILL_ROUTES.has(`${m} ${r.url}`)))
+      r.config = { ...r.config, till: true } as typeof r.config;
+    for (const method of methods)
+      routes.push({
+        method,
+        url: r.url,
+        public: r.config?.public === true,
+        roles: guardedRoles(r.preHandler),
+        till: r.config?.till === true,
+      });
+  });
+  app.decorate('routeAccess', routes);
 
   await app.register(
     async (api) => {
@@ -139,7 +184,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   if (config.WEB_DIST) {
     await app.register(fastifyStatic, { root: config.WEB_DIST, wildcard: false });
     app.get('/*', { config: { public: true } }, (req, reply) => {
-      if (req.url.startsWith('/api/')) return reply.callNotFound();
+      if (isApiRequest(req)) return reply.callNotFound();
       return reply.sendFile('index.html');
     });
   }

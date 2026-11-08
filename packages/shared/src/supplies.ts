@@ -179,6 +179,24 @@ export function inventoryAdjustmentMilli(
   return countedMilli - (theoreticalAtOpeningMilli + movedUntilCountMilli);
 }
 
+/**
+ * Audit KV2, C04: a sale made offline reaches the server after an inventory was validated. When it
+ * was sold between the opening of the inventory and the count of the product, the count already saw
+ * the product gone, but the adjustment was computed without this sale (it was not there yet): its
+ * stock movement would take the product off a second time. Same window as the adjustment:
+ * (opening, count].
+ */
+export function saleAlreadyCounted(
+  soldAt: Date,
+  inventory: { openedAt: Date; countedAt: Date | null },
+): boolean {
+  return (
+    inventory.countedAt !== null &&
+    soldAt.getTime() > inventory.openedAt.getTime() &&
+    soldAt.getTime() <= inventory.countedAt.getTime()
+  );
+}
+
 /** Value of a quantity at a price4, in cents. Negative stocks count as zero. */
 export function stockValueCents(qtyMilli: number, price4: number | null): number {
   if (!price4 || qtyMilli <= 0) return 0;

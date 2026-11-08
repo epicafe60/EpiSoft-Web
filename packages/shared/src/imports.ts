@@ -240,8 +240,17 @@ export function normalizeMember(r: ImportRecord): { value?: MemberImport; error?
   const firstName = (r.firstName ?? '').trim();
   const lastName = (r.lastName ?? '').trim();
   if (!firstName || !lastName) return { error: 'Nom ou prénom manquant.' };
+  // The limits of the member form (memberFields): a file cannot store what the form refuses.
+  if (firstName.length > 100 || lastName.length > 100) return { error: 'Nom ou prénom trop long.' };
   const email = (r.email ?? '').trim().toLowerCase();
-  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Courriel invalide.' };
+  if (email && (email.length > 200 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)))
+    return { error: 'Courriel invalide.' };
+  const phone = (r.phone ?? '').replace(/\s/g, '');
+  if (phone.length > 30) return { error: 'Téléphone trop long.' };
+  // A user name never looks like an e-mail: the sign-in accepts both, they must not collide.
+  const username = (r.username ?? '').trim();
+  if (username && (username.length > 100 || !/^[\p{L}0-9_.-]+$/u.test(username)))
+    return { error: 'Identifiant invalide (lettres, chiffres, _ . - seulement).' };
   const balance = parseFrNumber(r.balance);
   if (r.balance && balance === null) return { error: 'Solde invalide.' };
   return {
@@ -249,8 +258,8 @@ export function normalizeMember(r: ImportRecord): { value?: MemberImport; error?
       firstName,
       lastName,
       email: email || null,
-      phone: (r.phone ?? '').replace(/\s/g, '') || null,
-      username: (r.username ?? '').trim() || null,
+      phone: phone || null,
+      username: username || null,
       balanceCents: balance === null ? null : Math.round(balance * 100),
     },
   };

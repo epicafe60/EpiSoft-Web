@@ -115,6 +115,11 @@ export const settingSchemas = {
       'Courriel invalide.',
     ),
   }),
+  /**
+   * R-SES-07: the cashier changes on the till without signing out. With `requirePin`, the chosen
+   * cashier confirms with their 4-digit code; without it, the cashier is only declared.
+   */
+  'pos.cashierSwitch': z.object({ requirePin: z.boolean() }),
   /** Alert thresholds: what the till, the API and the daily check call « unusual ». */
   // A threshold added by a later version is absent from what was saved before: it takes its
   // default, and the values the administrators chose are kept (never all dropped).
@@ -123,7 +128,7 @@ export const settingSchemas = {
       Object.entries(DEFAULT_THRESHOLDS).map(([k, v]) => [
         k,
         z
-          .number({ invalid_type_error: 'Nombre attendu.' })
+          .number({ error: 'Nombre attendu.' })
           .min(0, 'Pas de valeur négative.')
           .max(100000)
           .default(v),
@@ -159,6 +164,7 @@ export const SETTING_DEFAULTS: Settings = {
     requireMemberFirst: true,
   },
   'pos.treasurerEmail': { email: null },
+  'pos.cashierSwitch': { requirePin: true },
   'shop.enabled': { enabled: true },
   'email.enabled': { enabled: true },
   'membership.reminder': { enabled: false, daysBefore: 15 },

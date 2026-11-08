@@ -125,6 +125,7 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           username: member.username,
           status: member.status,
           hasPassword: sql<boolean>`${member.passwordHash} is not null`,
+          hasTillPin: sql<boolean>`${member.tillPasswordHash} is not null`,
         })
         .from(member)
         .where(and(...filters))
@@ -209,6 +210,24 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     },
   );
 
+  /** R-SES-07: a forgotten cashier code is cleared; the volunteer then chooses a new one. */
+  app.delete(
+    '/admin/users/:id/till-pin',
+    { ...admin, schema: { params: z.object({ id: z.string().uuid() }) } },
+    async (req, reply) => {
+      await db.transaction(async (tx) => {
+        const [m] = await tx
+          .update(member)
+          .set({ tillPasswordHash: null, tillPasswordSalt: null, updatedAt: new Date() })
+          .where(eq(member.id, req.params.id))
+          .returning({ id: member.id });
+        if (!m) throw notFound('Membre introuvable.');
+        await audit(tx, req, { action: 'member.till_pin_clear', entity: 'member', entityId: m.id });
+      });
+      return reply.status(204).send();
+    },
+  );
+
   // --- Impersonation: an administrator acts as another user to test their screens ---------
   //
   // Every audited action done meanwhile records the real administrator as the actor and the
@@ -269,6 +288,8 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           or(
             eq(auditLog.actorId, q.memberId),
             eq(auditLog.onBehalfOfId, q.memberId),
+            // R-SES-07: what another cashier recorded through the session of this member.
+            eq(auditLog.viaSessionOfId, q.memberId),
             and(eq(auditLog.entity, 'member'), eq(auditLog.entityId, q.memberId)),
           )!,
         );
@@ -285,6 +306,9 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           onBehalfOfName: sql<
             string | null
           >`(select m2.first_name || ' ' || m2.last_name from app.member m2 where m2.id = ${auditLog.onBehalfOfId})`,
+          viaSessionOfName: sql<
+            string | null
+          >`(select m3.first_name || ' ' || m3.last_name from app.member m3 where m3.id = ${auditLog.viaSessionOfId})`,
           action: auditLog.action,
           entity: auditLog.entity,
           entityId: auditLog.entityId,

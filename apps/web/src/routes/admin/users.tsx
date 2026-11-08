@@ -82,6 +82,31 @@ function PasswordLinkButton({ user }: { user: UserSummary }) {
   );
 }
 
+/** R-SES-07: a forgotten cashier code is cleared; the volunteer chooses a new one at the till. */
+function ClearTillPinButton({ user }: { user: UserSummary }) {
+  const queryClient = useQueryClient();
+  const clear = useMutation({
+    mutationFn: () => api.delete(`/admin/users/${user.id}/till-pin`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+  });
+  if (!user.hasTillPin) return null;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => clear.mutate()}
+      disabled={clear.isPending}
+      title={
+        clear.error instanceof ApiError
+          ? clear.error.message
+          : 'Code oublié : l’effacer, le bénévole en choisira un autre à la caisse'
+      }
+    >
+      Effacer le code caissier
+    </Button>
+  );
+}
+
 const USER_SORT = {
   number: (u: UserSummary) => u.number,
   name: (u: UserSummary) => `${u.lastName} ${u.firstName}`,
@@ -175,6 +200,11 @@ export function UsersPage() {
                       {!u.hasPassword && u.username ? (
                         <Badge variant="muted">mot de passe à définir</Badge>
                       ) : null}
+                      {u.roles.includes('CAISSE') ? (
+                        <Badge variant="muted">
+                          {u.hasTillPin ? 'code caissier choisi' : 'sans code caissier'}
+                        </Badge>
+                      ) : null}
                     </div>
                   </td>
                   <td>
@@ -199,6 +229,7 @@ export function UsersPage() {
                       ) : null}
 
                       <PasswordLinkButton user={u} />
+                      <ClearTillPinButton user={u} />
                     </div>
                   </td>
                 </tr>

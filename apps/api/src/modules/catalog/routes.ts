@@ -21,6 +21,7 @@ import {
   productCreateSchema,
   productPatchSchema,
   purchasePriceIncl,
+  contentMatchesType,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -338,7 +339,12 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 
   app.put('/products/:id/image', { ...editors, schema: idParams }, async (req) => {
     const mime = req.headers['content-type']?.split(';')[0] ?? '';
-    if (!IMAGE_TYPES.includes(mime) || !Buffer.isBuffer(req.body))
+    // The content must be what the browser announced: no HTML or SVG passed off as an image.
+    if (
+      !IMAGE_TYPES.includes(mime) ||
+      !Buffer.isBuffer(req.body) ||
+      !contentMatchesType(req.body, mime)
+    )
       throw badRequest('Image PNG, JPEG ou WebP attendue.');
     return db.transaction(async (tx) => {
       const p = await tx.query.product.findFirst({ where: eq(product.id, req.params.id) });
@@ -354,9 +360,18 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     });
   });
 
-  /** Media are immutable (a new upload gets a new id), so they are cached for a year. */
+  /**
+   * Product images only: they are immutable (a new upload gets a new id), so they are cached for a
+   * year. Anything else stored in `media` (an invoice document) is private and served by its own
+   * route with its own rights: this one answers « not found » for it (audit KV2, C05).
+   */
   app.get('/media/:id', { schema: idParams }, async (req, reply) => {
-    const m = await db.query.media.findFirst({ where: eq(media.id, req.params.id) });
+    const m = await db.query.media.findFirst({
+      where: and(
+        eq(media.id, req.params.id),
+        sql`exists (select 1 from app.product p where p.image_id = ${media.id})`,
+      ),
+    });
     if (!m) throw notFound('Image introuvable.');
     return reply
       .header('cache-control', 'private, max-age=31536000, immutable')

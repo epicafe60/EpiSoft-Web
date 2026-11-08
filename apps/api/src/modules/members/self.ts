@@ -152,7 +152,13 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
     async (req, reply) => {
       const [me] = await db.select().from(member).where(eq(member.id, req.user!.id));
       if (!me) throw notFound('Compte introuvable.');
-      const { passwordHash: _p, qrTokenHash: _q, ...profile } = me;
+      const {
+        passwordHash: _p,
+        qrTokenHash: _q,
+        tillPasswordHash: _t,
+        tillPasswordSalt: _s,
+        ...profile
+      } = me;
       const hid = me.householdId;
       const wallet = hid
         ? await db

@@ -29,6 +29,11 @@ export interface Me {
   shopEnabled?: boolean;
   /** Set while an administrator acts as this user (impersonation). */
   impersonator?: { id: string; firstName: string; lastName: string } | null;
+  /**
+   * R-SES-07: another cashier keeps the till with this session; the rest of the application waits
+   * for the password of the person signed in. Absent from an older server: null.
+   */
+  tillCashierId?: string | null;
 }
 
 export const roleCodeSchema = z.enum(ROLE_CODES);
@@ -45,6 +50,8 @@ export interface UserSummary {
   username: string | null;
   status: MemberStatus;
   hasPassword: boolean;
+  /** R-SES-07: the cashier has chosen a code (absent from an older server). */
+  hasTillPin?: boolean;
   roles: RoleCode[];
 }
 
@@ -55,6 +62,8 @@ export interface AuditEntry {
   actorName: string | null;
   /** Set when an administrator was impersonating this member. */
   onBehalfOfName?: string | null;
+  /** R-SES-07: a till operation of the cashier (actor) sent through the session of this member. */
+  viaSessionOfName?: string | null;
   action: string;
   entity: string;
   entityId: string | null;

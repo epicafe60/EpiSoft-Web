@@ -1,9 +1,11 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import {
   cashSession,
   cashSessionAlias,
   household,
+  inventoryLine,
+  inventorySession,
   member,
   memberPayment,
   membership,
@@ -14,6 +16,7 @@ import {
   sale,
   saleLine,
   salePayment,
+  session as signInSession,
   syncReceipt,
   syncRejection,
   userRole,
@@ -29,7 +32,10 @@ import {
   membershipPeriod,
   milliToDecimal,
   parseQtyToMilli,
+  paymentProblem,
+  saleAlreadyCounted,
   walletPaymentAllowed,
+  type CashierCheck,
   type PaymentMethod,
   type SyncOp,
   type SyncResult,
@@ -93,9 +99,18 @@ interface Ctx {
   config: Config;
   deviceId: string;
   warnings: SyncWarning[];
+  /** The cashier of the operation holds the CAISSE role (set by checkCashier). */
+  cashierKnown?: boolean;
 }
 
 const warn = (ctx: Ctx, code: string, message: string) => ctx.warnings.push({ code, message });
+
+/**
+ * C02: when an operation of a session is written, by the database clock at that very moment, not
+ * at the start of the transaction (`now()`). An operation that waited for a closing is thus dated
+ * after it, and the closing knows it did not count it.
+ */
+const recordedNow = sql`clock_timestamp()`;
 
 /**
  * Processes the operations of one device in order (R-SYNC-03). Each operation has its own
@@ -125,7 +140,35 @@ export async function processOps(
     results.push(await processOne(db, req, config, deviceId, op));
   }
   await db.update(posDevice).set({ lastSyncAt: new Date() }).where(eq(posDevice.id, deviceId));
+  await restrictToTill(db, req, ops);
   return results;
+}
+
+/**
+ * R-SES-07: a ticket of another cashier than the holder restricts the session to the till, like
+ * POST /pos/cashier. A change of cashier made offline thus closes the holder's other rights as
+ * soon as the network is back, whatever the till's screen does.
+ */
+async function restrictToTill(db: Db, req: FastifyRequest, ops: SyncOp[]) {
+  const u = req.user!;
+  if (u.tillCashierId) return;
+  const others = [...ops]
+    .sort((a, b) => b.deviceSeq - a.deviceSeq)
+    .map((o) => (o.kind === 'SESSION_OPEN' ? null : o.payload.cashierId))
+    .filter((id): id is string => !!id && id !== u.id);
+  if (!others.length) return;
+  // Only a real cashier keeps the till (an unknown id would break the link to the member).
+  const [known] = await db
+    .select({ id: userRole.memberId })
+    .from(userRole)
+    .where(and(inArray(userRole.memberId, others), eq(userRole.roleCode, 'CAISSE')));
+  const other = known?.id;
+  if (!other) return;
+  await db
+    .update(signInSession)
+    .set({ tillCashierId: other })
+    .where(eq(signInSession.id, u.sessionId));
+  u.tillCashierId = other;
 }
 
 async function processOne(
@@ -279,9 +322,14 @@ async function sessionOf(ctx: Ctx, sessionId: string, at: Date) {
   const alias = await ctx.tx.query.cashSessionAlias.findFirst({
     where: eq(cashSessionAlias.aliasId, sessionId),
   });
-  const s = await ctx.tx.query.cashSession.findFirst({
-    where: eq(cashSession.id, alias?.sessionId ?? sessionId),
-  });
+  // C02: shared lock, held until the operation is recorded. A closing (or a regularization)
+  // locks the session for update: it waits for the operations being recorded, which it then
+  // counts, and an operation arriving meanwhile waits for it, then sees the session closed.
+  const [s] = await ctx.tx
+    .select()
+    .from(cashSession)
+    .where(eq(cashSession.id, alias?.sessionId ?? sessionId))
+    .for('share');
   if (!s) {
     // The session is opened by an operation whose id is the session id. Not received yet (the
     // till that opened it is offline, or sent it later): say « not yet », the ticket is kept
@@ -314,9 +362,40 @@ async function checkCashier(ctx: Ctx, cashierId: string) {
     .select({ code: userRole.roleCode })
     .from(userRole)
     .where(eq(userRole.memberId, cashierId));
-  if (!roles.some((r) => r.code === 'CAISSE')) {
+  ctx.cashierKnown = roles.some((r) => r.code === 'CAISSE');
+  if (!ctx.cashierKnown) {
     warn(ctx, 'CASHIER_ROLE', 'Le caissier indiqué n’a pas le rôle Caisse.');
   }
+}
+
+/**
+ * The journal names the cashier as the author only when they are a cashier. The till declares the
+ * cashier, so a made-up or non-cashier id must never put words in someone else's mouth (an
+ * administrator's name on a ticket): the author then stays the person who sent it.
+ */
+const asCashier = (ctx: Ctx, p: { cashierId: string }) =>
+  ctx.cashierKnown ? { cashier: { id: p.cashierId } } : {};
+
+/**
+ * R-SES-07: the cashier of a till operation, and how it was established. The person signed in is
+ * SESSION; anyone else is PIN when the till says the code was typed, DECLARED otherwise. Never
+ * refused (an offline ticket must not be lost): an unchecked cashier where the association asks
+ * for the code is flagged.
+ */
+async function noteCashier(
+  ctx: Ctx,
+  p: { cashierId: string; cashierCheck?: CashierCheck },
+): Promise<CashierCheck> {
+  await checkCashier(ctx, p.cashierId);
+  if (p.cashierId === ctx.req.user!.id) return 'SESSION';
+  const check: CashierCheck = p.cashierCheck === 'PIN' ? 'PIN' : 'DECLARED';
+  if (check === 'DECLARED' && (await loadSettings(ctx.tx))['pos.cashierSwitch'].requirePin)
+    warn(
+      ctx,
+      'CASHIER_UNCHECKED',
+      'Caissier choisi sans son code (pas encore de code, ou poste hors ligne) : à confirmer avec lui.',
+    );
+  return check;
 }
 
 // --- Sale (R-VTE-10) ----------------------------------------------------------------
@@ -332,7 +411,7 @@ async function recordSale(
   const { tx } = ctx;
   const soldAt = new Date(p.soldAt);
   const session = await sessionOf(ctx, p.sessionId, soldAt);
-  await checkCashier(ctx, p.cashierId);
+  const cashierCheck = await noteCashier(ctx, p);
 
   // Products. A product deactivated in the meantime is still accepted (R-SYNC-04).
   const productIds = [...new Set(p.lines.map((l) => l.productId))];
@@ -378,6 +457,17 @@ async function recordSale(
 
   const payments = p.payments.map((x) => ({ ...x, cents: decimalToCents(x.amount) }));
   if (payments.some((x) => x.cents <= 0)) throw new Rejected('Règlement nul ou négatif.');
+  // C01: cash given, change and change into the cagnotte must add up, whatever the client sent.
+  for (const x of payments) {
+    const problem = paymentProblem({
+      method: x.method,
+      amountCents: x.cents,
+      tenderedCents: x.tendered == null ? null : decimalToCents(x.tendered),
+      changeCents: x.change == null ? null : decimalToCents(x.change),
+      changeToWallet: x.changeToWallet ?? false,
+    });
+    if (problem) throw new Rejected(`Règlement incohérent : ${problem}`);
+  }
 
   // Unusual values never refuse the sale: they are recorded with it for the treasurer to check.
   const thresholds = (await loadSettings(tx))['controls.thresholds'];
@@ -442,6 +532,7 @@ async function recordSale(
     discountTotal: centsToDecimal(discountCents),
     hasServices: lines.some((x) => x.prod.kind === 'SERVICE'),
     warnings: ctx.warnings.length ? ctx.warnings : null,
+    createdAt: recordedNow,
   });
 
   await tx.insert(saleLine).values(
@@ -479,6 +570,14 @@ async function recordSale(
     saleId,
     soldAt,
   );
+  await compensateCountedSale(
+    ctx,
+    lines
+      .filter((x) => x.prod.kind === 'GOODS')
+      .map((x) => ({ productId: x.prod.id, name: x.prod.name, qtyMilli: x.qtyMilli })),
+    saleId,
+    soldAt,
+  );
   const goodsIds = lines.filter((x) => x.prod.kind === 'GOODS').map((x) => x.prod.id);
   if (goodsIds.length) {
     const below = await tx
@@ -510,6 +609,15 @@ async function recordSale(
           `Découvert de cagnotte constaté : solde ${centsToDecimal(before - walletCents)} €.`,
         );
       }
+      // The person who forces an overdraft vouches for it with their own role: only the holder of
+      // the session, keeping the till themself (R-SES-07: never another cashier on their behalf).
+      const forcedBy =
+        !allowed &&
+        p.walletOverdraftForcedBy &&
+        p.walletOverdraftForcedBy === ctx.req.user!.id &&
+        p.cashierId === ctx.req.user!.id
+          ? p.walletOverdraftForcedBy
+          : null;
       await tx.insert(walletEntry).values({
         householdId,
         at: soldAt,
@@ -517,15 +625,15 @@ async function recordSale(
         kind: 'PURCHASE',
         saleId,
         comment: number,
-        forcedBy: !allowed ? (p.walletOverdraftForcedBy ?? null) : null,
+        forcedBy,
         createdBy: p.cashierId,
       });
-      if (!allowed && p.walletOverdraftForcedBy) {
+      if (forcedBy) {
         await audit(tx, ctx.req, {
           action: 'wallet.overdraft_forced',
           entity: 'household',
           entityId: householdId,
-          after: { saleId, forcedBy: p.walletOverdraftForcedBy },
+          after: { saleId, forcedBy },
         });
       }
     }
@@ -533,6 +641,8 @@ async function recordSale(
     for (const x of payments.filter((y) => y.changeToWallet && y.change)) {
       const changeCents = decimalToCents(x.change!);
       if (changeCents <= 0) continue;
+      // Every writer of a cagnotte takes its lock, a credit too (a no-op if taken just above).
+      await lockedBalanceCents(tx, householdId!);
       const [pay] = await tx
         .insert(memberPayment)
         .values({
@@ -545,6 +655,7 @@ async function recordSale(
           saleId,
           comment: `Monnaie du ticket ${number}`,
           createdBy: p.cashierId,
+          createdAt: recordedNow,
         })
         .returning({ id: memberPayment.id });
       await tx.insert(walletEntry).values({
@@ -649,7 +760,9 @@ async function recordSale(
     action: 'sale.create',
     entity: 'sale',
     entityId: saleId,
+    ...asCashier(ctx, p),
     after: {
+      cashierCheck,
       number,
       total: centsToDecimal(totalCents),
       payments: payments.map((x) => ({ method: x.method, amount: centsToDecimal(x.cents) })),
@@ -669,7 +782,9 @@ async function moveStock(
   saleId: string,
   at: Date,
 ) {
-  for (const m of moves) {
+  // In product id order, as the inventory validation locks them: two transactions never wait
+  // for each other in a circle.
+  for (const m of [...moves].sort((a, b) => (a.productId < b.productId ? -1 : 1))) {
     await recordMovement(ctx.tx, {
       productId: m.productId,
       qtyMilli: m.qtyMilli,
@@ -678,6 +793,61 @@ async function moveStock(
       sourceId: saleId,
       at,
     });
+  }
+}
+
+/**
+ * Audit KV2, C04: a sale that arrives after an inventory already counted the product it sold (sold
+ * between the opening and the count, received after the validation). The count saw the product
+ * gone, the sale takes it off again: an INVENTORY movement gives it back, with a warning on the
+ * ticket so that the stock team knows. Never refuses the sale.
+ */
+async function compensateCountedSale(
+  ctx: Ctx,
+  goods: { productId: string; name: string; qtyMilli: number }[],
+  saleId: string,
+  soldAt: Date,
+) {
+  if (!goods.length) return;
+  const counts = await ctx.tx
+    .select({
+      productId: inventoryLine.productId,
+      sessionId: inventorySession.id,
+      label: inventorySession.label,
+      openedAt: inventorySession.openedAt,
+      countedAt: inventoryLine.countedAt,
+    })
+    .from(inventoryLine)
+    .innerJoin(inventorySession, eq(inventorySession.id, inventoryLine.sessionId))
+    .where(
+      and(
+        inArray(
+          inventoryLine.productId,
+          goods.map((g) => g.productId),
+        ),
+        isNotNull(inventorySession.validatedAt),
+        isNotNull(inventoryLine.countedAt),
+        lte(inventorySession.openedAt, soldAt),
+        gte(inventoryLine.countedAt, soldAt),
+      ),
+    );
+  for (const g of goods) {
+    const inv = counts.find((c) => c.productId === g.productId && saleAlreadyCounted(soldAt, c));
+    if (!inv) continue;
+    await recordMovement(ctx.tx, {
+      productId: g.productId,
+      qtyMilli: g.qtyMilli,
+      kind: 'INVENTORY',
+      sourceType: 'inventory_late_sale',
+      sourceId: saleId,
+      comment: `Régularisation : vente arrivée après l’inventaire « ${inv.label} », déjà comptée`,
+      at: new Date(),
+    });
+    warn(
+      ctx,
+      'INVENTORY_LATE_SALE',
+      `${g.name} : vente arrivée après l’inventaire « ${inv.label} » qui l’avait déjà comptée ; le stock a été régularisé.`,
+    );
   }
 }
 
@@ -690,7 +860,9 @@ async function cancelSale(
 ): Promise<string> {
   const { tx } = ctx;
   const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
-  const original = await tx.query.sale.findFirst({ where: eq(sale.id, p.saleId) });
+  const cashierCheck = await noteCashier(ctx, p);
+  // Locked: two tills cancelling the same ticket at once, the second one sees it cancelled.
+  const [original] = await tx.select().from(sale).where(eq(sale.id, p.saleId)).for('update');
   if (!original) {
     // Never received: it is on its way (the till sends in order), say « not yet ». Received and
     // refused: there will never be a ticket to cancel.
@@ -707,8 +879,11 @@ async function cancelSale(
   }
   if (original.cancelsSaleId) throw new Rejected('Un ticket d’annulation ne peut pas être annulé.');
   if (original.status === 'CANCELLED') throw new Rejected('Ce ticket est déjà annulé.');
-  // A ticket of the current session can be cancelled at the till; older ones need ADMIN.
-  if (original.sessionId !== session.id && !hasAnyRole(ctx.req.user!.roles, ['ADMIN'])) {
+  // A ticket of the current session can be cancelled at the till; older ones need ADMIN, and
+  // the administrator keeping the till themself (R-SES-07: another cashier never uses their rights).
+  const adminAtTill =
+    hasAnyRole(ctx.req.user!.roles, ['ADMIN']) && p.cashierId === ctx.req.user!.id;
+  if (original.sessionId !== session.id && !adminAtTill) {
     throw new Rejected('Seul un administrateur peut annuler un ticket d’une session précédente.');
   }
   const at = new Date(p.at);
@@ -747,6 +922,7 @@ async function cancelSale(
     discountTotal: neg(original.discountTotal),
     cancelsSaleId: original.id,
     hasServices: original.hasServices,
+    createdAt: recordedNow,
   });
   await tx.insert(saleLine).values(
     lines.map((l) => ({
@@ -796,8 +972,9 @@ async function cancelSale(
     action: 'sale.cancel',
     entity: 'sale',
     entityId: original.id,
+    ...asCashier(ctx, p),
     before: { number: original.number, total: original.total },
-    after: { cancelledBy: number, reason: p.reason ?? null },
+    after: { cancelledBy: number, reason: p.reason ?? null, cashierCheck },
   });
   return number;
 }
@@ -807,6 +984,7 @@ async function cancelSale(
 async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['payload']) {
   const { tx } = ctx;
   const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
+  const cashierCheck = await noteCashier(ctx, p);
   const h = await tx.query.household.findFirst({ where: eq(household.id, p.householdId) });
   if (!h) throw new Rejected('Foyer inconnu.');
   const cents = decimalToCents(p.amount);
@@ -823,6 +1001,7 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
       method: p.method,
       cashSessionId: session.id,
       createdBy: p.cashierId,
+      createdAt: recordedNow,
     })
     .returning({ id: memberPayment.id });
   await tx.insert(walletEntry).values({
@@ -838,8 +1017,9 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
     action: 'wallet.topup',
     entity: 'household',
     entityId: h.id,
+    ...asCashier(ctx, p),
     before: { balanceCents: before },
-    after: { amount: p.amount, method: p.method, at: 'caisse', paymentId: pay!.id },
+    after: { amount: p.amount, method: p.method, at: 'caisse', paymentId: pay!.id, cashierCheck },
   });
   // R-EVO-40: the top-up receipt is automatic too (opt-out respected).
   await sendTopupReceipt(tx, h.id, h.referentMemberId, {

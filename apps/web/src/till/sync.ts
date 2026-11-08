@@ -136,11 +136,15 @@ export class SyncEngine {
     const ops = batch.slice(0, PUSH_BATCH);
     this.set({ pushing: true });
     try {
-      const { results } = await api.post<{ results: SyncResult[] }>('/sync/push', {
+      const { results, serverTime } = await api.post<{
+        results: SyncResult[];
+        serverTime?: string;
+      }>('/sync/push', {
         deviceId: device.id,
         ops: ops.map((e) => e.op),
       });
-      const now = new Date().toISOString();
+      // C06: dated by the server (an older server does not say: the till's clock then).
+      const now = serverTime ?? new Date().toISOString();
       await this.db.transaction('rw', this.db.outbox, async () => {
         for (const r of results) {
           await this.db.outbox.update(r.id, {
@@ -152,7 +156,8 @@ export class SyncEngine {
         }
       });
       await this.adoptJoinedSession(results);
-      await setMeta('lastPushAt', now, this.db);
+      // The health banners compare it with the till's own clock: kept in local time.
+      await setMeta('lastPushAt', new Date().toISOString(), this.db);
       this.set({ online: true, authRequired: false, deviceProblem: null, lastError: null });
       // New balances and stock: refresh the replicated data at once.
       void this.refresh();

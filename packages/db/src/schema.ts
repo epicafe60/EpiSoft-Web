@@ -119,6 +119,13 @@ export const member = app.table(
     username: text('username'),
     passwordHash: text('password_hash'),
     qrTokenHash: text('qr_token_hash'),
+    /**
+     * R-SES-07: the cashier's 4-digit code (PBKDF2, see till-pin.ts), checked on the till to change
+     * the cashier without signing out. Named « password » so that the change capture masks it.
+     * Never a way to sign in.
+     */
+    tillPasswordHash: text('till_password_hash'),
+    tillPasswordSalt: text('till_password_salt'),
     legacyMbreid: integer('legacy_mbreid').unique(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -176,6 +183,11 @@ export const session = app.table(
     userAgent: text('user_agent'),
     /** Admin impersonation: the member the administrator is acting as (audited). */
     actingAsId: uuid('acting_as_id').references(() => member.id, { onDelete: 'set null' }),
+    /**
+     * R-SES-07: someone else than the holder keeps the till with this session. Set, the session
+     * reaches the till's routes only, until the holder types their password again.
+     */
+    tillCashierId: uuid('till_cashier_id').references(() => member.id, { onDelete: 'set null' }),
     loginLogId: uuid('login_log_id'),
   },
   (t) => [index('session_member_idx').on(t.memberId)],
@@ -229,6 +241,13 @@ export const auditLog = app.table(
     actorId: uuid('actor_id').references(() => member.id, { onDelete: 'set null' }),
     /** Set while an administrator is impersonating this member: actorId stays the real person. */
     onBehalfOfId: uuid('on_behalf_of_id').references(() => member.id, { onDelete: 'set null' }),
+    /**
+     * R-SES-07: a till operation recorded in the name of its cashier (actorId) through the session
+     * of someone else: the holder of that session.
+     */
+    viaSessionOfId: uuid('via_session_of_id').references(() => member.id, {
+      onDelete: 'set null',
+    }),
     action: text('action').notNull(),
     entity: text('entity').notNull(),
     entityId: text('entity_id'),

@@ -21,6 +21,7 @@ import { Alert, Checkbox, Input, Label } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
 import type { PaymentDraft } from './logic';
 import { useTill } from './context';
+import { openCashierSwitch, useCashierName } from './cashier-switch';
 
 const eur = (c: number) => formatEuro(centsToDecimal(c));
 
@@ -48,7 +49,10 @@ export function PaymentDialog({
   onConfirm: (r: PaymentResult) => Promise<void>;
 }) {
   const me = useMe();
-  const { settings, balanceCents } = useTill();
+  const { settings, balanceCents, cashierId } = useTill();
+  const otherCashier = useCashierName(cashierId === me.id ? null : cashierId);
+  const cashierName =
+    cashierId === me.id ? `${me.firstName} ${me.lastName}` : (otherCashier ?? '…');
   const [payments, setPayments] = useState<PaymentDraft[]>([]);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [input, setInput] = useState('');
@@ -68,7 +72,8 @@ export function PaymentDialog({
     .filter((p) => p.method === 'WALLET')
     .reduce((s, p) => s + p.amountCents, 0);
   const overdraft = parseAmountToCents(settings?.overdraftLimit ?? '0') ?? 0;
-  const canForce = hasAnyRole(me.roles, ['ADHERENTS']);
+  // R-SES-07: the person signed in vouches for an overdraft only while keeping the till themself.
+  const canForce = hasAnyRole(me.roles, ['ADHERENTS']) && cashierId === me.id;
 
   useEffect(() => {
     if (open) {
@@ -308,6 +313,22 @@ export function PaymentDialog({
             de la cagnotte avant et après.
           </p>
         ) : null}
+
+        {/* R-SES-07: whose name goes on the ticket, checked (and changed) right before validating. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <span>
+            Encaissé par : <strong>{cashierName}</strong>
+            {cashierId !== me.id ? (
+              <span className="text-muted-foreground">
+                {' '}
+                · poste de {me.firstName} {me.lastName}
+              </span>
+            ) : null}
+          </span>
+          <Button type="button" size="sm" variant="outline" onClick={openCashierSwitch}>
+            Changer de caissier
+          </Button>
+        </div>
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

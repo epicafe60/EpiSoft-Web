@@ -37,8 +37,10 @@ import {
   type SnapshotMember,
   type SnapshotProduct,
   type SyncOp,
+  cashierStale,
 } from '@episoft/shared';
 import { todayIso, formatDate } from '@/lib/format';
+import { useMe } from '@/lib/auth';
 import { confirmNow } from '@/components/confirm';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -54,6 +56,7 @@ import { enqueue } from './sync';
 import { TopupDialog } from './topup';
 import { Receipt } from './receipt';
 import { WeightDialog, LineDialog } from './line-dialogs';
+import { openCashierSwitch, useCashierName } from './cashier-switch';
 
 /** R-EVO-08: the service product of the donations (account 754 at closing). */
 const DONATION_CODE = '01004';
@@ -88,8 +91,13 @@ function searchMembers(members: SnapshotMember[], q: string): SnapshotMember[] {
 }
 
 export function SalePage() {
-  const { meta, settings, engine, cashierId, balanceCents } = useTill();
+  const { meta, settings, engine, cashierId, cashierCheck, noteCashierActivity, balanceCents } =
+    useTill();
   const draft = useDraft();
+  const me = useMe();
+  const otherCashier = useCashierName(cashierId === me.id ? null : cashierId);
+  const cashierName =
+    cashierId === me.id ? `${me.firstName} ${me.lastName}` : (otherCashier ?? '…');
   const products = useLiveQuery(() => tillDb.products.toArray(), []);
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const households = useLiveQuery(() => tillDb.households.toArray(), []);
@@ -271,6 +279,7 @@ export function SalePage() {
           draft,
           sessionId: meta.session!.id,
           cashierId,
+          cashierCheck,
           provisionalNumber: number,
           payments: r.payments,
           emailReceipt: r.emailReceipt,
@@ -282,6 +291,7 @@ export function SalePage() {
       () => tillDb.drafts.delete(draft.id).then(() => undefined),
     );
     if (op.kind === 'SALE') setLastSale(op.payload);
+    await noteCashierActivity();
     await newDraft();
     setPaying(false);
     const change = r.payments.reduce(
@@ -298,6 +308,19 @@ export function SalePage() {
 
   const startPayment = () => {
     if (!draft?.lines.length) return;
+    // R-SES-07: a till left a while without a ticket asks again who keeps it (code required).
+    if (
+      (settings?.cashierPinRequired ?? true) &&
+      meta.cashier &&
+      cashierStale(new Date(meta.cashier.lastActivityAt), new Date())
+    ) {
+      setMessage({
+        kind: 'error',
+        text: 'La caisse est restée inactive : qui encaisse ? Choisissez votre nom, puis encaissez.',
+      });
+      openCashierSwitch();
+      return;
+    }
     const frozen = salesBlockedReason(settings);
     if (frozen) {
       setMessage({ kind: 'error', text: frozen });
@@ -776,6 +799,14 @@ export function SalePage() {
             Encaisser
           </Button>
         </div>
+        {/* R-SES-07: whose name goes on the ticket, corrected in one touch before paying. */}
+        <button
+          type="button"
+          onClick={openCashierSwitch}
+          className="justify-self-end text-sm text-muted-foreground hover:text-foreground"
+        >
+          Encaissé par : <strong className="text-foreground">{cashierName}</strong> ▾
+        </button>
         <Button
           variant="outline"
           size="sm"

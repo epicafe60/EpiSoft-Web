@@ -9,7 +9,7 @@ import {
   supplierInvoice,
   type Db,
 } from '@episoft/db';
-import { nextSupplierCode, supplierSchema } from '@episoft/shared';
+import { nextSupplierCode, patchOf, supplierSchema } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/problem';
@@ -169,7 +169,9 @@ export const supplierRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
       ...editors,
       schema: {
         ...idParams,
-        body: supplierSchema.partial().extend({ updatedAt: z.string().datetime({ offset: true }) }),
+        body: patchOf(supplierSchema.shape).extend({
+          updatedAt: z.string().datetime({ offset: true }),
+        }),
       },
     },
     async (req) => {

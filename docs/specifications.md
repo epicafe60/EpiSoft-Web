@@ -554,8 +554,9 @@ flowchart LR
 
 - **R-AUTH-01 [corrigé]** Le mot de passe est distinct du QR code et stocké haché (Argon2id). Il doit comporter au moins 10 caractères.
 - **R-AUTH-02 [nouveau]** Réinitialisation du mot de passe par lien envoyé par courriel, valable 1 heure. Le lien « Mot de passe oublié » n'était pas implémenté jusqu'ici.
+  - *Audit KV2 (S04)* : la réinitialisation, l'envoi d'un nouveau lien et le changement de courriel rendent inutilisables tous les liens encore ouverts. Seul un ADMIN change le courriel, l'identifiant ou le statut (inactif, archivé) d'un compte qui a un rôle (S02). L'ancienne adresse est prévenue.
 - **R-AUTH-03 [nouveau]** Après 5 échecs de connexion, la connexion est bloquée 15 minutes pour cet identifiant.
-- **R-AUTH-04 [supprimé]** Plus de changement de caissier par badge : le caissier est l'utilisateur connecté (R-VTE-01). Chacun se connecte avec son compte, même sur un poste partagé. Le badge QR sert uniquement à identifier un adhérent à la vente. Il ne donne jamais accès au back-office.
+- **R-AUTH-04 [supprimé, puis rétabli autrement]** Plus de changement de caissier par badge QR : le badge sert uniquement à identifier un adhérent à la vente et ne donne jamais accès au back-office. *(8 novembre 2026)* À la demande des caissiers, qui se relaient sans cesse, le caissier se change de nouveau sans déconnexion, en touchant son nom, avec un code personnel au choix de l'association : voir R-SES-07 et l'ADR 0011.
 - **R-AUTH-05 [reprise + corrigé]** Rôles :
 
   | Rôle | Ancien indice | Accès |
@@ -633,6 +634,7 @@ flowchart LR
 - **R-CAG-03** Le solde est `Σ montants`. Une vue matérialisée (ou un champ mis à jour par la transaction) donne le solde instantané, et le contrôle de cohérence de l'actuel `CtrlAdhSolde` devient un test automatique.
 - **R-CAG-04 [paramétrable]** Découvert autorisé : 0 € par défaut. Au-delà, le paiement par cagnotte est refusé, sauf si un utilisateur `ADHERENTS` force l'opération (ce forçage est journalisé).
 - **R-CAG-05 [nouveau]** La monnaie à rendre peut être versée sur la cagnotte. Le bouton existait mais était masqué.
+  - *Audit KV2 (C01)* : le serveur vérifie le règlement. La monnaie ne concerne que les espèces, avec remis ≥ montant et monnaie = remis − montant. Le versement en cagnotte exige une monnaie positive. Un ticket incohérent est refusé et conservé dans les rejets de synchronisation.
 - **R-CAG-06 [reprise]** Un reçu de versement est envoyé par courriel : ancien solde, montant, nouveau solde, mode.
 - **R-CAG-07 [reprise]** Historique filtrable des opérations, avec export Excel/PDF et envoi par courriel.
 - **R-CAG-08** Une modification ou suppression de versement n'est possible que le jour même. Ensuite, la correction passe par une opération de type `CORRECTION`.
@@ -649,7 +651,7 @@ L'écran de caisse est composé de quatre zones :
 
 **Règles :**
 
-- **R-VTE-01 [reprise]** Le caissier est choisi parmi les utilisateurs ayant le rôle `CAISSE`. C'est l'utilisateur connecté, sans possibilité de le changer à la caisse : chacun se connecte avec son propre compte.
+- **R-VTE-01 [reprise, modifié]** Le caissier est choisi parmi les utilisateurs ayant le rôle `CAISSE`. Par défaut, c'est l'utilisateur connecté ; un autre caissier peut prendre la caisse sans déconnexion (R-SES-07). Le caissier est une **attribution** (le nom sur le ticket) ; les **droits** restent ceux de la session.
 - **R-VTE-02 [corrigé]** L'adhérent est facultatif :
   - sans adhérent, la vente est possible si le paramètre « vente aux non-adhérents » est actif ; l'application propose alors d'ajouter l'adhésion de passage ;
   - le paiement par cagnotte exige un adhérent.
@@ -700,7 +702,17 @@ L'écran de caisse est composé de quatre zones :
   4. enregistre le nombre de chèques et leur total, et le total des tickets de carte (saisi par le caissier et comparé au total calculé) ;
   5. génère le **brouillon d'écriture comptable** de la session (§4.11, R-CPT-08) ;
   6. produit un **rapport de clôture** PDF, envoyé par courriel au trésorier.
+  - *Audit KV2 (C02)* : un ticket arrivé après la clôture est signalé. « Régulariser » (ADMIN, COMPTA) recalcule la synthèse et l'écart. L'écriture est régénérée si elle est en brouillon. Validée, elle reçoit une écriture de régularisation équilibrée.
 - **R-SES-05 [nouveau]** Une seule session est ouverte à la fois : un tiroir, une clôture. Un poste qui arrive trouve la session ouverte et la rejoint sans rien demander ; un poste qui en ouvre une hors ligne y est rattaché à l'arrivée de ses opérations (l'identifiant qu'il avait généré devient un alias, son fond de caisse est ignoré, aucune vente n'est perdue). Le poste est déclaré automatiquement, sans nom à saisir. La session d'un jour précédent doit être clôturée avant de vendre (en ligne) ; hors ligne, la vente est conservée et signalée à son arrivée.
+- **R-SES-07 [nouveau]** Changement de caissier sans déconnexion (ADR 0011).
+  - On touche son nom dans « Qui encaisse ? » ; l'écran d'encaissement rappelle « Encaissé par ».
+  - Le réglage « Code caissier exigé » (activé par défaut) demande un code personnel de 4 chiffres, choisi avec le mot de passe EpiSoft. Hors ligne, le poste le vérifie avec une copie hachée.
+  - Le code ne permet jamais de se connecter. Un administrateur efface un code oublié.
+  - Un caissier sans code encore, ou un code non exigé : il est **déclaré**, et le ticket est signalé « caissier non vérifié » quand le code est exigé. La vente n'est jamais bloquée.
+  - Le journal enregistre le caissier comme auteur, la session d'origine (« poste ouvert par ») et le niveau de preuve (code vérifié, déclaré).
+  - Dès qu'un autre caissier tient la caisse, la session ne sert plus qu'à la caisse : le reste de l'application (et le serveur) attend le mot de passe de la personne connectée. Un découvert forcé, ou l'annulation d'un ticket d'une session précédente, exigent que cette personne tienne elle-même la caisse.
+  - Après 15 minutes sans ticket, le poste redemande qui encaisse (si le code est exigé).
+  - La clôture est au nom de celui qui a compté le tiroir ; le serveur vérifie son code.
 - **R-SES-06 [nouveau]** Tout caissier peut clôturer la session. L'écran de clôture indique les autres caissiers qui ont vendu récemment (seuil réglable, 15 minutes par défaut) et les postes sans nouvelles, et demande une confirmation si un autre caissier est encore actif. Aucun blocage.
 - **R-SES-03 [corrigé]** Une session ne peut être clôturée qu'une fois. La réouverture est réservée à `ADMIN` et journalisée.
 - **R-SES-04 [nouveau]** **Remise en banque :** chaque dépôt d'espèces et chaque remise de chèques (bordereau : liste des chèques, banque émettrice, montant) est enregistré. Cela remplace la table `remcheques`, qui n'était pas utilisée par le logiciel, et alimente les écritures 511200/531000 → 512.
@@ -948,6 +960,7 @@ stateDiagram-v2
 - **R-IMP-02 [reprise + corrigé]** Import du **CSV membres Epicerio** :
   - création des membres et mise à jour du contact ;
   - le solde importé est **comparé** au solde v2 ; un écart produit une opération `CORRECTION` après confirmation, **jamais une addition**.
+  - *Audit KV2 (C03)* : un seul solde cible par foyer. Des cibles contradictoires mettent les lignes en erreur. L'écart est calculé sur le solde lu au moment d'appliquer, pour ne corriger qu'une fois.
 - **R-IMP-03 [nouveau]** Assistant d'import générique CSV/XLSX, avec correspondance de colonnes mémorisée, pour les produits, les membres et le plan comptable.
 - **R-IMP-04** Tout import est idempotent : le rejouer ne crée pas de doublon. Il est journalisé : fichier, date, auteur, résultat.
 - **R-IMP-05 [à décider]** Epicerio et la v2 se recoupent (stock, ventes en ligne). Voir Q5 au §11.
@@ -1406,8 +1419,10 @@ sequenceDiagram
   - le **prix appliqué** est celui du ticket, et l'écart avec le catalogue est signalé ;
   - un **produit désactivé entre-temps** est accepté, avec un avertissement ;
   - un **solde de cagnotte devenu insuffisant** est accepté : le découvert est constaté et signalé au rôle `ADHERENTS`. La vente a eu lieu physiquement, il ne faut pas perdre la recette.
+  - *Audit KV2 (C04)* : une vente faite entre l'ouverture d'un inventaire et le comptage du produit, arrivée après la validation, reçoit un mouvement compensatoire tracé (`inventory_late_sale`) et un avertissement : le stock reste celui compté. *(C06)* : `/sync/push` renvoie l'heure du serveur, utilisée pour l'estimation locale des soldes.
 - **R-SYNC-05** Le numéro de ticket définitif est attribué par le serveur. Le numéro provisoire reste visible dans le détail du ticket.
 - **R-SYNC-06** Les données en cache sur le poste n'incluent ni les mots de passe ni les données personnelles non nécessaires (pas d'adresse). Le QR code n'y figure que sous forme hachée.
+  - *Audit KV2 (S05)* : à la déconnexion, le poste efface les adhérents, les foyers, les brouillons et les opérations déjà reçues par le serveur. Il garde celles qui sont en attente.
 
 ---
 
