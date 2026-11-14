@@ -12,7 +12,7 @@ import {
   parseQtyToMilli,
   UNIT_LABELS,
 } from '@episoft/shared';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useThresholds } from '@/lib/thresholds';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
@@ -229,8 +229,11 @@ export function InventoryPage() {
     },
   });
   const validate = useMutation({
-    mutationFn: () =>
-      api.post<{ adjusted: number }>(`/inventories/${id}/validate`, { zeroUncounted: zero }),
+    mutationFn: (confirmUnsyncedTills: boolean = false) =>
+      api.post<{ adjusted: number }>(`/inventories/${id}/validate`, {
+        zeroUncounted: zero,
+        confirmUnsyncedTills,
+      }),
     onSuccess: async () => {
       setValidating(false);
       await refresh();
@@ -562,8 +565,14 @@ export function InventoryPage() {
             </Alert>
           ) : null}
           {validate.error ? <Alert>{validate.error.message}</Alert> : null}
+          {validate.error instanceof ApiError &&
+          validate.error.problem.code === 'TILLS_NOT_SYNCED' ? (
+            <Button variant="outline" onClick={() => validate.mutate(true)}>
+              Valider quand même, sans attendre ces postes
+            </Button>
+          ) : null}
           <Button
-            onClick={() => validate.mutate()}
+            onClick={() => validate.mutate(false)}
             disabled={validate.isPending || (needsCheck && !gapsChecked)}
           >
             Valider l’inventaire

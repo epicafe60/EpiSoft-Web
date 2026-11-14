@@ -53,7 +53,7 @@ function Status({ e }: { e: OutboxEntry }) {
 
 /** The tickets of the current session, from this device's outbox: works offline. */
 export function TicketsPage() {
-  const { meta, cashierId, cashierCheck, engine, sync } = useTill();
+  const { meta, cashierId, cashierCheck, cashierProof, engine, sync } = useTill();
   const entries = useLiveQuery(() => tillDb.outbox.orderBy('seq').reverse().toArray(), []);
   const members = useLiveQuery(() => tillDb.members.toArray(), []);
   const [selected, setSelected] = useState<SaleEntry | null>(null);
@@ -120,6 +120,7 @@ export function TicketsPage() {
         sessionId: sessionId!,
         cashierId,
         cashierCheck,
+        ...(cashierProof ? { cashierProof } : {}),
         at: new Date().toISOString(),
         provisionalNumber: provisionalNumber(meta.device!.name, deviceSeq),
         reason: reason.trim() || undefined,
@@ -151,7 +152,7 @@ export function TicketsPage() {
         </Alert>
       ) : null}
       <Card>
-        <Table>
+        <Table exportable={false}>
           <thead>
             <tr>
               <SortTh state={sort} sortKey="at">
@@ -239,7 +240,7 @@ export function TicketsPage() {
               {formatDateTime(selected.op.payload.soldAt)} · {nameOf(selected.op.payload.memberId)}
               {selected.result?.number ? ` · n° définitif ${selected.result.number}` : ''}
             </p>
-            <Table>
+            <Table exportable={false}>
               <tbody>
                 {selected.op.payload.lines.map((l, i) => (
                   <tr key={i}>
@@ -364,7 +365,7 @@ function OtherTills({
     <section className="grid gap-2" aria-label="Tickets des autres caissiers">
       <h2 className="text-lg font-semibold">Tickets des autres caissiers</h2>
       <Card>
-        <Table>
+        <Table exportable={false}>
           <thead>
             <tr>
               <th>Heure</th>
@@ -410,7 +411,7 @@ function OtherTills({
               {formatDateTime(detail.data.soldAt)} · {detail.data.cashierName ?? 'caissier inconnu'}{' '}
               · {detail.data.memberName ?? 'Sans adhérent'}
             </p>
-            <Table>
+            <Table exportable={false}>
               <tbody>
                 {detail.data.lines.map((l) => (
                   <tr key={l.id}>

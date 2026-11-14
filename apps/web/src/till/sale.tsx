@@ -91,8 +91,16 @@ function searchMembers(members: SnapshotMember[], q: string): SnapshotMember[] {
 }
 
 export function SalePage() {
-  const { meta, settings, engine, cashierId, cashierCheck, noteCashierActivity, balanceCents } =
-    useTill();
+  const {
+    meta,
+    settings,
+    engine,
+    cashierId,
+    cashierCheck,
+    cashierProof,
+    noteCashierActivity,
+    balanceCents,
+  } = useTill();
   const draft = useDraft();
   const me = useMe();
   const otherCashier = useCashierName(cashierId === me.id ? null : cashierId);
@@ -280,6 +288,7 @@ export function SalePage() {
           sessionId: meta.session!.id,
           cashierId,
           cashierCheck,
+          ...(cashierProof ? { cashierProof } : {}),
           provisionalNumber: number,
           payments: r.payments,
           emailReceipt: r.emailReceipt,

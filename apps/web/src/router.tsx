@@ -46,6 +46,7 @@ import { StatsPage } from './routes/stats/stats-page';
 import { ImportsPage } from './routes/stats/imports-page';
 import { IntegrityPage } from './routes/admin/integrity';
 import { HelpPage } from './routes/help';
+import { FeedbackDetailPage, ManageFeedbackPage, MyFeedbackPage } from './routes/feedback/pages';
 import {
   ActivityPage,
   BackupsPage,
@@ -464,6 +465,23 @@ const helpRoute = createRoute({
   component: HelpPage,
 });
 
+const feedbackRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/signalements',
+  component: MyFeedbackPage,
+});
+const feedbackManageRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/signalements/gestion',
+  beforeLoad: requireRoles(['ADMIN']),
+  component: ManageFeedbackPage,
+});
+const feedbackDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/signalements/$id',
+  component: FeedbackDetailPage,
+});
+
 const monitoringRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/surveillance',
@@ -570,6 +588,9 @@ const routeTree = rootRoute.addChildren([
       yearClosingRoute,
     ]),
     helpRoute,
+    feedbackRoute,
+    feedbackManageRoute,
+    feedbackDetailRoute,
     monitoringRoute.addChildren([
       monitoringIndexRoute,
       monitoringErrorsRoute,

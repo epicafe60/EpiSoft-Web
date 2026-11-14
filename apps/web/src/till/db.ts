@@ -103,7 +103,13 @@ export interface MetaValues {
    * established, and the last ticket they made (the till asks again after a while). Null: the
    * person signed in keeps the till.
    */
-  cashier: { id: string; check: CashierCheck; lastActivityAt: string } | null;
+  cashier: {
+    id: string;
+    check: CashierCheck;
+    /** The proof the server gave when it checked the code: what makes the tickets « code vérifié ». */
+    proof?: string | null;
+    lastActivityAt: string;
+  } | null;
 }
 
 const DEFAULTS: MetaValues = {

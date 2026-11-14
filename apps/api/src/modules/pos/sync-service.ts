@@ -41,12 +41,15 @@ import {
   type SyncResult,
   type SyncWarning,
   clockSkew,
+  recordedTime,
   sessionDayStale,
   ticketWarnings,
+  walletMoveNeedsConfirm,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
+import { proofIsValid } from '../../lib/till-cashier';
 import { queueEmail } from '../../lib/mail';
 import { saleReceiptEmail, topupReceiptEmail } from '../../lib/receipts';
 import { alertNow } from '../../lib/alerts';
@@ -139,7 +142,14 @@ export async function processOps(
   for (const op of [...ops].sort((a, b) => a.deviceSeq - b.deviceSeq)) {
     results.push(await processOne(db, req, config, deviceId, op));
   }
-  await db.update(posDevice).set({ lastSyncAt: new Date() }).where(eq(posDevice.id, deviceId));
+  await db
+    .update(posDevice)
+    .set({
+      lastSyncAt: new Date(),
+      lastContactAt: new Date(),
+      receivedSeq: sql`greatest(${posDevice.receivedSeq}, ${Math.max(...ops.map((o) => o.deviceSeq))})`,
+    })
+    .where(eq(posDevice.id, deviceId));
   await restrictToTill(db, req, ops);
   return results;
 }
@@ -288,6 +298,16 @@ async function openSession(
   if (alias) return alias.sessionId;
   const existing = await tx.query.cashSession.findFirst({ where: eq(cashSession.id, p.sessionId) });
   if (existing) return existing.id;
+  // What the till declares is checked before it opens a drawer: a float is never negative, the
+  // person who opens exists, and nothing was opened in the future.
+  if (decimalToCents(p.openingFloat) < 0) throw new Rejected('Le fond de caisse est négatif.');
+  await knownMember(ctx, p.openedBy, 'La personne qui ouvre la caisse est inconnue.');
+  const openedAt = recordedTime(
+    new Date(p.openedAt),
+    new Date(),
+    null,
+    (await loadSettings(tx))['controls.thresholds'],
+  ).at;
   // Two tills opening at the same moment: one after the other.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('cash_session_open'))`);
   const open = await tx.query.cashSession.findFirst({ where: eq(cashSession.status, 'OPEN') });
@@ -305,7 +325,7 @@ async function openSession(
     id: p.sessionId,
     deviceId: ctx.deviceId,
     openedBy: p.openedBy,
-    openedAt: new Date(p.openedAt),
+    openedAt,
     openingFloat: p.openingFloat,
   });
   await audit(ctx.tx, ctx.req, {
@@ -357,7 +377,43 @@ async function sessionOf(ctx: Ctx, sessionId: string, at: Date) {
   return s;
 }
 
+/**
+ * A person a till names (cashier, opener) must exist: an unknown id is refused and recorded, like
+ * any ticket the server cannot keep. It used to fail on the foreign key, as an error the till sent
+ * again for ever, blocking every later ticket of its queue.
+ */
+async function knownMember(ctx: Ctx, memberId: string, message: string) {
+  const [known] = await ctx.tx
+    .select({ id: member.id })
+    .from(member)
+    .where(eq(member.id, memberId));
+  if (!known) throw new Rejected(message);
+}
+
+/**
+ * The time recorded for an operation (recordedTime): the one the till declares, unless it is in
+ * the future. The correction and a time before the opening of the session are reported.
+ */
+async function trustedTime(ctx: Ctx, claimed: Date, sessionOpenedAt: Date): Promise<Date> {
+  const thresholds = (await loadSettings(ctx.tx))['controls.thresholds'];
+  const r = recordedTime(claimed, new Date(), sessionOpenedAt, thresholds);
+  if (r.problem === 'FUTURE')
+    warn(
+      ctx,
+      'CLOCK_SKEW',
+      'L’horloge du poste de caisse est en avance : vérifiez la date et l’heure du poste. L’opération est enregistrée à l’heure du serveur.',
+    );
+  if (r.problem === 'BEFORE_SESSION')
+    warn(
+      ctx,
+      'CLOCK_BEFORE_SESSION',
+      'Opération datée avant l’ouverture de la caisse : vérifiez l’horloge du poste et la date de l’opération.',
+    );
+  return r.at;
+}
+
 async function checkCashier(ctx: Ctx, cashierId: string) {
+  await knownMember(ctx, cashierId, 'Le caissier indiqué est inconnu.');
   const roles = await ctx.tx
     .select({ code: userRole.roleCode })
     .from(userRole)
@@ -384,11 +440,20 @@ const asCashier = (ctx: Ctx, p: { cashierId: string }) =>
  */
 async function noteCashier(
   ctx: Ctx,
-  p: { cashierId: string; cashierCheck?: CashierCheck },
+  p: { cashierId: string; cashierCheck?: CashierCheck; cashierProof?: string },
 ): Promise<CashierCheck> {
   await checkCashier(ctx, p.cashierId);
   if (p.cashierId === ctx.req.user!.id) return 'SESSION';
-  const check: CashierCheck = p.cashierCheck === 'PIN' ? 'PIN' : 'DECLARED';
+  // « PIN » only on the strength of a proof this server issued when it checked the code: the claim
+  // of the till alone proves nothing (a modified client could claim it for any cashier).
+  const check: CashierCheck = (await proofIsValid(
+    ctx.tx,
+    ctx.req.user!.id,
+    p.cashierId,
+    p.cashierProof,
+  ))
+    ? 'PIN'
+    : 'DECLARED';
   if (check === 'DECLARED' && (await loadSettings(ctx.tx))['pos.cashierSwitch'].requirePin)
     warn(
       ctx,
@@ -409,8 +474,10 @@ async function recordSale(
   saleId: string,
 ): Promise<string> {
   const { tx } = ctx;
-  const soldAt = new Date(p.soldAt);
-  const session = await sessionOf(ctx, p.sessionId, soldAt);
+  const claimedAt = new Date(p.soldAt);
+  const session = await sessionOf(ctx, p.sessionId, claimedAt);
+  // M3: every date written below (ticket and its number, cagnotte, stock) is this one.
+  const soldAt = await trustedTime(ctx, claimedAt, session.openedAt);
   const cashierCheck = await noteCashier(ctx, p);
 
   // Products. A product deactivated in the meantime is still accepted (R-SYNC-04).
@@ -487,14 +554,12 @@ async function recordSale(
     thresholds,
   ))
     warn(ctx, w.code, w.message);
-  const skew = clockSkew(soldAt, new Date(), thresholds);
-  if (skew)
+  // A clock ahead is reported (and corrected) by trustedTime above.
+  if (clockSkew(claimedAt, new Date(), thresholds) === 'PAST')
     warn(
       ctx,
       'CLOCK_SKEW',
-      skew === 'FUTURE'
-        ? 'L’horloge du poste de caisse est en avance : vérifiez la date et l’heure du poste.'
-        : 'Ce ticket est très ancien (poste resté hors ligne ?) : vérifiez la date du ticket.',
+      'Ce ticket est très ancien (poste resté hors ligne ?) : vérifiez la date du ticket.',
     );
   if (payments.reduce((s, x) => s + x.cents, 0) !== totalCents)
     throw new Rejected('Le ticket n’est pas soldé.');
@@ -769,6 +834,7 @@ async function recordSale(
       memberId: p.memberId,
       cashierId: p.cashierId,
       soldAt: soldAt.toISOString(),
+      ...(soldAt.getTime() !== claimedAt.getTime() ? { declaredAt: claimedAt.toISOString() } : {}),
       ...(ctx.warnings.length ? { warnings: ctx.warnings.map((w) => w.code) } : {}),
     },
   });
@@ -807,6 +873,11 @@ async function compensateCountedSale(
   goods: { productId: string; name: string; qtyMilli: number }[],
   saleId: string,
   soldAt: Date,
+  /**
+   * The same for a cancellation that arrives late: the product was back on the shelf when it was
+   * counted, the cancellation puts it back again, an INVENTORY movement takes it off.
+   */
+  what: 'SALE' | 'CANCEL' = 'SALE',
 ) {
   if (!goods.length) return;
   const counts = await ctx.tx
@@ -834,19 +905,20 @@ async function compensateCountedSale(
   for (const g of goods) {
     const inv = counts.find((c) => c.productId === g.productId && saleAlreadyCounted(soldAt, c));
     if (!inv) continue;
+    const subject = what === 'SALE' ? 'vente' : 'annulation';
     await recordMovement(ctx.tx, {
       productId: g.productId,
-      qtyMilli: g.qtyMilli,
+      qtyMilli: what === 'SALE' ? g.qtyMilli : -g.qtyMilli,
       kind: 'INVENTORY',
-      sourceType: 'inventory_late_sale',
+      sourceType: what === 'SALE' ? 'inventory_late_sale' : 'inventory_late_cancel',
       sourceId: saleId,
-      comment: `Régularisation : vente arrivée après l’inventaire « ${inv.label} », déjà comptée`,
+      comment: `Régularisation : ${subject} arrivée après l’inventaire « ${inv.label} », déjà comptée`,
       at: new Date(),
     });
     warn(
       ctx,
-      'INVENTORY_LATE_SALE',
-      `${g.name} : vente arrivée après l’inventaire « ${inv.label} » qui l’avait déjà comptée ; le stock a été régularisé.`,
+      what === 'SALE' ? 'INVENTORY_LATE_SALE' : 'INVENTORY_LATE_CANCEL',
+      `${g.name} : ${subject} arrivée après l’inventaire « ${inv.label} » qui l’avait déjà comptée ; le stock a été régularisé.`,
     );
   }
 }
@@ -860,6 +932,7 @@ async function cancelSale(
 ): Promise<string> {
   const { tx } = ctx;
   const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
+  const at = await trustedTime(ctx, new Date(p.at), session.openedAt);
   const cashierCheck = await noteCashier(ctx, p);
   // Locked: two tills cancelling the same ticket at once, the second one sees it cancelled.
   const [original] = await tx.select().from(sale).where(eq(sale.id, p.saleId)).for('update');
@@ -886,7 +959,6 @@ async function cancelSale(
   if (original.sessionId !== session.id && !adminAtTill) {
     throw new Rejected('Seul un administrateur peut annuler un ticket d’une session précédente.');
   }
-  const at = new Date(p.at);
   const lines = await tx
     .select()
     .from(saleLine)
@@ -894,7 +966,7 @@ async function cancelSale(
     .orderBy(saleLine.lineNo);
   const pays = await tx.select().from(salePayment).where(eq(salePayment.saleId, original.id));
   const prods = await tx
-    .select({ id: product.id, kind: product.kind })
+    .select({ id: product.id, kind: product.kind, name: product.name })
     .from(product)
     .where(
       inArray(
@@ -903,6 +975,7 @@ async function cancelSale(
       ),
     );
   const kindOf = new Map(prods.map((x) => [x.id, x.kind]));
+  const nameOf = new Map(prods.map((x) => [x.id, x.name]));
   const neg = (v: string) => centsToDecimal(-decimalToCents(v));
   const negQty = (v: string) => milliToDecimal(-parseQtyToMilli(v)!);
 
@@ -951,6 +1024,20 @@ async function cancelSale(
     p.cancelSaleId,
     at,
   );
+  // F3: the cancellation of a ticket whose product an inventory counted in the meantime.
+  await compensateCountedSale(
+    ctx,
+    lines
+      .filter((l) => kindOf.get(l.productId) === 'GOODS')
+      .map((l) => ({
+        productId: l.productId,
+        name: nameOf.get(l.productId) ?? l.label,
+        qtyMilli: parseQtyToMilli(l.qty)!,
+      })),
+    p.cancelSaleId,
+    at,
+    'CANCEL',
+  );
   const walletCents = pays
     .filter((x) => x.method === 'WALLET')
     .reduce((s, x) => s + decimalToCents(x.amount), 0);
@@ -974,7 +1061,12 @@ async function cancelSale(
     entityId: original.id,
     ...asCashier(ctx, p),
     before: { number: original.number, total: original.total },
-    after: { cancelledBy: number, reason: p.reason ?? null, cashierCheck },
+    after: {
+      cancelledBy: number,
+      reason: p.reason ?? null,
+      cashierCheck,
+      ...(ctx.warnings.length ? { warnings: ctx.warnings.map((w) => w.code) } : {}),
+    },
   });
   return number;
 }
@@ -984,12 +1076,19 @@ async function cancelSale(
 async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['payload']) {
   const { tx } = ctx;
   const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
+  const at = await trustedTime(ctx, new Date(p.at), session.openedAt);
   const cashierCheck = await noteCashier(ctx, p);
   const h = await tx.query.household.findFirst({ where: eq(household.id, p.householdId) });
   if (!h) throw new Rejected('Foyer inconnu.');
   const cents = decimalToCents(p.amount);
   if (cents <= 0) throw new Rejected('Le versement doit être positif.');
-  const at = new Date(p.at);
+  // M4: never refused (the money is in the drawer), reported to the treasurer like an unusual ticket.
+  if (walletMoveNeedsConfirm('TOPUP', cents, (await loadSettings(tx))['controls.thresholds']))
+    warn(
+      ctx,
+      'TOPUP_HIGH',
+      `Versement de ${centsToDecimal(cents)} € sur une cagnotte : montant élevé.`,
+    );
   const before = await lockedBalanceCents(tx, h.id);
   const [pay] = await tx
     .insert(memberPayment)
@@ -1019,7 +1118,14 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
     entityId: h.id,
     ...asCashier(ctx, p),
     before: { balanceCents: before },
-    after: { amount: p.amount, method: p.method, at: 'caisse', paymentId: pay!.id, cashierCheck },
+    after: {
+      amount: p.amount,
+      method: p.method,
+      at: 'caisse',
+      paymentId: pay!.id,
+      cashierCheck,
+      ...(ctx.warnings.length ? { warnings: ctx.warnings.map((w) => w.code) } : {}),
+    },
   });
   // R-EVO-40: the top-up receipt is automatic too (opt-out respected).
   await sendTopupReceipt(tx, h.id, h.referentMemberId, {

@@ -245,8 +245,9 @@ export function ErrorsPage() {
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
         <p className="text-muted-foreground">
-          Quand un écran affiche « Référence ABC123 », cette référence retrouve l’erreur ici.
-          Classez une erreur une fois traitée : si elle revient, elle réapparaît.
+          Quand un écran affiche « Référence ABC123 », cette référence retrouve l’erreur ici. Les
+          lignes « Saisie refusée » disent quel formulaire a été refusé et pour quels champs (jamais
+          leurs valeurs). Classez une erreur une fois traitée : si elle revient, elle réapparaît.
         </p>
         {error ? <QueryError error={error} /> : null}
         {data?.length === 0 ? <AllClear>Aucune erreur enregistrée.</AllClear> : null}
@@ -272,7 +273,7 @@ export function ErrorsPage() {
                   </td>
                   <td className="max-w-md break-words">{e.message}</td>
                   <td className="text-right tabular-nums">{e.count}</td>
-                  <td className="font-mono">{e.lastRef}</td>
+                  <td className="font-mono">{e.lastRef === 'SAISIE' ? '—' : e.lastRef}</td>
                   <td>
                     {e.acknowledgedAt ? (
                       <Badge variant="muted">Classée</Badge>

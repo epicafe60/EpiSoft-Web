@@ -205,6 +205,29 @@ export function clockSkew(
   return null;
 }
 
+/**
+ * The time the server records for an operation of a till. The till declares when the operation
+ * happened (it may have been offline for hours), and the server cannot check the past. Two things
+ * it does know:
+ * - nothing happened in the future: a time ahead of the server's by more than the tolerance is
+ *   replaced by the server's time (a wrong clock, or a made-up date, must not fix the year of a
+ *   ticket number nor the date of a cagnotte entry);
+ * - an operation of a session normally follows its opening: an earlier time is kept (a till that
+ *   opened offline and was attached to the shop's session sold before it, R-SES-05) but reported.
+ */
+export function recordedTime(
+  claimed: Date,
+  now: Date,
+  sessionOpenedAt: Date | null,
+  t: Thresholds = DEFAULT_THRESHOLDS,
+): { at: Date; problem: 'FUTURE' | 'BEFORE_SESSION' | null } {
+  const tolerance = t.clockFutureMin * 60_000;
+  if (claimed.getTime() - now.getTime() > tolerance) return { at: now, problem: 'FUTURE' };
+  if (sessionOpenedAt && sessionOpenedAt.getTime() - claimed.getTime() > tolerance)
+    return { at: claimed, problem: 'BEFORE_SESSION' };
+  return { at: claimed, problem: null };
+}
+
 // --- Till health ----------------------------------------------------------------------------
 
 export interface TillHealthInput {

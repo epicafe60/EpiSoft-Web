@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, TransactionRollbackError } from 'drizzle-orm';
 import { inject } from 'vitest';
 import { createDb, createPool, member, seedMembershipTypes, userRole, type Db } from '@episoft/db';
 import { CSRF_HEADER, type RoleCode } from '@episoft/shared';
@@ -85,6 +85,30 @@ export async function createUser(
 }
 
 export const csrf = { [CSRF_HEADER]: '1' };
+
+/**
+ * What the database answers to a statement run with the application's role (episoft_app after the
+ * split of the roles, D01), as if a flaw let someone run SQL through the application: the SQLSTATE
+ * of the refusal, or null when the statement went through. Always rolled back.
+ */
+export async function refusedToAppRole(
+  ...statements: ReturnType<typeof sql>[]
+): Promise<string | null> {
+  const pool = createPool(inject('appDatabaseUrl'), 1, 'test');
+  try {
+    await createDb(pool).transaction(async (tx) => {
+      for (const q of statements) await tx.execute(q);
+      tx.rollback();
+    });
+    return null;
+  } catch (e) {
+    if (e instanceof TransactionRollbackError) return null;
+    const err = e as { cause?: { code?: string }; code?: string };
+    return err.cause?.code ?? err.code ?? 'unknown';
+  } finally {
+    await pool.end();
+  }
+}
 
 /** Logs in and returns the cookie header to send with later requests. */
 export async function login(

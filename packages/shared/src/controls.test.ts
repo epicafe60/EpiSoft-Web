@@ -8,6 +8,7 @@ import {
   memberDuplicates,
   othersActive,
   purchasePriceFlag,
+  recordedTime,
   sellsBelowCost,
   sessionDayStale,
   silentDevices,
@@ -338,5 +339,46 @@ describe('who else is still there when the till is closed (R-SES-06)', () => {
       'Bruno',
       'un poste sans vente',
     ]);
+  });
+});
+
+describe('recordedTime (M3: the server does not believe a date in the future)', () => {
+  const now = new Date('2026-11-14T10:00:00Z');
+  const opened = new Date('2026-11-14T08:00:00Z');
+
+  it('keeps the time a till declares when it is plausible', () => {
+    const at = new Date('2026-11-14T09:30:00Z');
+    expect(recordedTime(at, now, opened)).toEqual({ at, problem: null });
+    // Offline for hours: still its own time.
+    const earlier = new Date('2026-11-14T08:30:00Z');
+    expect(recordedTime(earlier, now, opened)).toEqual({ at: earlier, problem: null });
+  });
+
+  it('tolerates a clock a few minutes ahead, not a day ahead', () => {
+    const slightly = new Date(now.getTime() + 5 * 60_000);
+    expect(recordedTime(slightly, now, opened)).toEqual({ at: slightly, problem: null });
+    const far = new Date('2027-11-14T10:00:00Z');
+    expect(recordedTime(far, now, opened)).toEqual({ at: now, problem: 'FUTURE' });
+  });
+
+  it('keeps but reports an operation dated before the opening of its session', () => {
+    const before = new Date('2026-11-12T10:00:00Z');
+    expect(recordedTime(before, now, opened)).toEqual({ at: before, problem: 'BEFORE_SESSION' });
+    // A few minutes before the opening is the clock of another till: not reported.
+    const close = new Date(opened.getTime() - 5 * 60_000);
+    expect(recordedTime(close, now, opened).problem).toBeNull();
+  });
+
+  it('has nothing to compare with when the session is not known yet', () => {
+    const before = new Date('2026-11-01T10:00:00Z');
+    expect(recordedTime(before, now, null)).toEqual({ at: before, problem: null });
+    expect(recordedTime(new Date('2030-01-01T00:00:00Z'), now, null).problem).toBe('FUTURE');
+  });
+
+  it('follows the tolerance of the thresholds', () => {
+    const t = { ...DEFAULT_THRESHOLDS, clockFutureMin: 60 };
+    const inAHalfHour = new Date(now.getTime() + 30 * 60_000);
+    expect(recordedTime(inAHalfHour, now, opened, t).problem).toBeNull();
+    expect(recordedTime(inAHalfHour, now, opened).problem).toBe('FUTURE');
   });
 });

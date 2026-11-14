@@ -50,6 +50,8 @@ import { favoriteRoutes } from './modules/preorders/favorites';
 import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
+import { feedbackRoutes } from './modules/feedback/routes';
+import { tableExportRoutes } from './modules/xlsx/table';
 
 export interface RouteAccess {
   method: string;
@@ -131,12 +133,14 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
     // R-SES-07: the routes of the till stay reachable while another cashier keeps it.
     if (methods.some((m) => TILL_ROUTES.has(`${m} ${r.url}`)))
       r.config = { ...r.config, till: true } as typeof r.config;
+    const roles = guardedRoles(r.preHandler);
+    if (roles) r.config = { ...r.config, roles } as typeof r.config;
     for (const method of methods)
       routes.push({
         method,
         url: r.url,
         public: r.config?.public === true,
-        roles: guardedRoles(r.preHandler),
+        roles,
         till: r.config?.till === true,
       });
   });
@@ -176,6 +180,8 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(preorderRoutes, { db, config });
       await api.register(pushRoutes, { db, config });
       await api.register(revertRoutes, { db, config });
+      await api.register(feedbackRoutes, { db, config });
+      await api.register(tableExportRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

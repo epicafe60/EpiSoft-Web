@@ -24,6 +24,7 @@ import {
   type Tx,
 } from '@episoft/db';
 import {
+  communeCreateSchema,
   decimalToCents,
   householdPatchSchema,
   MEMBER_STATUSES,
@@ -78,6 +79,37 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       .select({ id: commune.id, postcode: commune.postcode, name: commune.name })
       .from(commune)
       .orderBy(commune.name),
+  );
+
+  // A supplier or a member lives in a town that is not in the list yet: it is added here.
+  app.post(
+    '/communes',
+    { preHandler: app.requireRoles('ADHERENTS', 'APPROS'), schema: { body: communeCreateSchema } },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const name = req.body.name.replace(/\s+/g, ' ');
+        const same = await tx
+          .select({ id: commune.id })
+          .from(commune)
+          .where(
+            and(
+              eq(commune.postcode, req.body.postcode),
+              sql`lower(${commune.name}) = lower(${name})`,
+            ),
+          );
+        if (same.length) throw conflict('Cette commune existe déjà avec ce code postal.');
+        const [c] = await tx
+          .insert(commune)
+          .values({ postcode: req.body.postcode, name })
+          .returning({ id: commune.id, postcode: commune.postcode, name: commune.name });
+        await audit(tx, req, {
+          action: 'commune.create',
+          entity: 'commune',
+          entityId: c!.id,
+          after: c,
+        });
+        return c;
+      }),
   );
 
   app.get('/membership-types', async () =>
@@ -790,7 +822,8 @@ export async function householdDetail(db: Db | Tx, id: string) {
       // R-CAG-08: back-office top-up of today, not from the till.
       cancellable: sql<boolean>`${walletEntry.kind} = 'TOPUP' and ${walletEntry.saleId} is null and ${walletEntry.paymentId} is not null
         and (${walletEntry.createdAt} at time zone 'Europe/Paris')::date = (now() at time zone 'Europe/Paris')::date
-        and not exists (select 1 from app.member_payment p where p.id = ${walletEntry.paymentId} and p.cash_session_id is not null)`,
+        and not exists (select 1 from app.member_payment p where p.id = ${walletEntry.paymentId} and p.cash_session_id is not null)
+        and not exists (select 1 from app.wallet_entry c where c.cancels_entry_id = ${walletEntry.id})`,
       byName: sql<
         string | null
       >`(select first_name || ' ' || last_name from app.member x where x.id = ${walletEntry.createdBy})`,

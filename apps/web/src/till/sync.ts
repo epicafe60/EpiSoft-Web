@@ -265,10 +265,22 @@ export class SyncEngine {
   /** R-OFF-02: incremental refresh of the replicated data (full the first time). */
   async refresh(): Promise<boolean> {
     const cursor = await getMeta('cursor', this.db);
+    // C02/C04: the till says who it is and how many operations it still holds, so that the server
+    // knows which tills may be selling offline (an inventory is not validated blindly).
+    const device = await getMeta('device', this.db);
+    const pending = await this.db.outbox.where('status').equals('PENDING').count();
+    const query = new URLSearchParams({
+      ...(cursor ? { since: cursor } : {}),
+      ...(device
+        ? {
+            device: device.id,
+            pending: String(pending),
+            seq: String(await getMeta('deviceSeq', this.db)),
+          }
+        : {}),
+    }).toString();
     try {
-      const snap = await api.get<Snapshot>(
-        `/sync/snapshot${cursor ? `?since=${encodeURIComponent(cursor)}` : ''}`,
-      );
+      const snap = await api.get<Snapshot>(`/sync/snapshot${query ? `?${query}` : ''}`);
       await this.db.transaction(
         'rw',
         [

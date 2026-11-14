@@ -13,7 +13,7 @@ import {
 import { addDays } from '@episoft/shared';
 import { toParisDate } from '../src/lib/dates';
 import { sendMembershipReminders } from '../src/modules/members/reminders';
-import { createUser, login, setupTestApp } from './helpers';
+import { createUser, login, refusedToAppRole, setupTestApp } from './helpers';
 
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 let headers: Record<string, string>;
@@ -126,8 +126,53 @@ describe('R-CAG-08 same-day cancellation of a top-up', () => {
         })
       ).statusCode,
     ).toBe(200);
+    // M1: nothing is deleted. The top-up stays, an entry of the opposite amount cancels it, and
+    // the payment has its opposite too (every payment keeps its entry: CAG-02, checked afterEach).
     const left = await t.db.select().from(walletEntry).where(eq(walletEntry.householdId, h.id));
-    expect(left.map((w) => w.kind)).toEqual(['CORRECTION']);
+    expect(left.map((w) => `${w.kind} ${w.amount}`).sort()).toEqual([
+      'CORRECTION -1.00',
+      'CORRECTION -20.00',
+      'TOPUP 20.00',
+    ]);
+    expect(left.find((w) => w.amount === '-20.00')!.cancelsEntryId).toBe(topup.id);
+    const pays = await t.db.execute<{ total: string; n: number }>(
+      sql`select coalesce(sum(amount), 0)::text as total, count(*)::int as n from app.member_payment where household_id = ${h.id}`,
+    );
+    expect(pays.rows[0]).toEqual({ total: '0.00', n: 2 });
+    const after = (await t.app.inject({ url: `/api/v1/households/${h.id}`, headers })).json();
+    expect(after.balance).toBe('-1.00');
+    expect(after.wallet.some((w: { cancellable: boolean }) => w.cancellable)).toBe(false);
+    // Once only.
+    expect(
+      (
+        await t.app.inject({
+          method: 'POST',
+          url: `/api/v1/wallet-entries/${topup.id}/cancel`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(409);
+  });
+
+  it('M1: the application’s role cannot delete or rewrite a line of a cagnotte', async () => {
+    const h = await household1();
+    await t.app.inject({
+      method: 'POST',
+      url: `/api/v1/households/${h.id}/wallet/topup`,
+      headers,
+      payload: { amount: '20', method: 'CASH', emailReceipt: false },
+    });
+    // 23000: refused by history_guard (migration 0031), whatever SQL the application is made to run.
+    expect(await refusedToAppRole(sql`delete from app.wallet_entry`)).toBe('23000');
+    expect(await refusedToAppRole(sql`update app.wallet_entry set amount = 2000`)).toBe('23000');
+    expect(await refusedToAppRole(sql`delete from app.member_payment`)).toBe('23000');
+    expect(await refusedToAppRole(sql`update app.member_payment set amount = 2000`)).toBe('23000');
+    // Adding to the ledger is what the role is for.
+    expect(
+      await refusedToAppRole(
+        sql`insert into app.wallet_entry (id, household_id, amount, kind) values (gen_random_uuid(), ${h.id}, 1, 'CORRECTION')`,
+      ),
+    ).toBeNull();
   });
 
   it('refuses a top-up from a previous day', async () => {

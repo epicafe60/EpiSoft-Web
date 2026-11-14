@@ -1,5 +1,6 @@
-import type { ComponentProps } from 'react';
+import { useRef, type ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
+import { ExportTableButton } from '@/components/table-export';
 
 export function Card({ className, ...props }: ComponentProps<'div'>) {
   return (
@@ -47,10 +48,23 @@ export function Badge({
 }
 
 /** Responsive table wrapper: scrolls horizontally inside the card, never the page. */
-export function Table({ className, ...props }: ComponentProps<'table'>) {
+export function Table({
+  className,
+  exportable = true,
+  exportName,
+  ...props
+}: ComponentProps<'table'> & {
+  /** « Exporter en Excel » above the list (default). `false` for a table that is not a list. */
+  exportable?: boolean;
+  /** Name of the file and of the sheet; by default the title of the page. */
+  exportName?: string;
+}) {
+  const ref = useRef<HTMLTableElement>(null);
   return (
     <div className="w-full overflow-x-auto">
+      {exportable ? <ExportTableButton tableRef={ref} name={exportName} /> : null}
       <table
+        ref={ref}
         className={cn(
           'w-full text-sm [&_th]:h-10 [&_th]:px-3 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_td]:px-3 [&_td]:py-2.5 [&_tbody_tr]:border-t [&_tbody_tr:hover]:bg-muted/50',
           className,

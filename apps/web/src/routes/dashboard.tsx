@@ -196,7 +196,7 @@ function Panel({
         {empty ? (
           <p className="text-sm text-muted-foreground">Rien à signaler.</p>
         ) : (
-          <Table>
+          <Table exportable={false}>
             <tbody>{children}</tbody>
           </Table>
         )}

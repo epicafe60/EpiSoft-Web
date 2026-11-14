@@ -163,6 +163,22 @@ account found 28 migrations and nothing pending. Keep
 running application. The test suite of the API replays `split-roles.sql` on a copy of the go-live
 layout and runs every test as `episoft_app`: a migration that needs more rights shows there first.
 
+## After each deployment
+
+```
+node deploy/smoke.mjs https://epicafe.ddns.net      # the server has no curl: Node runs it
+```
+
+It replays the checks of the audit KV2 behind the real proxy (health, 401 without a session, encoded
+paths, anti-CSRF header, security headers, documentation closed). Every line must read `ok`; a line
+that reads `FAIL` means the update must be rolled back (`src.prev-…`) until it is understood.
+
+## An inventory and the tills
+
+Validating an inventory asks for a confirmation when a till in use today has been silent for more
+than 10 minutes, or announces operations it has not sent: its sales would arrive after the count.
+Check that the tills are connected, or validate knowingly (« Valider quand même »).
+
 ## Knowing when something is wrong
 
 - The home page of an administrator or the treasury shows **« À surveiller »**: refused tickets,

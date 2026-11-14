@@ -74,6 +74,36 @@ async function recordServerError(
   );
 }
 
+/** The start of the message of a refused entry in the error log (Surveillance › Erreurs). */
+export const REFUSAL_PREFIX = 'Saisie refusée';
+
+/**
+ * A form refused by the validation is remembered, grouped by route and by the fields at fault:
+ * « Saisie refusée : salePrice, eans » on POST /products, ×12. Only names of fields, never their
+ * values. It lets an administrator see which form blocks people without asking them for a
+ * screenshot. No e-mail, and it does not count in « À surveiller » (it is not a breakdown).
+ */
+async function recordRefusal(
+  db: Db,
+  e: { route: string; fields: string[]; memberId: string | null },
+) {
+  const message = `${REFUSAL_PREFIX} : ${[...new Set(e.fields)].sort().join(', ') || '(corps de la requête)'}`;
+  const fingerprint = createHash('sha1').update(`${e.route}|${message}`).digest('hex');
+  await db
+    .insert(errorLog)
+    .values({
+      fingerprint,
+      message: message.slice(0, 500),
+      route: e.route,
+      lastRef: 'SAISIE',
+      lastMemberId: e.memberId,
+    })
+    .onConflictDoUpdate({
+      target: errorLog.fingerprint,
+      set: { count: sql`${errorLog.count} + 1`, lastAt: new Date(), lastMemberId: e.memberId },
+    });
+}
+
 // Every error leaves the API as application/problem+json (spec §8.1).
 export default fp<{ db?: Db; config?: Config }>(async (app, opts) => {
   app.setErrorHandler((err: FastifyError, req, reply) => {
@@ -98,6 +128,12 @@ export default fp<{ db?: Db; config?: Config }>(async (app, opts) => {
           message: v.message ?? 'Valeur invalide.',
         })),
       };
+      if (opts.db && req.user)
+        void recordRefusal(opts.db, {
+          route: `${req.method} ${req.routeOptions?.url ?? req.url.split('?')[0]}`,
+          fields: (problem.errors ?? []).map((x) => x.path.split('.')[0] ?? ''),
+          memberId: req.user.id,
+        }).catch((e) => req.log.error({ err: e }, 'refus de saisie non enregistré'));
     } else if (err.statusCode && err.statusCode < 500) {
       problem = {
         type: 'about:blank',

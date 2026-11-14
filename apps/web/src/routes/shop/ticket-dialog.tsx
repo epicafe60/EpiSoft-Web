@@ -40,7 +40,7 @@ export function TicketDialog({ id, onClose }: { id: string | null; onClose: () =
           {data.status === 'CANCELLED' ? (
             <p className="text-sm font-medium text-destructive">Ticket annulé</p>
           ) : null}
-          <Table>
+          <Table exportable={false}>
             <thead>
               <tr>
                 <th>Article</th>

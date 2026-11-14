@@ -10,7 +10,7 @@ import {
   walletEntry,
   type Db,
 } from '@episoft/db';
-import { createUser, login, setupTestApp } from './helpers';
+import { createUser, login, refusedToAppRole, setupTestApp } from './helpers';
 
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 let h: Record<string, string>;
@@ -152,6 +152,33 @@ describe('entries (R-CPT-04, R-CPT-05)', () => {
     await expect(t.db.delete(entryLine).where(eq(entryLine.entryId, id))).rejects.toMatchObject({
       cause: { message: expect.stringMatching(/validated/) },
     });
+  });
+
+  it('M2: the application’s role cannot lift the guard of a validated entry with the session setting', async () => {
+    await year2026();
+    const { id } = (await post('/api/v1/entries', await entryBody())).json();
+    await post('/api/v1/entries/validate', { ids: [id] });
+    const lift = sql`select set_config('app.bypass_entry_guard', 'on', true)`;
+    // 23000: refused by the guard, although the setting that used to lift it is on.
+    expect(
+      await refusedToAppRole(lift, sql`update app.entry set label = 'x' where id = ${id}`),
+    ).toBe('23000');
+    expect(await refusedToAppRole(lift, sql`delete from app.entry where id = ${id}`)).toBe('23000');
+    expect(
+      await refusedToAppRole(
+        lift,
+        sql`update app.entry_line set debit = 99 where entry_id = ${id}`,
+      ),
+    ).toBe('23000');
+    expect(
+      await refusedToAppRole(lift, sql`delete from app.entry_line where entry_id = ${id}`),
+    ).toBe('23000');
+    // The function that removes closing entries does nothing for a year that is not closed.
+    const [fy] = (await t.db.execute<{ id: string }>(sql`select id from app.fiscal_year`)).rows;
+    expect(await refusedToAppRole(sql`select app.remove_closing_entries(${fy!.id}::uuid)`)).toBe(
+      '23000',
+    );
+    expect(await t.db.select().from(entry).where(eq(entry.id, id))).toHaveLength(1);
   });
 
   it('numbers continuously per journal and year, in date order, at validation', async () => {

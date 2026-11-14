@@ -42,7 +42,8 @@ export async function migrateLot3(
 ): Promise<void> {
   const today = opts.today ?? new Date().toISOString().slice(0, 10);
   // The migration rewrites validated entries of closed years: switch the guards off for this
-  // transaction only (set_config is_local = true).
+  // transaction only (set_config is_local = true). Since migration 0031 the setting counts for the
+  // owner of the tables only: once the roles are split, run this script as episoft_owner.
   await tx.execute(sql`select set_config('app.bypass_entry_guard', 'on', true)`);
 
   const accounts = await migrateAccounts(src, tx, r);

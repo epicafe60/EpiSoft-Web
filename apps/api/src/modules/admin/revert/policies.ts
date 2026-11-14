@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { memberPayment, walletEntry, type Tx } from '@episoft/db';
+import { walletEntry, type Tx } from '@episoft/db';
 import {
   centsToDecimal,
   decimalToCents,
@@ -11,6 +10,7 @@ import {
 } from '@episoft/shared';
 import { toParisDate } from '../../../lib/dates';
 import { reverseEntry } from '../../accounting/service';
+import { cancelTopupEntry } from '../../members/wallet-cancel';
 import { lockedBalanceCents } from '../../pos/wallet';
 import { recordMovement } from '../../stock/ledger';
 
@@ -75,13 +75,14 @@ const oppositeCorrection =
     return `Correction de cagnotte de ${done.join(', ')} enregistrée.`;
   };
 
-/** R-CAG-08: a top-up entered today at the back office is simply withdrawn, as the screen does. */
-const withdrawTopup: Compensation = async (tx, _req, ctx) => {
+/**
+ * R-CAG-08: a top-up entered today at the back office is cancelled as the screen does, by an entry
+ * and a payment of the opposite amount. The ledger never loses a line.
+ */
+const withdrawTopup: Compensation = async (tx, req, ctx) => {
   const [e] = inserted(ctx, 'wallet_entry');
-  await lockedBalanceCents(tx, str(e!.household_id));
-  await tx.delete(walletEntry).where(eq(walletEntry.id, str(e!.id)));
-  if (e!.payment_id) await tx.delete(memberPayment).where(eq(memberPayment.id, str(e!.payment_id)));
-  return `Versement de ${formatEuro(str(e!.amount))} retiré (saisi le jour même).`;
+  await cancelTopupEntry(tx, str(e!.id), req.user!.id);
+  return `Versement de ${formatEuro(str(e!.amount))} annulé par une contre-écriture (saisi le jour même).`;
 };
 
 const topup = (ctx: RevertContext): Policy => {
@@ -246,6 +247,9 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'push.subscribe': restore,
   'push.unsubscribe': restore,
   'push.expired': none('L’appareil ne répondait plus.'),
+  'feedback.create': restore,
+  'feedback.update': restore,
+  'feedback.comment': none('Un message envoyé ne se reprend pas.'),
   'favorite.add': restore,
   'favorite.remove': restore,
   'review.write': restore,
@@ -272,6 +276,7 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'category.update': restore,
   'universe.create': restore,
   'universe.update': restore,
+  'commune.create': restore,
   'supplier.create': restore,
   'supplier.update': restore,
   'order.create': restore,

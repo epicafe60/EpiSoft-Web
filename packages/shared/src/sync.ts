@@ -28,6 +28,11 @@ const base = {
  * cashier who typed their code, or a cashier only declared. Absent from an older till: SESSION.
  */
 const cashierCheck = z.enum(CASHIER_CHECKS).optional();
+/**
+ * R-SES-07: the proof the server gave when it checked the cashier's code. Without a valid proof, a
+ * cashier other than the person signed in is only declared, whatever `cashierCheck` claims.
+ */
+const cashierProof = z.string().uuid().optional();
 
 export const saleLineSchema = z.object({
   productId: z.string().uuid(),
@@ -56,6 +61,7 @@ export const saleOpSchema = z.object({
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
     cashierCheck,
+    cashierProof,
     memberId: z.string().uuid().nullable(),
     soldAt: isoDateTime,
     provisionalNumber: z.string().max(40),
@@ -80,6 +86,7 @@ export const saleCancelOpSchema = z.object({
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
     cashierCheck,
+    cashierProof,
     at: isoDateTime,
     provisionalNumber: z.string().max(40),
     reason: z.string().max(300).optional(),
@@ -93,6 +100,7 @@ export const walletTopupOpSchema = z.object({
     sessionId: z.string().uuid(),
     cashierId: z.string().uuid(),
     cashierCheck,
+    cashierProof,
     householdId: z.string().uuid(),
     amount,
     method: z.enum(MEMBER_PAYMENT_METHODS),
@@ -179,11 +187,8 @@ export interface SnapshotMember {
   qrTokenHash: string | null;
   isCashier: boolean;
   hasEmail: boolean;
-  /**
-   * R-SES-07: the cashier's code, hashed (PBKDF2 with its salt), for cashiers only; null when
-   * they have none. Absent from an older snapshot.
-   */
-  tillPin?: { hash: string; salt: string } | null;
+  /** R-SES-07: the cashier has chosen a code (checked by the server only). Cashiers only. */
+  hasTillPin?: boolean;
 }
 
 export interface SnapshotHousehold {

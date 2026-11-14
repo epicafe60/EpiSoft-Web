@@ -45,6 +45,15 @@ const qtyInput = z
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.');
 
+/** A town added to the reference list (members and suppliers pick their commune from it). */
+export const communeCreateSchema = z.object({
+  postcode: z
+    .string()
+    .trim()
+    .regex(/^\d{5}$/, 'Code postal à 5 chiffres.'),
+  name: z.string().trim().min(1, 'Nom de la commune requis.').max(100),
+});
+
 // --- Members (R-MBR-01, R-MBR-09) ---------------------------------------------------
 
 export const memberFields = {

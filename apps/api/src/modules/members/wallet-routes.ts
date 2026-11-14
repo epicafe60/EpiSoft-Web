@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import { eq } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { memberPayment, walletEntry, type Db } from '@episoft/db';
+import { walletEntry, type Db } from '@episoft/db';
 import {
   formatEuro,
   PAYMENT_METHOD_LABELS,
@@ -15,6 +15,7 @@ import { formatParis, toParisDate } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { householdDetail } from './routes';
+import { cancelTopupEntry } from './wallet-cancel';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
 
@@ -102,35 +103,30 @@ export const walletRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   /**
    * R-CAG-08: a top-up entered at the back office can be cancelled on the same day only
    * (an input error). Afterwards, a CORRECTION entry is required. Till top-ups belong to a
-   * cash session and are never deleted here.
+   * cash session and are never cancelled here. Nothing is deleted: the ledger keeps the top-up
+   * and the entry that cancels it.
    */
   app.post('/wallet-entries/:id/cancel', { ...adherents, schema: idParams }, async (req) => {
     await db.transaction(async (tx) => {
       const [e] = await tx
-        .select()
+        .select({ createdAt: walletEntry.createdAt })
         .from(walletEntry)
         .where(eq(walletEntry.id, req.params.id))
         .for('update');
       if (!e) throw notFound('Opération introuvable.');
-      if (e.kind !== 'TOPUP' || !e.paymentId || e.saleId)
-        throw conflict('Seul un versement saisi au back-office peut être annulé.');
-      const pay = await tx.query.memberPayment.findFirst({
-        where: eq(memberPayment.id, e.paymentId),
-      });
-      if (pay?.cashSessionId)
-        throw conflict('Un versement fait en caisse ne peut pas être annulé ici.');
       if (toParisDate(e.createdAt) !== toParisDate(new Date())) {
         throw conflict(
           'Un versement ne peut être annulé que le jour même. Utilisez une correction.',
         );
       }
-      await tx.delete(walletEntry).where(eq(walletEntry.id, e.id));
-      await tx.delete(memberPayment).where(eq(memberPayment.id, e.paymentId));
+      // The top-up stays in the ledger; an entry of the opposite amount cancels it.
+      const done = await cancelTopupEntry(tx, req.params.id, req.user!.id);
       await audit(tx, req, {
         action: 'wallet.topup_cancel',
         entity: 'household',
-        entityId: e.householdId,
-        before: { entry: e, payment: pay },
+        entityId: done.householdId,
+        before: { entry: done.entry, payment: done.payment },
+        after: { cancelledBy: 'contre-écriture', amount: done.amount },
       });
     });
     return { ok: true };

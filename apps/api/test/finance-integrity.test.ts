@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   entry,
   household,
   householdBalance,
   member,
   product,
+  sale,
   stockMovement,
   syncRejection,
   walletEntry,
@@ -62,6 +63,22 @@ const post = (url: string, payload: object, h = till.admin) =>
   t.app.inject({ method: 'POST', url: `/api/v1${url}`, headers: h, payload });
 
 describe('C01 — change into the cagnotte comes only from the cash given', () => {
+  // A refused ticket alerts the administrators in the background: wait until the database is idle
+  // before the next test empties the tables (a TRUNCATE would meet that query).
+  afterEach(async () => {
+    await expect
+      .poll(
+        async () =>
+          (
+            await t.db.execute<{ n: number }>(
+              sql`select count(*)::int as n from pg_stat_activity
+                  where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle'`,
+            )
+          ).rows[0]!.n,
+      )
+      .toBe(0);
+  });
+
   it('credits exactly the change of a cash payment', async () => {
     const p = await addProduct(t.db, { stockQty: '10' });
     const { householdId, memberId } = await addHousehold();
@@ -108,6 +125,70 @@ describe('C01 — change into the cagnotte comes only from the cash given', () =
     ]);
     expect(results.map((r) => r.status)).toEqual(['REJECTED', 'REJECTED', 'REJECTED']);
     expect(await balanceOf(householdId)).toBe('0.00');
+  });
+
+  it('credits nothing when the cash is exact, and refuses change that is asked for without being stated', async () => {
+    const p = await addProduct(t.db, { stockQty: '10' });
+    const { householdId, memberId } = await addHousehold();
+    const results = await till.push([
+      saleWith(
+        p.id,
+        { method: 'CASH', amount: '1.00', tendered: '1.00', change: '0.00' },
+        memberId,
+      ),
+      // change to the cagnotte asked for, but no cash given nor change stated
+      saleWith(p.id, { method: 'CASH', amount: '1.00', changeToWallet: true }, memberId),
+    ]);
+    expect(results.map((r) => r.status)).toEqual(['OK', 'REJECTED']);
+    expect(await balanceOf(householdId)).toBe('0.00');
+  });
+
+  it('refuses a negative amount, and change asked for the cagnotte without a member', async () => {
+    const p = await addProduct(t.db, { stockQty: '10' });
+    const results = await till.push([
+      saleWith(p.id, { method: 'CASH', amount: '-1.00', tendered: '0.00', change: '0.00' }),
+      saleWith(p.id, {
+        method: 'CASH',
+        amount: '1.00',
+        tendered: '5.00',
+        change: '4.00',
+        changeToWallet: true,
+      }),
+    ]);
+    expect(results[0]!.status).toBe('REJECTED');
+    expect(results[1]!.status).not.toBe('OK');
+  });
+
+  it('is refused by the database itself, whatever the application does (last line of defence)', async () => {
+    const p = await addProduct(t.db, { stockQty: '10' });
+    const [ok] = await till.push([
+      saleWith(p.id, { method: 'CASH', amount: '1.00', tendered: '5.00', change: '4.00' }),
+    ]);
+    expect(ok).toMatchObject({ status: 'OK' });
+    const [s] = await t.db.select({ id: sale.id }).from(sale);
+    const insert = (
+      method: string,
+      tendered: string | null,
+      change: string | null,
+      wallet = false,
+    ) =>
+      t.db
+        .execute(sql`insert into app.sale_payment (id, sale_id, method, amount, tendered, change, change_to_wallet)
+        values (gen_random_uuid(), ${s!.id}, ${method}, '1.00', ${tendered}, ${change}, ${wallet})`);
+    const code = (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: { cause?: { constraint?: string; code?: string } }) =>
+          e.cause?.constraint ?? e.cause?.code,
+      );
+    expect(await code(insert('CASH', '1.00', '1000.00'))).toBe('sale_payment_change_within_cash');
+    expect(await code(insert('CASH', '5.00', '-1.00'))).toBe('sale_payment_change_not_negative');
+    expect(await code(insert('CARD', '1.00', '0.00', true))).toBe(
+      'sale_payment_change_to_wallet_is_cash',
+    );
+    // What is right still goes in.
+    expect(await code(insert('CASH', '5.00', '4.00', true))).toBeNull();
+    expect(await code(insert('CARD', null, null))).toBeNull();
   });
 
   it('credits the change once when the till sends the same ticket again', async () => {

@@ -19,6 +19,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { uuidv7 } from 'uuidv7';
 import {
+  FEEDBACK_KINDS,
+  FEEDBACK_PRIORITIES,
+  FEEDBACK_STATUSES,
   MEMBER_PAYMENT_PURPOSES,
   MEMBER_STATUSES,
   PAYMENT_METHODS,
@@ -167,6 +170,40 @@ export const userRole = app.table(
 );
 
 // --- Authentication (§4.1) ------------------------------------------------
+
+/**
+ * R-SES-07: the server checked a cashier's code for the person who keeps the till. The id is the
+ * proof the till then attaches to its tickets: a ticket is « code vérifié » only if the server
+ * issued that proof (a till can claim anything, it cannot forge a row of this table).
+ */
+export const tillCashierProof = app.table(
+  'till_cashier_proof',
+  {
+    id: id(),
+    holderId: uuid('holder_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    cashierId: uuid('cashier_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    issuedAt: tz('issued_at').notNull().defaultNow(),
+  },
+  (t) => [index('till_cashier_proof_idx').on(t.holderId, t.cashierId, t.issuedAt)],
+);
+
+/** R-SES-07: wrong cashier codes, counted in the database (they survive a restart of the API). */
+export const tillPinAttempt = app.table(
+  'till_pin_attempt',
+  {
+    id: id(),
+    cashierId: uuid('cashier_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    holderId: uuid('holder_id').references(() => member.id, { onDelete: 'set null' }),
+    at: tz('at').notNull().defaultNow(),
+  },
+  (t) => [index('till_pin_attempt_idx').on(t.cashierId, t.at)],
+);
 
 /** Server-side sessions. `id` is the SHA-256 of the cookie token, never the token itself. */
 export const session = app.table(
@@ -614,6 +651,11 @@ export const walletEntry = app.table(
     paymentMethod: paymentMethod('payment_method'),
     saleId: uuid('sale_id').references((): AnyPgColumn => sale.id),
     paymentId: uuid('payment_id').references(() => memberPayment.id),
+    /**
+     * R-CAG-08: the top-up this entry cancels. A ledger line is never deleted (history_guard): a
+     * top-up entered by mistake is cancelled by an entry of the opposite amount, once.
+     */
+    cancelsEntryId: uuid('cancels_entry_id').references((): AnyPgColumn => walletEntry.id),
     comment: text('comment'),
     /** R-CAG-04: overdraft beyond the limit, forced by this ADHERENTS user. */
     forcedBy: uuid('forced_by').references(() => member.id, { onDelete: 'set null' }),
@@ -624,6 +666,9 @@ export const walletEntry = app.table(
   (t) => [
     index('wallet_entry_household_idx').on(t.householdId, t.at),
     index('wallet_entry_created_idx').on(t.createdAt),
+    uniqueIndex('wallet_entry_one_cancellation')
+      .on(t.cancelsEntryId)
+      .where(sql`${t.cancelsEntryId} is not null`),
     check('wallet_entry_amount_not_zero', sql`${t.amount} <> 0`),
     check(
       'wallet_entry_sign',
@@ -642,6 +687,20 @@ export const posDevice = app.table('pos_device', {
   name: text('name').notNull().unique(),
   active: boolean('active').notNull().default(true),
   lastSyncAt: tz('last_sync_at'),
+  /**
+   * Audit KV2, C02/C04: what the till said at its last contact (a refresh of its data or a push):
+   * when, and how many operations it still holds. A till that stopped answering while it held
+   * operations may still be selling: validating an inventory without it asks for a confirmation.
+   */
+  lastContactAt: tz('last_contact_at'),
+  pendingOps: integer('pending_ops').notNull().default(0),
+  /**
+   * Review of November 2026, F5: the last operation number the till says it created (announced at
+   * each contact) and the highest the server has received. A gap means operations are on their way,
+   * whatever count the till claims to hold.
+   */
+  announcedSeq: integer('announced_seq').notNull().default(0),
+  receivedSeq: integer('received_seq').notNull().default(0),
   createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 });
@@ -671,6 +730,8 @@ export const cashSession = app.table(
       .on(sql`(true)`)
       .where(sql`${t.status} = 'OPEN'`),
     index('cash_session_opened_idx').on(t.openedAt),
+    // The float is declared by the till: the database refuses a negative one, whatever sent it.
+    check('cash_session_opening_float_not_negative', sql`${t.openingFloat} >= 0`),
   ],
 );
 
@@ -782,7 +843,20 @@ export const salePayment = app.table(
     /** R-CAG-05: change paid into the household's cagnotte instead of given back. */
     changeToWallet: boolean('change_to_wallet').notNull().default(false),
   },
-  (t) => [index('sale_payment_sale_idx').on(t.saleId)],
+  (t) => [
+    index('sale_payment_sale_idx').on(t.saleId),
+    // Audit KV2, C01: the change comes only from cash actually given, and never exceeds it. The
+    // application checks it; the database refuses it too, so a bug cannot credit money from nothing.
+    check('sale_payment_change_not_negative', sql`${t.change} is null or ${t.change} >= 0`),
+    check(
+      'sale_payment_change_within_cash',
+      sql`${t.change} is null or ${t.tendered} is null or ${t.change} <= ${t.tendered} - ${t.amount}`,
+    ),
+    check(
+      'sale_payment_change_to_wallet_is_cash',
+      sql`not ${t.changeToWallet} or ${t.method} = 'CASH'`,
+    ),
+  ],
 );
 
 /** §8.3 idempotency: one row per operation pushed by a device; replays return `result`. */
@@ -1631,4 +1705,56 @@ export const walletSnapshot = app.table(
     balance: money('balance').notNull(),
   },
   (t) => [primaryKey({ columns: [t.day, t.householdId] })],
+);
+
+// --- Signalements (bugs and ideas reported by the users) ---------------------------------------
+
+export const feedbackKind = app.enum('feedback_kind', FEEDBACK_KINDS);
+export const feedbackStatus = app.enum('feedback_status', FEEDBACK_STATUSES);
+export const feedbackPriority = app.enum('feedback_priority', FEEDBACK_PRIORITIES);
+
+/** A bug or an idea, reported from any screen by a signed-in person; handled by the administrators. */
+export const feedbackTicket = app.table(
+  'feedback_ticket',
+  {
+    id: id(),
+    /** Continuous numbering (number_counter 'feedback'), shown as SIG-0001. */
+    number: integer('number').notNull().unique(),
+    kind: feedbackKind('kind').notNull(),
+    /** A key of FEEDBACK_MODULES. */
+    module: text('module').notNull(),
+    screen: text('screen').notNull().default(''),
+    title: text('title').notNull(),
+    description: text('description').notNull(),
+    /** Steps to reproduce (required for a bug). */
+    steps: text('steps').notNull().default(''),
+    status: feedbackStatus('status').notNull().default('NEW'),
+    priority: feedbackPriority('priority').notNull().default('NORMAL'),
+    authorId: uuid('author_id').references(() => member.id, { onDelete: 'set null' }),
+    /** Where the report was made (page, browser, window size): never typed values. */
+    context: jsonb('context').notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    closedAt: tz('closed_at'),
+  },
+  (t) => [
+    index('feedback_ticket_status_idx').on(t.status, t.createdAt),
+    index('feedback_ticket_author_idx').on(t.authorId, t.createdAt),
+  ],
+);
+
+export const feedbackComment = app.table(
+  'feedback_comment',
+  {
+    id: id(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => feedbackTicket.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id').references(() => member.id, { onDelete: 'set null' }),
+    /** A reply of the team (an administrator) rather than a message of the author. */
+    fromTeam: boolean('from_team').notNull().default(false),
+    body: text('body').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('feedback_comment_ticket_idx').on(t.ticketId, t.createdAt)],
 );

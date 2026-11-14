@@ -18,6 +18,46 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
+    title: 'Exporter une liste en Excel',
+    roles: [],
+    topics: [
+      {
+        question: 'Comment télécharger une liste dans Excel ?',
+        answer: [
+          'Au-dessus de chaque liste, le bouton « Exporter en Excel » télécharge le tableau tel qu’il est affiché : si vous avez filtré une colonne ou trié, le fichier suit ce que vous voyez.',
+          'Les montants et les dates sont de vrais nombres et de vraies dates dans le fichier (vous pouvez les additionner et les trier) ; les codes et numéros restent du texte, pour garder leurs zéros.',
+        ],
+      },
+      {
+        question: 'Pourquoi n’ai-je pas le bouton sur certains écrans ?',
+        answer: [
+          'L’export suit vos droits : vous exportez les listes des écrans que vous pouvez ouvrir, pas les autres. La caisse n’en propose pas.',
+          'Chaque fichier téléchargé est noté dans le journal (qui, depuis quel écran, combien de lignes).',
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Signaler un problème ou une idée',
+    roles: [],
+    topics: [
+      {
+        question: 'Comment signaler un problème ou proposer une amélioration ?',
+        answer: [
+          'Dans le menu, cliquez sur « Signaler un problème » : la fenêtre s’ouvre déjà réglée sur le module où vous êtes. Choisissez « Problème » ou « Idée », donnez un titre et décrivez.',
+          'Pour un problème, indiquez les étapes pour le reproduire (1. j’ouvre… 2. je clique…) : c’est ce qui permet de le retrouver. Votre nom et la date sont ajoutés tout seuls.',
+        ],
+      },
+      {
+        question: 'Où voir la suite donnée à mon signalement ?',
+        answer: [
+          'Dans « Signalements » : l’état (nouveau, en cours, terminé…) et les réponses de l’équipe s’y trouvent. Vous êtes aussi prévenu par courriel.',
+          'Vous seul et les administrateurs voyez vos signalements. Vous pouvez répondre dans la conversation ; répondre à un signalement terminé le rouvre.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'À la caisse',
     roles: ['CAISSE'],
     topics: [
@@ -69,7 +109,7 @@ const SECTIONS: Section[] = [
       {
         question: 'Je prends la caisse après quelqu’un d’autre',
         answer: [
-          'Pas besoin de déconnecter le poste : touchez « Changer de caissier » (ou le nom affiché en haut), puis votre nom. Si l’association le demande, tapez votre code caissier de 4 chiffres.',
+          'Pas besoin de déconnecter le poste : touchez « Changer de caissier » (ou le nom affiché en haut), puis votre nom. Si l’association le demande, tapez votre code caissier de 4 chiffres (sans réseau, il ne peut pas être vérifié : vos ventes sont alors signalées « non vérifié »).',
           'La première fois, choisissez votre code : 4 chiffres, puis votre mot de passe EpiSoft pour confirmer. Code oublié : un administrateur l’efface, vous en choisissez un autre.',
           'Tant qu’un autre caissier tient la caisse, le reste de l’application est fermé : la personne connectée retape son mot de passe (« Revenir à mon compte ») pour y accéder.',
           'Après un quart d’heure sans ticket, la caisse redemande qui encaisse.',

@@ -116,11 +116,9 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
       ...m,
       status: m.status as MemberStatus,
       isCashier: cashiers.has(m.id),
-      // R-SES-07: the code of the cashiers only, hashed, for the till to check it offline.
-      tillPin:
-        cashiers.has(m.id) && tillPasswordHash && tillPasswordSalt
-          ? { hash: tillPasswordHash, salt: tillPasswordSalt }
-          : null,
+      // R-SES-07: whether the cashier has a code. The code itself (even hashed) never leaves the
+      // server: it is checked there, and only there.
+      hasTillPin: cashiers.has(m.id) && !!tillPasswordHash && !!tillPasswordSalt,
     })),
     households: households.map((h) => ({ ...h, membershipEnd: endBy.get(h.id) ?? null })),
     membershipTypes: types.map((t) => ({

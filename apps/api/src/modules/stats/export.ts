@@ -9,7 +9,16 @@ import { audit } from '../../lib/audit';
 type Row = Record<string, unknown>;
 
 /** Never leave the server: credentials, sessions, mail queue and binary media. */
-const EXCLUDED_TABLES = new Set(['session', 'password_reset_token', 'email_outbox', 'media']);
+const EXCLUDED_TABLES = new Set([
+  'session',
+  'password_reset_token',
+  'email_outbox',
+  'media',
+  // The keys of a browser's notification channel: whoever holds them can write to that browser.
+  'push_subscription',
+  'till_cashier_proof',
+  'till_pin_attempt',
+]);
 const SENSITIVE_COLUMN = /hash|token|secret|salt|password/i;
 
 const cell = (v: unknown) =>

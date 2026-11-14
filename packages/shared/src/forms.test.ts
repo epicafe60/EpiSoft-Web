@@ -108,3 +108,13 @@ describe('cagnotte correction (R-CAG-08)', () => {
     expect(walletCorrectionSchema.safeParse({ amount: '5', comment: '' }).success).toBe(false);
   });
 });
+
+describe('messages written by zod itself', () => {
+  it('are in French (they are shown next to the fields)', async () => {
+    const { supplierSchema } = await import('./index');
+    const r = supplierSchema.safeParse({ name: 'x'.repeat(201) });
+    const text = JSON.stringify(r.success ? [] : r.error.issues.map((i) => i.message));
+    expect(text).not.toMatch(/Too big|expected string/);
+    expect(text).toMatch(/caract/i);
+  });
+});

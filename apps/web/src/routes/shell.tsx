@@ -15,6 +15,7 @@ import {
   UserCog,
   FileUp,
   LifeBuoy,
+  MessageSquarePlus,
   ShieldAlert,
   Wallet,
   Users,
@@ -28,6 +29,7 @@ import { signOut } from '@/lib/sign-out';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { FeedbackDialog } from './feedback/new-dialog';
 import { ImpersonateDialog, stopImpersonation } from './admin/impersonate-dialog';
 import { UnlockForm, useCashierName, useLocalCashier } from '@/till/cashier-switch';
 
@@ -46,6 +48,7 @@ export const MODULE_ICONS: Record<ModuleKey, LucideIcon> = {
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
   const me = useMe();
   const [dialog, setDialog] = useState(false);
+  const [feedback, setFeedback] = useState(false);
   const linkClass =
     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground [&.active]:bg-primary/10 [&.active]:text-primary [&_svg]:size-4';
   return (
@@ -72,6 +75,17 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
       <Link to="/aide" className={linkClass} onClick={onNavigate}>
         <LifeBuoy /> Aide
       </Link>
+      <Link to="/signalements" className={linkClass} onClick={onNavigate}>
+        <MessageSquarePlus /> Signalements
+      </Link>
+      <button
+        type="button"
+        className={cn(linkClass, 'text-left')}
+        onClick={() => setFeedback(true)}
+      >
+        <MessageSquarePlus /> Signaler un problème
+      </button>
+      <FeedbackDialog open={feedback} onClose={() => setFeedback(false)} />
       {hasAnyRole(me.roles, ['ADMIN', 'COMPTA']) ? (
         <Link to="/surveillance" className={linkClass} onClick={onNavigate}>
           <ShieldAlert /> Surveillance

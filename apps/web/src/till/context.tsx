@@ -76,6 +76,7 @@ export function TillProvider({ children }: { children: ReactNode }) {
     // R-SES-07: another cashier, chosen on the till, or the person signed in.
     cashierId: meta.cashier?.id ?? me.id,
     cashierCheck: meta.cashier?.check ?? 'SESSION',
+    ...(meta.cashier?.proof ? { cashierProof: meta.cashier.proof } : {}),
     sessionUserId: me.id,
     noteCashierActivity: async () => {
       const c = await getMeta('cashier');

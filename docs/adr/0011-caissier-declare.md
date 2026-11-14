@@ -20,8 +20,15 @@ geste est trop lourd pour des bénévoles peu habitués à l'informatique. L'anc
    - Chacun choisit son code avec son mot de passe EpiSoft.
    - Le serveur le stocke en PBKDF2-SHA256, avec 100 000 itérations et un sel par membre
      (`member.till_password_*`).
-   - Le poste en garde une copie hachée pour le vérifier hors ligne : cette copie n'existe que pour
-     les caissiers, et la déconnexion l'efface.
+   - **Le code n'est vérifié que par le serveur.** Le poste n'en garde aucune copie, pas même hachée :
+     l'instantané n'indique que « ce caissier a un code ». Hors ligne, le caissier est seulement
+     **déclaré**, et le ticket est signalé « caissier non vérifié ».
+   - En ligne, le serveur répond à `POST /pos/cashier` avec une **preuve** (`till_cashier_proof`). Le
+     poste la joint à ses tickets (`cashierProof`) ; le serveur ne les marque `PIN` que si la preuve
+     existe, a été délivrée à cette personne pour ce caissier et date de moins de 36 h. Un client
+     modifié qui prétend « PIN » sans preuve est enregistré `DECLARED`.
+   - Les codes faux sont comptés en base (`till_pin_attempt`), par couple (personne connectée,
+     caissier), avec en plus un plafond par caissier, quelle que soit la personne (20 en 15 minutes).
    - Le code ne permet **jamais** de se connecter.
 3. **Le journal nomme les deux personnes.**
    - `actor_id` est le caissier B, `via_session_of_id` est la session de A.
@@ -43,13 +50,11 @@ geste est trop lourd pour des bénévoles peu habitués à l'informatique. L'anc
 
 ## Risques acceptés
 
-- **Un code de 4 chiffres retrouvé à partir de sa copie hachée.** Tout compte avec le rôle Caisse
-  reçoit cette copie en synchronisant (`/sync/snapshot`), sans avoir besoin du poste : avec
-  10 000 combinaisons, le hachage lent ne retarde que de quelques minutes celui qui la teste hors
-  ligne. Le code ne permet que d'encaisser ou de clôturer au nom de B, jamais de se connecter ni
-  d'utiliser les droits de B ; l'attribution reste tracée (`via_session_of_id`). Pour supprimer ce
-  risque, il faudrait renoncer à la vérification hors ligne : un caissier choisi sans réseau serait
-  alors toujours « déclaré ».
+- **~~Un code de 4 chiffres retrouvé à partir de sa copie hachée.~~ Supprimé.** Une première version
+  envoyait le haché de chaque code à tous les comptes Caisse pour une vérification hors ligne ; avec
+  10 000 combinaisons, il se retrouvait en quelques minutes. Le code n'est maintenant vérifié que par
+  le serveur, qui limite les essais. Contrepartie : un caissier choisi sans réseau est seulement
+  « déclaré » (ticket signalé), jamais bloqué.
 - **Un caissier qui en désigne un autre à tort ou exprès** n'écrit jamais au nom de quelqu'un qui
   n'a pas le rôle Caisse : le journal garde alors l'auteur réel. Les essais de code sont comptés par
   couple (personne connectée, caissier), pour qu'un collègue qui devine ne bloque pas l'usage normal.
