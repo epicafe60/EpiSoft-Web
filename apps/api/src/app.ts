@@ -51,7 +51,7 @@ import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
 import { feedbackRoutes } from './modules/feedback/routes';
-import { tableExportRoutes } from './modules/exports/table';
+import { tableExportRoutes } from './modules/xlsx/table';
 
 export interface RouteAccess {
   method: string;
