@@ -24,6 +24,12 @@ const ANY_MEMBER: Record<string, string> = {
   'POST /api/v1/imports/:kind/preview': 'role checked per kind (PRODUITS or ADHERENTS)',
   'POST /api/v1/imports/:kind/apply': 'role checked per kind (PRODUITS or ADHERENTS)',
   'GET /api/v1/imports/history': 'PRODUITS or ADHERENTS checked in the handler',
+  'POST /api/v1/feedback': 'any signed-in member reports from their screen; author is the session',
+  'GET /api/v1/feedback/mine': 'own reports',
+  'GET /api/v1/feedback/:id': 'own report, or any for an administrator; others are not found',
+  'POST /api/v1/feedback/:id/comments': 'own report, or any for an administrator',
+  'POST /api/v1/exports/table':
+    'role of the screen the export comes from (EXPORT_SCOPES), checked in the handler',
   'GET /api/v1/me': 'the signed-in member',
   'GET /api/v1/me/export': 'the signed-in member',
   'GET /api/v1/me/household': 'the household of the signed-in member',

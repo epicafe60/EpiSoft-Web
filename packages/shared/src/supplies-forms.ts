@@ -59,7 +59,7 @@ export const supplierSchema = z.object({
   name: z.string().trim().min(1, 'Nom requis.').max(200),
   contact: text(200),
   street: text(200),
-  postcode: text(5),
+  postcode: text(5).refine((s) => s === null || /^\d{5}$/.test(s), 'Code postal à 5 chiffres.'),
   communeId: z.string().uuid().nullable(),
   phone: text(30),
   email: text(200).refine((s) => s === null || isValidEmail(s), 'Courriel invalide.'),
@@ -180,6 +180,8 @@ export const inventoryCountSchema = z.object({
 
 export const inventoryValidateSchema = z.object({
   zeroUncounted: z.boolean().default(false),
+  /** C04: validate although a till may hold sales not received yet (it was asked to confirm). */
+  confirmUnsyncedTills: z.boolean().default(false),
 });
 
 // --- Supplier invoices (R-FAC-01/02/04) ----------------------------------------------------

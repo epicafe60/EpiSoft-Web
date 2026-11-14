@@ -14,7 +14,7 @@ export function ReportTableView({ data, busy }: { data: ReportTableData; busy?: 
   const hasLinks = data.rows.some((r) => r.link);
   return (
     <Card className={cn('overflow-x-auto', busy && 'opacity-60')} aria-busy={busy}>
-      <Table>
+      <Table exportable={false}>
         <thead>
           <tr>
             {data.columns.map((c) => (

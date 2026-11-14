@@ -1,14 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  pinLockedUntil,
-  tillPinMatches,
-  tillPinSchema,
-  type CashierCheck,
-  type Me,
-  type SnapshotMember,
-} from '@episoft/shared';
+import { tillPinSchema, type CashierCheck, type Me, type SnapshotMember } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -36,10 +29,10 @@ export function useCashierSwitchRequests(onOpen: () => void): void {
   }, [onOpen]);
 }
 
-/** Wrong codes typed on this till, per cashier (the server keeps its own count online). */
-const localFailures = new Map<string, Date[]>();
-
 const fullName = (m: { firstName: string; lastName: string }) => `${m.firstName} ${m.lastName}`;
+
+/** The server could not be reached while a code was being checked. */
+class Unreachable extends Error {}
 
 /** The cashiers known to the till (the snapshot), the active ones first. */
 function useCashiers(online: boolean) {
@@ -191,27 +184,35 @@ export function CashierSwitchDialog({
   }, [open]);
 
   /**
-   * The cashier keeps the till from now on (and the server restricts the session, online).
-   * `serverMustConfirm`: the code was not confirmed by this till, only the server may accept it;
-   * when it cannot be reached, the code is refused.
+   * The cashier keeps the till from now on. The code is checked by the SERVER only (the till holds
+   * no copy of it, not even hashed): online, it answers with how the cashier was established and a
+   * proof the tickets then carry. Without the network the cashier is only declared, and the tickets
+   * are flagged « non vérifié ».
    */
-  const finish = async (
-    m: SnapshotMember,
-    check: CashierCheck,
-    code?: string,
-    serverMustConfirm = false,
-  ) => {
-    if (online || serverMustConfirm) {
+  const finish = async (m: SnapshotMember, code?: string) => {
+    let check: CashierCheck = 'DECLARED';
+    let proof: string | null = null;
+    if (online) {
       try {
-        await api.post('/pos/cashier', { cashierId: m.id, ...(code ? { pin: code } : {}) });
+        const r = await api.post<{ check: CashierCheck; proof?: string | null }>('/pos/cashier', {
+          cashierId: m.id,
+          ...(code ? { pin: code } : {}),
+        });
+        check = r.check;
+        proof = r.proof ?? null;
       } catch (e) {
-        const unreachable = e instanceof ApiError && e.status === 0;
-        if (!unreachable) throw e;
-        if (serverMustConfirm) throw new Error('Code incorrect.');
-        // Offline after all: the first ticket restricts the session when it reaches the server.
+        // The network dropped while the till still believed to be online: a code that cannot be
+        // checked is not accepted, the cashier can be declared instead.
+        if (e instanceof ApiError && e.status === 0) throw new Unreachable();
+        throw e;
       }
     }
-    await setMeta('cashier', { id: m.id, check, lastActivityAt: new Date().toISOString() });
+    await setMeta('cashier', {
+      id: m.id,
+      check,
+      proof,
+      lastActivityAt: new Date().toISOString(),
+    });
     await queryClient.invalidateQueries({ queryKey: ['me'] });
     onClose();
   };
@@ -235,36 +236,25 @@ export function CashierSwitchDialog({
         holderId: me.id,
         activeId,
         pinRequired,
-        hasPin: !!m.tillPin,
+        hasPin: !!m.hasTillPin,
         online,
       });
       setChosen(m);
       if (next !== 'done') return setStep(next);
       if (m.id === me.id) return onClose();
-      await finish(m, 'DECLARED');
+      await finish(m);
     });
 
   const submitPin = (e: FormEvent) => {
     e.preventDefault();
     const m = chosen!;
     void run(async () => {
-      const failures = localFailures.get(m.id) ?? [];
-      if (pinLockedUntil(failures, new Date()))
-        throw new Error('Trop de codes faux : réessayez dans une minute.');
-      // Checked here first: the till may believe it is online when the network is already gone.
-      // A code this till does not confirm (changed on another till) is left to the server alone.
-      const confirmedHere = await tillPinMatches(pin, m.tillPin ?? null);
-      if (!confirmedHere && !online) {
-        localFailures.set(m.id, [...failures, new Date()]);
-        setPin('');
-        throw new Error('Code incorrect.');
-      }
       try {
-        await finish(m, 'PIN', pin, !confirmedHere);
-        localFailures.delete(m.id);
+        await finish(m, pin);
       } catch (err) {
-        if (!confirmedHere) localFailures.set(m.id, [...failures, new Date()]);
         setPin('');
+        // The server cannot be reached after all: the cashier can only be declared.
+        if (err instanceof Unreachable) return setStep('declare');
         throw err;
       }
     });
@@ -278,8 +268,7 @@ export function CashierSwitchDialog({
       if (!parsed.success) throw new Error(parsed.error.issues[0]!.message);
       if (pin !== pin2) throw new Error('Les deux codes ne sont pas identiques.');
       await api.put(`/pos/cashiers/${m.id}/pin`, { password, pin });
-      await finish(m, 'PIN', pin);
-      // The new code reaches this till's copy at once (checked here when offline).
+      await finish(m, pin);
       void engine.refresh();
     });
   };
@@ -383,7 +372,7 @@ export function CashierSwitchDialog({
               type="button"
               variant="ghost"
               disabled={busy}
-              onClick={() => void run(() => finish(chosen!, 'DECLARED'))}
+              onClick={() => void run(() => finish(chosen!))}
             >
               Plus tard (ventes signalées « non vérifié »)
             </Button>
@@ -392,14 +381,12 @@ export function CashierSwitchDialog({
       ) : (
         <div className="grid gap-3">
           <Alert>
-            Ce bénévole n’a pas encore de code caissier, et le poste est hors ligne : ses ventes
-            seront enregistrées à son nom avec la mention « caissier non vérifié ».
+            Le poste est hors ligne : le code caissier est vérifié par le serveur et ne peut pas
+            l’être maintenant. Les ventes seront enregistrées au nom de{' '}
+            {chosen ? fullName(chosen) : ''}
+            avec la mention « caissier non vérifié », à confirmer avec cette personne.
           </Alert>
-          <Button
-            type="button"
-            disabled={busy}
-            onClick={() => void run(() => finish(chosen!, 'DECLARED'))}
-          >
+          <Button type="button" disabled={busy} onClick={() => void run(() => finish(chosen!))}>
             Continuer
           </Button>
         </div>

@@ -1,7 +1,8 @@
-import { and, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, notLike, sql } from 'drizzle-orm';
 import type { Db } from '@episoft/db';
 import { DEFAULT_THRESHOLDS, type Thresholds } from '@episoft/shared';
 import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
+import { REFUSAL_PREFIX } from '../../plugins/errors';
 import { backupRun, emailOutbox, integrityRun, syncRejection, errorLog } from '@episoft/db';
 
 /** One thing that needs a human look, as shown in the « À surveiller » block. */
@@ -152,6 +153,8 @@ export async function computeAttention(
     .where(
       and(
         isNull(errorLog.acknowledgedAt),
+        // An entry refused by the validation is not a breakdown (see recordRefusal).
+        notLike(errorLog.message, `${REFUSAL_PREFIX}%`),
         gt(errorLog.lastAt, new Date(now.getTime() - 7 * 24 * HOUR)),
       ),
     );
@@ -161,6 +164,28 @@ export async function computeAttention(
     count: errs!.n,
     label: 'Erreur(s) inattendue(s) du serveur ces 7 derniers jours.',
     link: '/surveillance/erreurs',
+  });
+
+  // Signalements nobody has looked at yet.
+  add({
+    code: 'FEEDBACK_NEW',
+    severity: 'warning',
+    count: await count(
+      sql`select count(*)::int as n from app.feedback_ticket where status = 'NEW'`,
+    ),
+    label: 'Signalement(s) (problème ou idée) en attente d’une première réponse.',
+    link: '/signalements/gestion',
+  });
+
+  // F1: wrong cashier codes in the last 24 h, beyond what a slip of the finger explains.
+  const pinFails = await count(sql`select count(*)::int as n from app.till_pin_attempt
+    where at > ${new Date(now.getTime() - 24 * HOUR)}`);
+  add({
+    code: 'PIN_GUESSING',
+    severity: 'warning',
+    count: pinFails >= 15 ? pinFails : 0,
+    label: 'Code(s) caissier faux ces dernières 24 h : quelqu’un cherche peut-être à le deviner.',
+    link: '/admin/connexions',
   });
 
   const [lastBackup] = await db

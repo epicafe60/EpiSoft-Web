@@ -33,6 +33,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { alertNow } from '../../lib/alerts';
 import { formatParis } from '../../lib/dates';
 import { escapeHtml, queueEmail } from '../../lib/mail';
 import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
@@ -44,6 +45,7 @@ import { closingPdf } from './closing-pdf';
 import { generateSessionEntry, regularizeSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
 import { buildSnapshot } from './snapshot';
+import { noteDeviceContact } from './device-contact';
 import { DeviceRefused, NotYet, processOps, Rejected } from './sync-service';
 
 const amount = z
@@ -70,6 +72,30 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
   });
 
   const cashier = { preHandler: app.requireRoles('CAISSE') };
+  /** F1: too many wrong cashier codes for one cashier, whoever tries: the administrators know. */
+  const pinGuessing = (req: FastifyRequest, cashierId: string) => (wrongCodes: number) => {
+    void (async () => {
+      const [c] = await db
+        .select({ name: sql<string>`${member.firstName} || ' ' || ${member.lastName}` })
+        .from(member)
+        .where(eq(member.id, cashierId));
+      await alertNow(
+        db,
+        config,
+        ['ADMIN'],
+        {
+          subject: `Épicafé : codes caissier faux répétés (${c?.name ?? 'inconnu'})`,
+          lines: [
+            `${wrongCodes} codes faux en 15 minutes pour le caissier ${c?.name ?? 'inconnu'}.`,
+            'Quelqu’un essaie peut-être de deviner son code. Le code est bloqué quelques minutes.',
+            'Détails dans Administration › Connexions.',
+          ],
+        },
+        { title: 'Codes caissier faux', body: c?.name ?? '', url: '/surveillance' },
+        req.log,
+      );
+    })().catch((e) => req.log.error({ err: e }, 'alerte de code caissier'));
+  };
   const cashierOrAdmin = { preHandler: app.requireRoles('CAISSE', 'ADMIN', 'COMPTA') };
 
   // --- Devices (R-ADM-03) ------------------------------------------------------
@@ -145,7 +171,13 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         return { cashierId, check: 'SESSION' as const };
       }
       await assertCashier(db, cashierId);
-      const check = await checkCashierPin(db, holder.id, cashierId, pin);
+      const { check, proof } = await checkCashierPin(
+        db,
+        holder.id,
+        cashierId,
+        pin,
+        pinGuessing(req, cashierId),
+      );
       await db.transaction(async (tx) => {
         await tx
           .update(session)
@@ -159,7 +191,8 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           after: { cashierCheck: check },
         });
       });
-      return { cashierId, check };
+      // The proof goes back with the tickets of this cashier: it is what makes them « code vérifié ».
+      return { cashierId, check, proof };
     },
   );
 
@@ -232,10 +265,20 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     {
       ...cashier,
       schema: {
-        querystring: z.object({ since: z.string().datetime({ offset: true }).optional() }),
+        querystring: z.object({
+          since: z.string().datetime({ offset: true }).optional(),
+          // The till says who it is and how many operations it still holds (C02/C04).
+          device: z.string().uuid().optional(),
+          pending: z.coerce.number().int().min(0).max(100000).optional(),
+          seq: z.coerce.number().int().min(0).max(2_000_000_000).optional(),
+        }),
       },
     },
-    async (req) => buildSnapshot(db, req.query.since ? new Date(req.query.since) : null),
+    async (req) => {
+      if (req.query.device)
+        await noteDeviceContact(db, req.query.device, req.query.pending ?? 0, req.query.seq);
+      return buildSnapshot(db, req.query.since ? new Date(req.query.since) : null);
+    },
   );
 
   // Tills share one address: generous, but a stuck loop is stopped.
@@ -442,7 +485,9 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
     let closerCheck: CashierCheck = 'SESSION';
     if (closerId !== holder.id) {
       await assertCashier(db, closerId);
-      closerCheck = await checkCashierPin(db, holder.id, closerId, b.pin);
+      closerCheck = (
+        await checkCashierPin(db, holder.id, closerId, b.pin, pinGuessing(req, closerId))
+      ).check;
     }
     const asCashier = closerId !== holder.id ? { cashier: { id: closerId } } : {};
     const report = await db.transaction(async (tx) => {

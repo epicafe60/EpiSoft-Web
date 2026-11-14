@@ -105,7 +105,7 @@ function ClosingForm({
     [cashierId, me.id],
   );
   const closerPinNeeded =
-    cashierId !== me.id && (settings?.cashierPinRequired ?? true) && !!closer?.tillPin;
+    cashierId !== me.id && (settings?.cashierPinRequired ?? true) && !!closer?.hasTillPin;
   const [closerPin, setCloserPin] = useState('');
 
   const summary = useQuery({
@@ -514,7 +514,7 @@ function Report({ report, openedAt }: { report: ClosedReport; openedAt: string }
           </p>
         </CardHeader>
         <CardContent className="grid gap-4 text-sm">
-          <Table>
+          <Table exportable={false}>
             <tbody>
               <tr>
                 <td>Tickets</td>

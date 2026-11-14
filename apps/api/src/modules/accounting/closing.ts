@@ -1,15 +1,7 @@
 import { and, desc, eq, gt, ne, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import {
-  bankLine,
-  bankStatement,
-  entry,
-  entryLine,
-  fiscalYear,
-  type Db,
-  type Tx,
-} from '@episoft/db';
+import { bankLine, bankStatement, entry, fiscalYear, type Db, type Tx } from '@episoft/db';
 import {
   addDays,
   balanceOf,
@@ -351,21 +343,12 @@ export const closingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         .where(and(gt(fiscalYear.startDate, fy.endDate), eq(fiscalYear.status, 'CLOSED')));
       if (nextClosed) throw conflict('Un exercice postérieur est clôturé.');
 
-      await tx.execute(sql`select set_config('app.bypass_entry_guard', 'on', true)`);
-      const closing = await tx
-        .select({ id: entry.id })
-        .from(entry)
-        .where(
-          and(
-            eq(entry.sourceId, fy.id),
-            sql`${entry.sourceType} in ('closing_stock', 'closing_result', 'closing_ran')`,
-          ),
-        );
-      for (const c of closing) {
-        await tx.delete(entryLine).where(eq(entryLine.entryId, c.id));
-        await tx.delete(entry).where(eq(entry.id, c.id));
-      }
-      await tx.execute(sql`select set_config('app.bypass_entry_guard', 'off', true)`);
+      // The closing entries are validated: the application's role cannot delete them. The database
+      // does it, for a closed year only, with the rights of its owner (migration 0031).
+      const { rows } = await tx.execute<{ removed: number }>(
+        sql`select app.remove_closing_entries(${fy.id}::uuid) as removed`,
+      );
+      const removed = rows[0]!.removed;
       await tx
         .update(fiscalYear)
         .set({ status: 'OPEN', closedAt: null, closedBy: null })
@@ -374,9 +357,9 @@ export const closingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         action: 'fiscal_year.reopen',
         entity: 'fiscal_year',
         entityId: fy.id,
-        after: { removedEntries: closing.length },
+        after: { removedEntries: removed },
       });
-      return { removed: closing.length };
+      return { removed };
     }),
   );
 };

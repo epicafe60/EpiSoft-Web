@@ -426,7 +426,12 @@ describe('undoing an action (R-ADM-06)', () => {
           sql`select count(*)::int as n from app.wallet_entry where household_id = ${h}`,
         )
       ).rows[0]!.n;
-    expect(await count()).toBe(0);
+    // M1: the top-up stays and an entry of the opposite amount cancels it; nothing is deleted.
+    expect(await count()).toBe(2);
+    const balance = await t.db.execute<{ b: string }>(
+      sql`select coalesce(sum(amount), 0)::text as b from app.wallet_entry where household_id = ${h}`,
+    );
+    expect(balance.rows[0]!.b).toBe('0.00');
 
     // A top-up of a past day: an opposite correction, the top-up stays.
     expect((await top('15')).statusCode).toBe(200);
@@ -441,7 +446,7 @@ describe('undoing an action (R-ADM-06)', () => {
       label: 'Passer une correction de cagnotte du montant opposé',
     });
     expect((await revert(past.id)).statusCode).toBe(200);
-    expect(await count()).toBe(2);
+    expect(await count()).toBe(4);
   });
 
   it('an anonymisation cannot be undone, and says why', async () => {

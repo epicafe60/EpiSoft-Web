@@ -1,0 +1,16 @@
+# Dependency updates, one pull request a week per ecosystem (audit KV2, D02): a vulnerable or stale
+# package is noticed and proposed for update instead of waiting for someone to look.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -25,15 +25,9 @@ import {
   VAT_RATES,
   centsToDecimal,
   parseAmountToCents,
-  type ProductCreate,
-  type ProductKind,
-  type ProductStatus,
-  type Quality,
-  type SaleCondition,
-  type SaleMode,
-  type Unit,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { useSavedNotice, type SavedNotice } from '@/lib/saved-notice';
 import { useMe } from '@/lib/auth';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
@@ -45,119 +39,20 @@ import type { CatalogRefs, ProductDetail } from '@/lib/types';
 import { PageHeader } from '../shell';
 import { QueryError } from '../errors';
 import { StockHistoryCard } from './tools';
-
-interface FormState {
-  code: string;
-  name: string;
-  description: string;
-  kind: ProductKind;
-  saleMode: SaleMode;
-  unitQty: string;
-  unit: Unit | '';
-  saleCondition: SaleCondition;
-  shopVisible: boolean;
-  categoryId: string;
-  supplierId: string;
-  supplierRef: string;
-  qualities: Quality[];
-  vatRate: string;
-  status: ProductStatus;
-  purchasePriceExcl: string;
-  salePrice: string;
-  minStock: string;
-  eans: string;
-  posTabId: string;
-  posLabel: string;
-  posSort: string;
-}
-
-const EMPTY: FormState = {
-  code: '',
-  name: '',
-  description: '',
-  kind: 'GOODS',
-  saleMode: 'UNIT',
-  unitQty: '',
-  unit: '',
-  saleCondition: 'ON_SITE',
-  shopVisible: true,
-  categoryId: '',
-  supplierId: '',
-  supplierRef: '',
-  qualities: [],
-  vatRate: '5.50',
-  status: 'ACTIVE',
-  purchasePriceExcl: '',
-  salePrice: '',
-  minStock: '',
-  eans: '',
-  posTabId: '',
-  posLabel: '',
-  posSort: '0',
-};
-
-const dec = (v: string | null) =>
-  v === null ? '' : v.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
-
-function toForm(p: ProductDetail): FormState {
-  return {
-    code: p.code,
-    name: p.name,
-    description: p.description ?? '',
-    kind: p.kind,
-    saleMode: p.saleMode,
-    unitQty: dec(p.unitQty),
-    unit: p.unit ?? '',
-    saleCondition: p.saleCondition,
-    shopVisible: p.shopVisible,
-    categoryId: p.categoryId ?? '',
-    supplierId: p.supplierId ?? '',
-    supplierRef: p.supplierRef ?? '',
-    qualities: p.qualities,
-    vatRate: p.vatRate,
-    status: p.status,
-    purchasePriceExcl: p.purchasePriceExcl ? Number(p.purchasePriceExcl).toFixed(2) : '',
-    salePrice: p.salePrice,
-    minStock: dec(p.minStock),
-    eans: p.eans.join(' '),
-    posTabId: p.posTabId ?? '',
-    posLabel: p.posLabel ?? '',
-    posSort: String(p.posSort),
-  };
-}
-
-function toPayload(f: FormState): ProductCreate {
-  return {
-    name: f.name,
-    description: f.description,
-    kind: f.kind,
-    saleMode: f.saleMode,
-    unitQty: f.unitQty || null,
-    unit: f.unit || null,
-    saleCondition: f.saleCondition,
-    shopVisible: f.shopVisible,
-    categoryId: f.categoryId || null,
-    supplierId: f.supplierId || null,
-    supplierRef: f.supplierRef,
-    qualities: f.qualities,
-    vatRate: f.vatRate as ProductCreate['vatRate'],
-    status: f.status,
-    purchasePriceExcl: f.purchasePriceExcl || null,
-    salePrice: f.salePrice,
-    minStock: f.minStock || null,
-    eans: f.eans.split(/[\s,;]+/).filter(Boolean),
-    posTabId: f.posTabId || null,
-    posLabel: f.posLabel,
-    posSort: Number(f.posSort) || 0,
-    ...(f.code ? { code: f.code } : {}),
-  };
-}
+import {
+  describeFieldErrors,
+  EMPTY_PRODUCT_FORM as EMPTY,
+  productToForm as toForm,
+  productToPayload as toPayload,
+  type ProductFormState as FormState,
+} from './product-payload';
 
 export function NewProductPage() {
   return <ProductForm product={null} />;
 }
 
 export function EditProductPage() {
+  const notice = useSavedNotice();
   const { id } = useParams({ from: '/app/catalogue/$id' });
   const { data, error, isPending } = useQuery({
     queryKey: ['product', id],
@@ -165,10 +60,10 @@ export function EditProductPage() {
   });
   if (isPending) return <p className="text-muted-foreground">Chargement…</p>;
   if (error) return <QueryError error={error} />;
-  return <ProductForm key={data.updatedAt} product={data} />;
+  return <ProductForm key={data.updatedAt} product={data} notice={notice} />;
 }
 
-function ProductForm({ product }: { product: ProductDetail | null }) {
+function ProductForm({ product, notice }: { product: ProductDetail | null; notice?: SavedNotice }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const readOnly = !hasAnyRole(useMe().roles, ['PRODUITS']);
@@ -219,6 +114,7 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
       });
     },
     onSuccess: async (res) => {
+      notice?.mark();
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       await queryClient.invalidateQueries({ queryKey: ['product', res.id] });
       if (!product) void navigate({ to: '/catalogue/$id', params: { id: res.id } });
@@ -515,8 +411,17 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
           </Card>
 
           {save.error && !Object.keys(errors).length ? <Alert>{save.error.message}</Alert> : null}
-          {save.isSuccess && product ? <Alert variant="success">Produit enregistré.</Alert> : null}
-          {Object.keys(errors).length ? <Alert>Certaines valeurs sont invalides.</Alert> : null}
+          {notice?.saved && product ? <Alert variant="success">Produit enregistré.</Alert> : null}
+          {Object.keys(errors).length ? (
+            <Alert>
+              Certaines valeurs sont invalides :
+              <ul className="mt-1 list-disc pl-5">
+                {describeFieldErrors(errors).map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+            </Alert>
+          ) : null}
           <div className="flex gap-3">
             {!readOnly ? (
               <Button type="submit" disabled={save.isPending}>
@@ -566,7 +471,7 @@ function ProductForm({ product }: { product: ProductDetail | null }) {
               <CardHeader>
                 <CardTitle className="text-base">Historique des prix</CardTitle>
               </CardHeader>
-              <Table>
+              <Table exportable={false}>
                 <tbody>
                   {product.priceHistory.map((h) => (
                     <tr key={h.id}>

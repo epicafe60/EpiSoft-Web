@@ -14,6 +14,8 @@ export interface TillContextValue {
   cashierId: string;
   /** How that cashier was established, sent with each operation. */
   cashierCheck: CashierCheck;
+  /** The server's proof of that check (R-SES-07): without it the server records « declared ». */
+  cashierProof?: string;
   /** The person signed in: the session and its rights. */
   sessionUserId: string;
   /** A ticket was made: the cashier is still there (R-SES-07, asked again after a while). */

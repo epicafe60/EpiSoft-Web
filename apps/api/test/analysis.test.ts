@@ -60,6 +60,9 @@ describe('full export (R-STA-04)', () => {
     const names = wb.worksheets.map((w) => w.name);
     expect(names).toContain('member');
     expect(names).not.toContain('session');
+    // F6: the keys of a browser's notification channel and the proofs of cashier codes stay out.
+    for (const secret of ['push_subscription', 'till_cashier_proof', 'till_pin_attempt'])
+      expect(names).not.toContain(secret);
     const header = wb.getWorksheet('member')!.getRow(1).values as unknown[];
     expect(header).not.toContain('password_hash');
     expect(header).toContain('last_name');

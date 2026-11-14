@@ -44,6 +44,12 @@ declare module 'fastify' {
      * the session (every other route answers 403 TILL_LOCKED).
      */
     till?: boolean;
+    /**
+     * Roles the route requires (read from its requireRoles guard). Checked as soon as the request is
+     * routed, before its body or parameters are validated: someone without the role learns nothing
+     * of the expected body, and the refusal does not depend on a valid payload.
+     */
+    roles?: RoleCode[];
   }
   interface FastifyInstance {
     requireRoles(...roles: RoleCode[]): preHandlerHookHandler;
@@ -124,6 +130,8 @@ export default fp<{ db: Db; config: Config }>(async (app, { db, config }) => {
         undefined,
         'TILL_LOCKED',
       );
+    const need = req.routeOptions.config.roles;
+    if (api && req.user && need && !hasAnyRole(req.user.roles, need)) throw forbidden();
   });
 
   app.decorate('requireRoles', (...roles: RoleCode[]): preHandlerHookHandler => {

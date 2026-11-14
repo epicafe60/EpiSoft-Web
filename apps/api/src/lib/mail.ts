@@ -45,15 +45,23 @@ export function pdfAttachment(filename: string, pdf: Buffer): EmailAttachment {
 
 const MAX_ATTEMPTS = 5;
 
+/**
+ * M6: how the application talks to the mail server. In production the session is encrypted or
+ * nothing is sent: no fall back to clear text, where reset links and the SMTP password would travel.
+ * Port 465 is encrypted from the start; any other port must upgrade with STARTTLS.
+ */
+export function smtpOptions(config: Config) {
+  return {
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
+    secure: config.SMTP_PORT === 465,
+    requireTLS: config.NODE_ENV === 'production' && config.SMTP_PORT !== 465,
+    auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD } : undefined,
+  };
+}
+
 export function startMailer(db: Db, config: Config, log: FastifyBaseLogger): () => void {
-  const transport = config.SMTP_HOST
-    ? nodemailer.createTransport({
-        host: config.SMTP_HOST,
-        port: config.SMTP_PORT,
-        secure: config.SMTP_PORT === 465,
-        auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD } : undefined,
-      })
-    : null;
+  const transport = config.SMTP_HOST ? nodemailer.createTransport(smtpOptions(config)) : null;
 
   let running = false;
   const tick = async () => {

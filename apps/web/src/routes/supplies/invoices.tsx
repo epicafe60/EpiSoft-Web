@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { invoicePayload } from './invoice-payload';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -258,17 +259,17 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
 
   const save = useMutation({
     mutationFn: () => {
-      const body = {
+      const body = invoicePayload({
         supplierId,
         pieceRef,
         date,
-        dueDate: dueDate || undefined,
+        dueDate,
         totalExcl,
-        totalVat: totalVat || '0',
-        paymentMethod: method || null,
+        totalVat,
+        method,
         comment,
         receiptIds,
-      };
+      });
       return invoice
         ? api.put<{ id: string }>(`/supplier-invoices/${invoice.id}`, body)
         : api.post<{ id: string }>('/supplier-invoices', body);

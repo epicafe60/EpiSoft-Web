@@ -47,7 +47,7 @@ export function SaleDialog({ saleId, onClose }: { saleId: string | null; onClose
               ))}
             </Alert>
           ) : null}
-          <Table>
+          <Table exportable={false}>
             <thead>
               <tr>
                 <th>Article</th>

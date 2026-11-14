@@ -82,7 +82,7 @@ test('another cashier takes the till with their code, and the session is theirs 
   await expect(page.getByRole('heading', { name: 'Bonjour Carl' })).toBeVisible();
 });
 
-test('offline, the code is checked on the till, and the session is restricted once back online', async ({
+test('offline, the code cannot be checked: the cashier is only declared, and the session is restricted once back online', async ({
   page,
   context,
 }) => {
@@ -107,17 +107,22 @@ test('offline, the code is checked on the till, and the session is restricted on
     .getByRole('dialog', { name: 'Qui encaisse ?' })
     .getByRole('button', { name: /Alice ADMIN/ })
     .click();
-  const pinDialog = page.getByRole('dialog', { name: 'Alice ADMIN' });
-  await pinDialog.getByLabel('Code caissier (4 chiffres)').fill('1111');
-  await pinDialog.getByRole('button', { name: 'Valider' }).click();
-  await expect(pinDialog.getByText('Code incorrect.')).toBeVisible();
-  await pinDialog.getByLabel('Code caissier (4 chiffres)').fill('4815');
-  await pinDialog.getByRole('button', { name: 'Valider' }).click();
-  await expect(pinDialog).toBeHidden();
+  // The code is checked by the server only: the till holds no copy of it, so it cannot ask for it.
+  const declare = page.getByRole('dialog', { name: 'Alice ADMIN' });
+  await expect(declare.getByText(/le code caissier est vérifié par le serveur/)).toBeVisible();
+  await expect(declare.getByLabel('Code caissier (4 chiffres)')).toHaveCount(0);
+  await declare.getByRole('button', { name: 'Continuer' }).click();
+  await expect(declare).toBeHidden();
   await sellOne(page);
 
   await context.setOffline(false);
   await expect.poll(() => lastCashier(device), { timeout: 30_000 }).toBe('Alice');
+  // Said so in the journal: declared, not checked, and flagged for the administrators.
+  const [entry] = await query<{ check: string }>(
+    `select a.after ->> 'cashierCheck' as check from app.audit_log a
+     where a.action = 'sale.create' order by a.at desc limit 1`,
+  );
+  expect(entry!.check).toBe('DECLARED');
   // The ticket of Alice, received, restricts Carl's session to the till.
   await expect
     .poll(async () => {
@@ -180,4 +185,46 @@ test('without the code required, one touch is enough, and the journal says « no
      where a.action = 'sale.create' order by a.at desc limit 1`,
   );
   expect(entry!.check).toBe('DECLARED');
+});
+
+test('a wrong code is refused by the server, the right one gives a verified ticket', async ({
+  page,
+}) => {
+  const device = till(5);
+  await startTill(page, device);
+  await takeTillWithNewCode(page, '4815');
+  // Carl takes the till back, then Alice comes again with her code.
+  await page.getByRole('button', { name: /Alice ADMIN · poste de Carl CAISSE/ }).click();
+  await page
+    .getByRole('dialog', { name: 'Qui encaisse ?' })
+    .getByRole('button', { name: /Carl CAISSE/ })
+    .click();
+  await page.getByLabel('Mot de passe de Carl CAISSE').fill(USERS.cashier.password);
+  await page.getByRole('button', { name: 'Revenir à mon compte' }).click();
+  await expect(page.getByRole('button', { name: 'Carl CAISSE', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Changer de caissier' }).click();
+  await page
+    .getByRole('dialog', { name: 'Qui encaisse ?' })
+    .getByRole('button', { name: /Alice ADMIN/ })
+    .click();
+  const pinDialog = page.getByRole('dialog', { name: 'Alice ADMIN' });
+  await pinDialog.getByLabel('Code caissier (4 chiffres)').fill('1111');
+  await pinDialog.getByRole('button', { name: 'Valider' }).click();
+  await expect(pinDialog.getByText('Code caissier incorrect.')).toBeVisible();
+  await pinDialog.getByLabel('Code caissier (4 chiffres)').fill('4815');
+  await pinDialog.getByRole('button', { name: 'Valider' }).click();
+  await expect(pinDialog).toBeHidden();
+  await sellOne(page);
+  await expect.poll(() => lastCashier(device)).toBe('Alice');
+  const [entry] = await query<{ check: string }>(
+    `select a.after ->> 'cashierCheck' as check from app.audit_log a
+     where a.action = 'sale.create' order by a.at desc limit 1`,
+  );
+  expect(entry!.check).toBe('PIN');
+  // The proof of the server was issued for that check (and the count of wrong codes started again).
+  const proofs = await query<{ n: number }>(
+    `select count(*)::int as n from app.till_cashier_proof`,
+  );
+  expect(proofs[0]!.n).toBeGreaterThan(0);
 });

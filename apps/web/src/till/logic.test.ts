@@ -194,6 +194,8 @@ describe('cashierStep (R-SES-07)', () => {
   const base = { holderId: 'a', activeId: 'a', pinRequired: true, hasPin: true, online: true };
   it('asks the code of another cashier, or to choose one, or flags them offline', () => {
     expect(cashierStep({ ...base, chosenId: 'b' })).toBe('pin');
+    // The code is checked by the server only: offline, even a cashier who has one is only declared.
+    expect(cashierStep({ ...base, chosenId: 'b', online: false })).toBe('declare');
     expect(cashierStep({ ...base, chosenId: 'b', hasPin: false })).toBe('create');
     expect(cashierStep({ ...base, chosenId: 'b', hasPin: false, online: false })).toBe('declare');
     expect(cashierStep({ ...base, chosenId: 'b', pinRequired: false })).toBe('done');
@@ -201,5 +203,40 @@ describe('cashierStep (R-SES-07)', () => {
   it('asks the password of the person signed in to take the till back, nothing if they keep it', () => {
     expect(cashierStep({ ...base, chosenId: 'a', activeId: 'b' })).toBe('unlock');
     expect(cashierStep({ ...base, chosenId: 'a' })).toBe('done');
+  });
+});
+
+describe('the proof of the cashier code travels with the ticket (R-SES-07)', () => {
+  const args = (extra: object = {}) =>
+    ({
+      id: 't1',
+      deviceSeq: 1,
+      draft: {
+        id: 't1',
+        memberId: null,
+        lines: addProduct([], product({ salePrice: '1.00' }), 1000),
+        parked: false,
+        createdAt: '',
+        updatedAt: '',
+      },
+      sessionId: 's',
+      cashierId: 'b',
+      provisionalNumber: 'X-1',
+      payments: [],
+      emailReceipt: false,
+      overdraftForcedBy: null,
+      now: new Date('2026-10-03T10:00:00Z'),
+      ...extra,
+    }) as Parameters<typeof saleOp>[0];
+  const payload = (op: ReturnType<typeof saleOp>) =>
+    (op as { payload: Record<string, unknown> }).payload;
+
+  it('is sent when the server gave one, and only then', () => {
+    expect(payload(saleOp(args({ cashierCheck: 'PIN', cashierProof: 'proof-1' })))).toMatchObject({
+      cashierCheck: 'PIN',
+      cashierProof: 'proof-1',
+    });
+    expect('cashierProof' in payload(saleOp(args({ cashierCheck: 'DECLARED' })))).toBe(false);
+    expect(payload(saleOp(args()))).toMatchObject({ cashierCheck: 'SESSION' });
   });
 });

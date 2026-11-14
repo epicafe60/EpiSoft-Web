@@ -1,16 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import {
-  formatQty,
-  parseQtyToMilli,
-  PRODUCT_STATUS_LABELS,
-  supplierSchema,
-  type SupplierInput,
-} from '@episoft/shared';
+import { formatQty, parseQtyToMilli, PRODUCT_STATUS_LABELS, supplierSchema } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { useSavedNotice, type SavedNotice } from '@/lib/saved-notice';
 import { euro, formatDate } from '@/lib/format';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';
@@ -20,6 +15,14 @@ import type { Commune } from '@/lib/types';
 import { ORDER_STATUS_LABELS, type SupplierDetail, type SupplierRow } from '@/lib/types-supplies';
 import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
+import {
+  EMPTY_SUPPLIER_FORM as EMPTY,
+  supplierPayload,
+  supplierToForm as toForm,
+  type SupplierFormState as FormState,
+} from './supplier-payload';
+
+const NEW_TOWN = '__new__';
 
 const SUPPLIER_SORT = {
   code: (s: SupplierRow) => s.code,
@@ -126,60 +129,12 @@ export function SuppliersPage() {
   );
 }
 
-const EMPTY: Required<Omit<SupplierInput, 'code' | 'region'>> & { code: string; region: string } = {
-  code: '',
-  region: '',
-  name: '',
-  contact: '',
-  street: '',
-  postcode: '',
-  communeId: null,
-  phone: '',
-  email: '',
-  website: '',
-  priceListUrl: '',
-  active: true,
-  publicNotes: '',
-  privateNotes: '',
-  referentMemberId: null,
-  sendsPo: true,
-  accountNumber: '',
-  minOrderAmount: null,
-  paymentTermsDays: 30,
-  deliveryDay: '',
-};
-type FormState = typeof EMPTY;
-
-function toForm(s: SupplierDetail): FormState {
-  return {
-    code: s.code,
-    region: s.code.slice(0, 2),
-    name: s.name,
-    contact: s.contact ?? '',
-    street: s.street ?? '',
-    postcode: s.postcode ?? '',
-    communeId: s.communeId,
-    phone: s.phone ?? '',
-    email: s.email ?? '',
-    website: s.website ?? '',
-    priceListUrl: s.priceListUrl ?? '',
-    active: s.active,
-    publicNotes: s.publicNotes ?? '',
-    privateNotes: s.privateNotes ?? '',
-    referentMemberId: s.referentMemberId,
-    sendsPo: s.sendsPo,
-    accountNumber: s.accountNumber ?? '',
-    minOrderAmount: s.minOrderAmount,
-    paymentTermsDays: s.paymentTermsDays,
-    deliveryDay: s.deliveryDay ?? '',
-  };
-}
-
 export function NewSupplierPage() {
   return <SupplierForm supplier={null} />;
 }
 
 export function SupplierPage() {
+  const notice = useSavedNotice();
   const { id } = useParams({ from: '/app/appros/fournisseurs/$id' });
   const { data, error } = useQuery({
     queryKey: ['supplier', id],
@@ -187,11 +142,17 @@ export function SupplierPage() {
   });
   if (error) return <QueryError error={error} />;
   if (!data) return <p className="text-muted-foreground">Chargement…</p>;
-  return <SupplierForm key={data.updatedAt} supplier={data} />;
+  return <SupplierForm key={data.updatedAt} supplier={data} notice={notice} />;
 }
 
 /** R-FNR-01/02 (only the name is required) and R-FNR-03 (products, orders, invoices). */
-function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
+function SupplierForm({
+  supplier,
+  notice,
+}: {
+  supplier: SupplierDetail | null;
+  notice?: SavedNotice;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [f, setF] = useState<FormState>(supplier ? toForm(supplier) : EMPTY);
@@ -201,21 +162,25 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
     queryFn: () => api.get<Commune[]>('/communes'),
     staleTime: Infinity,
   });
+  const [newTown, setNewTown] = useState<string | null>(null);
+  const communeChoices = useMemo(
+    () =>
+      (communes.data ?? []).filter(
+        (c) =>
+          !/^\d{5}$/.test(f.postcode ?? '') || c.postcode === f.postcode || c.id === f.communeId,
+      ),
+    [communes.data, f.postcode, f.communeId],
+  );
+  const addTown = useMutation({
+    mutationFn: () => api.post<Commune>('/communes', { postcode: f.postcode, name: newTown ?? '' }),
+    onSuccess: async (c) => {
+      await queryClient.invalidateQueries({ queryKey: ['communes'] });
+      setNewTown(null);
+      set('communeId', c.id);
+    },
+  });
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((x) => ({ ...x, [k]: v }));
-  const payload = () => {
-    const { code, region, ...rest } = f;
-    return {
-      ...rest,
-      minOrderAmount: f.minOrderAmount || null,
-      ...(supplier
-        ? code !== supplier.code
-          ? { code }
-          : {}
-        : code
-          ? { code }
-          : { region: region || '99' }),
-    };
-  };
+  const payload = () => supplierPayload(f, supplier);
   const save = useMutation({
     mutationFn: () =>
       supplier
@@ -225,6 +190,7 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
           })
         : api.post<{ id: string }>('/suppliers', payload()),
     onSuccess: async (r) => {
+      notice?.mark();
       await queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       await queryClient.invalidateQueries({ queryKey: ['supplier', r.id] });
       if (!supplier) void navigate({ to: '/appros/fournisseurs/$id', params: { id: r.id } });
@@ -285,22 +251,54 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
             {text('street', 'Adresse')}
             <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
               {text('postcode', 'Code postal', { inputMode: 'numeric', maxLength: 5 })}
-              <Field label="Commune">
+              <Field label="Commune" error={errors.communeId}>
                 {(p) => (
                   <Select
                     {...p}
-                    value={f.communeId ?? ''}
-                    onChange={(e) => set('communeId', e.target.value || null)}
+                    value={newTown ? NEW_TOWN : (f.communeId ?? '')}
+                    onChange={(e) => {
+                      if (e.target.value === NEW_TOWN) {
+                        setNewTown('');
+                        set('communeId', null);
+                      } else {
+                        setNewTown(null);
+                        set('communeId', e.target.value || null);
+                      }
+                    }}
                   >
                     <option value="">—</option>
-                    {(communes.data ?? []).map((c) => (
+                    {communeChoices.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} ({c.postcode})
                       </option>
                     ))}
+                    <option value={NEW_TOWN}>Autre commune…</option>
                   </Select>
                 )}
               </Field>
+              {newTown !== null ? (
+                <div className="grid gap-2 sm:col-span-2">
+                  <Field label="Nom de la nouvelle commune" error={addTown.error?.message}>
+                    {(p) => (
+                      <Input {...p} value={newTown} onChange={(e) => setNewTown(e.target.value)} />
+                    )}
+                  </Field>
+                  <p className="text-xs text-muted-foreground">
+                    Saisissez d’abord le code postal ci-dessus : la commune est ajoutée à la liste
+                    avec ce code.
+                  </p>
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={addTown.isPending || !newTown.trim()}
+                      onClick={() => addTown.mutate()}
+                    >
+                      Ajouter la commune
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               {text('minOrderAmount', 'Minimum de commande (€ HT)', { inputMode: 'decimal' })}
@@ -364,7 +362,7 @@ function SupplierForm({ supplier }: { supplier: SupplierDetail | null }) {
           </CardContent>
         </Card>
         {save.error && !Object.keys(errors).length ? <Alert>{save.error.message}</Alert> : null}
-        {save.isSuccess && supplier ? <Alert variant="success">Fiche enregistrée.</Alert> : null}
+        {notice?.saved && supplier ? <Alert variant="success">Fiche enregistrée.</Alert> : null}
         <div className="flex gap-3">
           <Button type="submit" disabled={save.isPending}>
             {supplier ? 'Enregistrer' : 'Créer le fournisseur'}

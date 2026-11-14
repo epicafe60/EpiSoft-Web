@@ -1,0 +1,6 @@
+-- Audit KV2, C01: the database refuses change that is negative, above the cash given, or paid into
+-- the cagnotte on a payment that is not cash. NOT VALID: rows already there are not re-checked (a
+-- migrated history must not block the update); every new row is. `VALIDATE CONSTRAINT` checks the old ones.
+ALTER TABLE "app"."sale_payment" ADD CONSTRAINT "sale_payment_change_not_negative" CHECK ("app"."sale_payment"."change" is null or "app"."sale_payment"."change" >= 0) NOT VALID;--> statement-breakpoint
+ALTER TABLE "app"."sale_payment" ADD CONSTRAINT "sale_payment_change_within_cash" CHECK ("app"."sale_payment"."change" is null or "app"."sale_payment"."tendered" is null or "app"."sale_payment"."change" <= "app"."sale_payment"."tendered" - "app"."sale_payment"."amount") NOT VALID;--> statement-breakpoint
+ALTER TABLE "app"."sale_payment" ADD CONSTRAINT "sale_payment_change_to_wallet_is_cash" CHECK (not "app"."sale_payment"."change_to_wallet" or "app"."sale_payment"."method" = 'CASH') NOT VALID;

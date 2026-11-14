@@ -14,6 +14,7 @@ import {
   type MemberStatus,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { useSavedNotice, type SavedNotice } from '@/lib/saved-notice';
 import { useMe } from '@/lib/auth';
 import { euro } from '@/lib/format';
 import { formatDateTime } from '@/lib/utils';
@@ -26,66 +27,19 @@ import { PageHeader } from '../shell';
 import { QueryError } from '../errors';
 import { BadgeDialog } from './badge';
 import { HouseholdPicker } from './household-picker';
-
-interface FormState {
-  lastName: string;
-  firstName: string;
-  street: string;
-  postcode: string;
-  communeId: string;
-  phone: string;
-  email: string;
-  status: MemberStatus;
-  publicVisible: boolean;
-  newsletter: boolean;
-  ticketEmailOptOut: boolean;
-  imageConsent: boolean;
-  username: string;
-}
-
-const EMPTY: FormState = {
-  lastName: '',
-  firstName: '',
-  street: '',
-  postcode: '',
-  communeId: '',
-  phone: '',
-  email: '',
-  status: 'NEW',
-  publicVisible: false,
-  newsletter: false,
-  ticketEmailOptOut: false,
-  imageConsent: false,
-  username: '',
-};
-
-function toForm(m: MemberDetail): FormState {
-  return {
-    lastName: m.lastName,
-    firstName: m.firstName,
-    street: m.street ?? '',
-    postcode: m.postcode ?? '',
-    communeId: m.communeId ?? '',
-    phone: m.phone ?? '',
-    email: m.email ?? '',
-    status: m.status,
-    publicVisible: m.publicVisible,
-    newsletter: m.newsletter,
-    ticketEmailOptOut: m.ticketEmailOptOut,
-    imageConsent: m.imageConsent,
-    username: m.username ?? '',
-  };
-}
-
-function toPayload(f: FormState) {
-  return { ...f, communeId: f.communeId || null };
-}
+import {
+  EMPTY_MEMBER_FORM as EMPTY,
+  memberToForm as toForm,
+  memberToPayload as toPayload,
+  type MemberFormState as FormState,
+} from './member-payload';
 
 export function NewMemberPage() {
   return <MemberForm member={null} />;
 }
 
 export function EditMemberPage() {
+  const notice = useSavedNotice();
   const { id } = useParams({ from: '/app/membres/$id' });
   const { data, error, isPending } = useQuery({
     queryKey: ['member', id],
@@ -93,10 +47,10 @@ export function EditMemberPage() {
   });
   if (isPending) return <p className="text-muted-foreground">Chargement…</p>;
   if (error) return <QueryError error={error} />;
-  return <MemberForm key={data.updatedAt} member={data} />;
+  return <MemberForm key={data.updatedAt} member={data} notice={notice} />;
 }
 
-function MemberForm({ member }: { member: MemberDetail | null }) {
+function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: SavedNotice }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const me = useMe();
@@ -143,6 +97,7 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
       });
     },
     onSuccess: async (res) => {
+      notice?.mark();
       await queryClient.invalidateQueries({ queryKey: ['members'] });
       await queryClient.invalidateQueries({ queryKey: ['member', res.id] });
       if (!member) {
@@ -480,7 +435,7 @@ function MemberForm({ member }: { member: MemberDetail | null }) {
           </Card>
 
           {save.error && !Object.keys(errors).length ? <Alert>{save.error.message}</Alert> : null}
-          {save.isSuccess && member ? <Alert variant="success">Fiche enregistrée.</Alert> : null}
+          {notice?.saved && member ? <Alert variant="success">Fiche enregistrée.</Alert> : null}
           <div className="flex gap-3">
             <Button type="submit" disabled={save.isPending}>
               {member ? 'Enregistrer' : 'Créer le membre'}

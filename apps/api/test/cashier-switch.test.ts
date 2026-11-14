@@ -9,6 +9,8 @@ import {
   member,
   sale,
   setting,
+  tillCashierProof,
+  tillPinAttempt,
   userRole,
   walletEntry,
 } from '@episoft/db';
@@ -30,7 +32,7 @@ afterAll(() => t.close());
 beforeEach(async () => {
   till = await openTill(t);
   b = await createUser(t.db, { roles: ['CAISSE'] });
-  resetPinFailures();
+  await resetPinFailures(t.db);
 });
 
 const call = (
@@ -49,12 +51,29 @@ const requirePin = (on: boolean) =>
     .values({ key: 'pos.cashierSwitch', value: { requirePin: on } })
     .onConflictDoUpdate({ target: setting.key, set: { value: { requirePin: on } } });
 
-/** A sale of 1 € in cash, kept by the given cashier. */
-async function saleBy(cashierId: string, cashierCheck?: 'PIN' | 'DECLARED') {
+/** The proof the server gives when it has checked the code of the cashier for the till's holder. */
+async function proofFor(cashierId: string, holderId = till.cashierId) {
+  const [p] = await t.db
+    .insert(tillCashierProof)
+    .values({ holderId, cashierId })
+    .returning({ id: tillCashierProof.id });
+  return p!.id;
+}
+
+/**
+ * A sale of 1 € in cash, kept by the given cashier. « PIN » comes with a proof the server issued;
+ * « CLAIMED » is a till that only claims the code was typed, with no proof.
+ */
+async function saleBy(cashierId: string, how?: 'PIN' | 'DECLARED' | 'CLAIMED', proof?: string) {
   const p = await addProduct(t.db, { stockQty: '10' });
   const op = till.saleOp([{ productId: p.id, unitPrice: '1.00' }], '1.00');
   if (op.kind !== 'SALE') throw new Error('sale expected');
-  const withCashier: SyncOp = { ...op, payload: { ...op.payload, cashierId, cashierCheck } };
+  const cashierProof = how === 'PIN' ? (proof ?? (await proofFor(cashierId))) : undefined;
+  const cashierCheck = how === 'DECLARED' ? 'DECLARED' : how ? 'PIN' : undefined;
+  const withCashier: SyncOp = {
+    ...op,
+    payload: { ...op.payload, cashierId, cashierCheck, cashierProof },
+  };
   const [r] = await till.push([withCashier]);
   return { r: r!, saleId: op.id };
 }
@@ -74,13 +93,18 @@ describe('the cashier code', () => {
     expect((await setPin('4815', PASSWORD, other.id)).statusCode).toBe(403);
   });
 
-  it('reaches the tills hashed, for the cashiers only, and is never shown nor exported', async () => {
+  it('never reaches the tills, not even hashed: they only learn that a cashier has one', async () => {
     expect((await setPin()).statusCode).toBe(204);
-    const snap = (await call('GET', '/sync/snapshot')).json();
+    const res = await call('GET', '/sync/snapshot');
+    const snap = res.json();
     const mine = snap.members.find((m: { id: string }) => m.id === b.id);
-    expect(mine.tillPin).toMatchObject({ hash: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(mine.hasTillPin).toBe(true);
+    expect(mine.tillPin).toBeUndefined();
+    const [stored] = await t.db.select().from(member).where(eq(member.id, b.id));
+    expect(res.body).not.toContain(stored!.tillPasswordHash!);
+    expect(res.body).not.toContain(stored!.tillPasswordSalt!);
     const plain = snap.members.find((m: { id: string; isCashier: boolean }) => !m.isCashier);
-    expect(plain?.tillPin ?? null).toBeNull();
+    expect(plain?.hasTillPin ?? false).toBe(false);
     expect(snap.settings.cashierPinRequired).toBe(true);
 
     const card = (await call('GET', `/members/${b.id}`, undefined, till.admin)).json();
@@ -208,9 +232,9 @@ describe('choosing the cashier at the till (online)', () => {
     }
     const blocked = await call('POST', '/pos/cashier', { cashierId: b.id, pin: '4815' });
     expect(blocked.json().code).toBe('PIN_LOCKED');
-    resetPinFailures();
+    await resetPinFailures(t.db);
     const ok = await call('POST', '/pos/cashier', { cashierId: b.id, pin: '4815' });
-    expect(ok.json()).toEqual({ cashierId: b.id, check: 'PIN' });
+    expect(ok.json()).toMatchObject({ cashierId: b.id, check: 'PIN', proof: expect.any(String) });
     expect((await call('GET', '/me')).json().tillCashierId).toBe(b.id);
     // Back to oneself: only with the password.
     expect((await call('POST', '/pos/cashier', { cashierId: till.cashierId })).statusCode).toBe(
@@ -344,11 +368,91 @@ describe('what a made-up cashier cannot do (review of the cashier switch)', () =
     expect(ok.statusCode).toBe(200);
   });
 
+  it('F1: guessing a cashier’s code beyond the ceiling is reported in « À surveiller »', async () => {
+    expect((await setPin()).statusCode).toBe(204);
+    // Twenty wrong codes in a few minutes, from several accounts: the count is per cashier.
+    await t.db.execute(
+      sql`insert into app.till_pin_attempt (id, cashier_id, holder_id, at)
+          select gen_random_uuid(), ${b.id}, null, now() from generate_series(1, 20)`,
+    );
+    const blocked = await call('POST', '/pos/cashier', { cashierId: b.id, pin: '4815' });
+    expect(blocked.json().code).toBe('PIN_LOCKED');
+    const admin = await login(t.app, (await createUser(t.db, { roles: ['ADMIN'] })).username!);
+    const items = (await call('GET', '/admin/attention', undefined, admin)).json() as {
+      code: string;
+      count: number;
+    }[];
+    expect(items.find((i) => i.code === 'PIN_GUESSING')?.count).toBeGreaterThanOrEqual(20);
+  });
+
   it('starts the count of failures again after a right password', async () => {
     for (let i = 0; i < 4; i++) await call('POST', '/auth/unlock', { password: `faux ${i}` });
     expect((await call('POST', '/auth/unlock', { password: PASSWORD })).statusCode).toBe(204);
     // One more wrong password is the first of a new series, not the fifth.
     await call('POST', '/auth/unlock', { password: 'faux encore' });
     expect((await call('POST', '/auth/unlock', { password: PASSWORD })).statusCode).toBe(204);
+  });
+});
+
+describe('« code vérifié » rests on a proof of the server, never on the claim of a till', () => {
+  const codes = (r: { warnings: { code: string }[] }) => r.warnings.map((w) => w.code);
+
+  it('a right code gives a proof, a wrong one does not', async () => {
+    expect((await setPin()).statusCode).toBe(204);
+    const wrong = await call('POST', '/pos/cashier', { cashierId: b.id, pin: '9999' });
+    expect(wrong.json().proof).toBeUndefined();
+    const ok = (await call('POST', '/pos/cashier', { cashierId: b.id, pin: '4815' })).json();
+    const [row] = await t.db
+      .select()
+      .from(tillCashierProof)
+      .where(eq(tillCashierProof.id, ok.proof));
+    expect(row).toMatchObject({ holderId: till.cashierId, cashierId: b.id });
+  });
+
+  it('a ticket that claims the code with no proof is only declared, and flagged', async () => {
+    const { r, saleId } = await saleBy(b.id, 'CLAIMED');
+    expect(codes(r)).toContain('CASHIER_UNCHECKED');
+    const [entry] = await t.db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityId, saleId), eq(auditLog.action, 'sale.create')));
+    expect((entry!.after as { cashierCheck: string }).cashierCheck).toBe('DECLARED');
+  });
+
+  it('a ticket with a proof is « code vérifié »; an invented proof is not', async () => {
+    expect(codes((await saleBy(b.id, 'PIN')).r)).not.toContain('CASHIER_UNCHECKED');
+    expect(codes((await saleBy(b.id, 'PIN', randomUUID())).r)).toContain('CASHIER_UNCHECKED');
+  });
+
+  it('a proof is only good for the cashier and the person it was issued for', async () => {
+    const c = await createUser(t.db, { roles: ['CAISSE'] });
+    const forC = await proofFor(c.id);
+    expect(codes((await saleBy(b.id, 'PIN', forC)).r)).toContain('CASHIER_UNCHECKED');
+    const otherHolder = await createUser(t.db, { roles: ['CAISSE'] });
+    const forOther = await proofFor(b.id, otherHolder.id);
+    expect(codes((await saleBy(b.id, 'PIN', forOther)).r)).toContain('CASHIER_UNCHECKED');
+  });
+
+  it('a proof does not last for ever', async () => {
+    const old = await proofFor(b.id);
+    await t.db.execute(
+      sql`update app.till_cashier_proof set issued_at = now() - interval '40 hours' where id = ${old}`,
+    );
+    expect(codes((await saleBy(b.id, 'PIN', old)).r)).toContain('CASHIER_UNCHECKED');
+  });
+
+  it('wrong codes are counted in the database; a guess spread over accounts is stopped too', async () => {
+    expect((await setPin()).statusCode).toBe(204);
+    for (let i = 0; i < 3; i++)
+      await call('POST', '/pos/cashier', { cashierId: b.id, pin: '9999' });
+    const rows = await t.db.select().from(tillPinAttempt).where(eq(tillPinAttempt.cashierId, b.id));
+    expect(rows).toHaveLength(3);
+    // Twenty wrong codes in a quarter of an hour, whoever typed them: the code is refused.
+    const spread = await createUser(t.db, { roles: ['CAISSE'] });
+    await t.db
+      .insert(tillPinAttempt)
+      .values(Array.from({ length: 20 }, () => ({ cashierId: b.id, holderId: spread.id })));
+    const blocked = await call('POST', '/pos/cashier', { cashierId: b.id, pin: '4815' });
+    expect(blocked.json().code).toBe('PIN_LOCKED');
   });
 });

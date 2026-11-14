@@ -9,6 +9,8 @@ import { SEED } from '../seed';
 test('« À surveiller » shows a refused ticket, which can be put aside from the Surveillance page', async ({
   page,
 }) => {
+  // Other scenarios leave refused entries in the error log (« Saisie refusée ») : start clean.
+  await query(`delete from app.error_log`);
   await query(
     `insert into app.sync_rejection (id, op_id, kind, payload, reason)
      values (gen_random_uuid(), 'e2e-op-1', 'SALE',

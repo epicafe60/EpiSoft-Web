@@ -706,7 +706,7 @@ L'écran de caisse est composé de quatre zones :
 - **R-SES-05 [nouveau]** Une seule session est ouverte à la fois : un tiroir, une clôture. Un poste qui arrive trouve la session ouverte et la rejoint sans rien demander ; un poste qui en ouvre une hors ligne y est rattaché à l'arrivée de ses opérations (l'identifiant qu'il avait généré devient un alias, son fond de caisse est ignoré, aucune vente n'est perdue). Le poste est déclaré automatiquement, sans nom à saisir. La session d'un jour précédent doit être clôturée avant de vendre (en ligne) ; hors ligne, la vente est conservée et signalée à son arrivée.
 - **R-SES-07 [nouveau]** Changement de caissier sans déconnexion (ADR 0011).
   - On touche son nom dans « Qui encaisse ? » ; l'écran d'encaissement rappelle « Encaissé par ».
-  - Le réglage « Code caissier exigé » (activé par défaut) demande un code personnel de 4 chiffres, choisi avec le mot de passe EpiSoft. Hors ligne, le poste le vérifie avec une copie hachée.
+  - Le réglage « Code caissier exigé » (activé par défaut) demande un code personnel de 4 chiffres, choisi avec le mot de passe EpiSoft. Il est vérifié par le serveur seul (le poste n'en garde aucune copie) ; hors ligne, le caissier est seulement déclaré et le ticket est signalé « caissier non vérifié ».
   - Le code ne permet jamais de se connecter. Un administrateur efface un code oublié.
   - Un caissier sans code encore, ou un code non exigé : il est **déclaré**, et le ticket est signalé « caissier non vérifié » quand le code est exigé. La vente n'est jamais bloquée.
   - Le journal enregistre le caissier comme auteur, la session d'origine (« poste ouvert par ») et le niveau de preuve (code vérifié, déclaré).

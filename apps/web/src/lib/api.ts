@@ -62,6 +62,36 @@ async function upload<T>(path: string, file: Blob): Promise<T> {
   return data as T;
 }
 
+/** A file made by the server from a JSON body (the Excel export of a list), with its name. */
+async function postForFile(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1${path}`, {
+      method: 'POST',
+      headers: { [CSRF_HEADER]: '1', 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError({
+      type: 'about:blank',
+      title: 'Hors ligne',
+      status: 0,
+      detail: 'Le serveur est injoignable. Vérifiez la connexion réseau.',
+    });
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(
+      data && typeof data === 'object' && 'status' in data
+        ? (data as Problem)
+        : { type: 'about:blank', title: 'Erreur', status: res.status, detail: res.statusText },
+    );
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1];
+  return { blob: await res.blob(), filename: name ?? 'export.xlsx' };
+}
+
 /** Raw file sent with POST (bank statements), the name travels in a header. */
 async function postFile<T>(path: string, file: File): Promise<T> {
   const res = await fetch(`/api/v1${path}`, {
@@ -91,4 +121,5 @@ export const api = {
   /** Raw body upload (images). */
   upload: <T = void>(path: string, file: Blob) => upload<T>(path, file),
   postFile: <T = void>(path: string, file: File) => postFile<T>(path, file),
+  postForFile: (path: string, body: unknown) => postForFile(path, body),
 };

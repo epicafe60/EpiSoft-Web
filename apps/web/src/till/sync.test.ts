@@ -73,7 +73,7 @@ describe('SyncEngine online state', () => {
     const engine = new SyncEngine(db);
     // The answer arrives, but the browser has gone offline in the meantime.
     vi.stubGlobal('navigator', { onLine: false });
-    get.mockResolvedValueOnce(snapshot);
+    get.mockImplementation(async () => snapshot); // every refresh, even a late one from an earlier test
     expect(await engine.refresh()).toBe(true);
     let online: boolean | null = null;
     engine.subscribe((s) => (online = s.online));
@@ -84,7 +84,7 @@ describe('SyncEngine online state', () => {
     const db = new TillDb(`online-${Math.random()}`);
     const engine = new SyncEngine(db);
     vi.stubGlobal('navigator', { onLine: true });
-    get.mockResolvedValueOnce(snapshot);
+    get.mockImplementation(async () => snapshot); // every refresh, even a late one from an earlier test
     await engine.refresh();
     let online: boolean | null = null;
     engine.subscribe((s) => (online = s.online));

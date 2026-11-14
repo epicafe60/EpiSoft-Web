@@ -84,6 +84,7 @@ export function saleOp(args: {
   cashierId: string;
   /** R-SES-07: how the cashier was established (the person signed in when absent). */
   cashierCheck?: CashierCheck;
+  cashierProof?: string;
   provisionalNumber: string;
   payments: PaymentDraft[];
   emailReceipt: boolean;
@@ -99,6 +100,7 @@ export function saleOp(args: {
       sessionId: args.sessionId,
       cashierId: args.cashierId,
       cashierCheck: args.cashierCheck ?? 'SESSION',
+      ...(args.cashierProof ? { cashierProof: args.cashierProof } : {}),
       memberId: draft.memberId,
       preorderId: draft.preorderId ?? null,
       soldAt: args.now.toISOString(),
@@ -186,6 +188,7 @@ export function cashierStep(a: {
 }): CashierStep {
   if (a.chosenId === a.holderId) return a.activeId === a.holderId ? 'done' : 'unlock';
   if (!a.pinRequired) return 'done';
-  if (a.hasPin) return 'pin';
-  return a.online ? 'create' : 'declare';
+  // The code is checked by the server only: without the network, the cashier is only declared.
+  if (!a.online) return 'declare';
+  return a.hasPin ? 'pin' : 'create';
 }

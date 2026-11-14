@@ -32,7 +32,8 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { badRequest, conflict, notFound } from '../../lib/problem';
+import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
+import { unsyncedTills } from '../pos/device-contact';
 import { recordMovement } from './ledger';
 import { stockValuation } from './valuation';
 
@@ -650,6 +651,19 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .for('update');
         if (!s) throw notFound('Inventaire introuvable.');
         if (s.status !== 'OPEN') throw conflict('Cet inventaire est déjà clos.');
+        // C04: a till that may still hold sales (silent for a while, or announcing some) has to be
+        // confirmed by the person validating: its sales would arrive after the count.
+        if (!req.body.confirmUnsyncedTills) {
+          const late = await unsyncedTills(tx);
+          if (late.length)
+            throw new HttpProblem(
+              409,
+              'Postes pas à jour',
+              `Des ventes peuvent encore être en attente sur : ${late.map((d) => d.name).join(', ')}. Vérifiez que ces postes sont connectés, ou validez en connaissance de cause.`,
+              undefined,
+              'TILLS_NOT_SYNCED',
+            );
+        }
         const now = new Date();
         const lines = await tx
           .select()
