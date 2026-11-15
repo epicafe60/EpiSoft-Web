@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, ne, sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -120,6 +120,101 @@ async function writeLines(
   await recomputeTotals(tx, orderId);
 }
 
+/**
+ * « Quantité dernière commande »: for each product, the quantity of the most recent order of this
+ * supplier that contained it (by order date, then creation), leaving out the current order and
+ * the cancelled ones. Products never ordered before are absent from the map.
+ */
+export async function lastOrderedQty(
+  db: Db | Tx,
+  supplierId: string,
+  exceptOrderId: string,
+  productIds: string[],
+) {
+  const last = new Map<string, string>();
+  if (!productIds.length) return last;
+  const rows = await db
+    .select({ productId: purchaseOrderLine.productId, qty: purchaseOrderLine.qtyOrdered })
+    .from(purchaseOrderLine)
+    .innerJoin(purchaseOrder, eq(purchaseOrder.id, purchaseOrderLine.orderId))
+    .where(
+      and(
+        eq(purchaseOrder.supplierId, supplierId),
+        ne(purchaseOrder.id, exceptOrderId),
+        ne(purchaseOrder.status, 'CANCELLED'),
+        inArray(purchaseOrderLine.productId, productIds),
+      ),
+    )
+    .orderBy(
+      desc(purchaseOrder.date),
+      desc(purchaseOrder.createdAt),
+      desc(purchaseOrderLine.lineNo),
+    );
+  for (const r of rows) if (!last.has(r.productId)) last.set(r.productId, r.qty);
+  return last;
+}
+
+/**
+ * The purchase price typed in an order is the product's: when it differs from the product sheet,
+ * the sheet follows (price history, audit with before/after). Only the price excluding VAT is
+ * carried over; VAT and TTC amounts are keyed in on the product sheet.
+ */
+/**
+ * A new PA HT typed on an order or a receipt: the VAT amount and the PA TTC of the sheet follow,
+ * at the rate of the product, so that the three amounts stay consistent (R-PRD-04).
+ */
+function purchaseAmountsFor(unitPriceExcl: string, vatRate: string) {
+  const excl4 = parsePrice4(unitPriceExcl)!;
+  const incl4 = inclFromExcl4(excl4, vatRate);
+  return {
+    purchasePriceExcl: unitPriceExcl,
+    purchaseVatAmount: price4ToDecimal(incl4 - excl4),
+    purchasePriceIncl: price4ToDecimal(incl4),
+  };
+}
+
+async function propagatePurchasePrices(
+  tx: Tx,
+  req: Parameters<typeof audit>[1],
+  lines: { productId: string; qty: string; unitPriceExcl: string }[],
+) {
+  for (const l of lines) {
+    if (!(parseQtyToMilli(l.qty)! > 0)) continue;
+    const [p] = await tx.select().from(product).where(eq(product.id, l.productId));
+    if (!p) continue;
+    if (parsePrice4(l.unitPriceExcl) === parsePrice4(p.purchasePriceExcl ?? '0')) continue;
+    const [after] = await tx
+      .update(product)
+      .set(purchaseAmountsFor(l.unitPriceExcl, p.vatRate))
+      .where(eq(product.id, p.id))
+      .returning();
+    await tx.insert(priceHistory).values({
+      productId: p.id,
+      purchasePriceExcl: after!.purchasePriceExcl,
+      purchasePriceIncl: after!.purchasePriceIncl,
+      salePrice: after!.salePrice,
+      source: 'FORM',
+      by: req.user!.id,
+    });
+    await audit(tx, req, {
+      action: 'product.update',
+      entity: 'product',
+      entityId: p.id,
+      before: {
+        purchasePriceExcl: p.purchasePriceExcl,
+        purchaseVatAmount: p.purchaseVatAmount,
+        purchasePriceIncl: p.purchasePriceIncl,
+      },
+      after: {
+        purchasePriceExcl: after!.purchasePriceExcl,
+        purchaseVatAmount: after!.purchaseVatAmount,
+        purchasePriceIncl: after!.purchasePriceIncl,
+        name: p.name,
+      },
+    });
+  }
+}
+
 export async function orderDetail(db: Db | Tx, id: string) {
   const o = await db.query.purchaseOrder.findFirst({ where: eq(purchaseOrder.id, id) });
   if (!o) return null;
@@ -148,6 +243,12 @@ export async function orderDetail(db: Db | Tx, id: string) {
     .innerJoin(product, eq(product.id, purchaseOrderLine.productId))
     .where(eq(purchaseOrderLine.orderId, id))
     .orderBy(purchaseOrderLine.lineNo);
+  const last = await lastOrderedQty(
+    db,
+    o.supplierId,
+    o.id,
+    lines.map((l) => l.productId),
+  );
   const receipts = await db
     .select({
       id: goodsReceipt.id,
@@ -184,7 +285,11 @@ export async function orderDetail(db: Db | Tx, id: string) {
         unitPriceExcl4: parsePrice4(l.unitPriceExcl)!,
         vatRate: l.vatRate,
       });
-      return { ...l, totalExcl: centsToDecimal(t.exclCents) };
+      return {
+        ...l,
+        lastOrderedQty: last.get(l.productId) ?? null,
+        totalExcl: centsToDecimal(t.exclCents),
+      };
     }),
     // R-EVO-11: who keyed in the received quantities.
     receipts: receipts.map((r) => ({
@@ -359,12 +464,10 @@ export async function recordReceipt(
     const paChanged = excl !== parsePrice4(p.purchasePriceExcl ?? '0');
     const pvChanged = newSale !== undefined && newSale !== p.salePrice;
     if (paChanged || pvChanged) {
-      const incl = price4ToDecimal(inclFromExcl4(excl, p.vatRate));
       const [after] = await tx
         .update(product)
         .set({
-          purchasePriceExcl: l.unitPriceExcl,
-          purchasePriceIncl: incl,
+          ...purchaseAmountsFor(l.unitPriceExcl, p.vatRate),
           ...(pvChanged ? { salePrice: newSale, labelPending: true } : {}),
         })
         .where(eq(product.id, p.id))
@@ -489,38 +592,8 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           createdBy: req.user!.id,
         })
         .returning();
-      let lines = b.lines;
-      if (!lines) {
-        const prods = await tx
-          .select()
-          .from(product)
-          .where(
-            and(
-              eq(product.supplierId, s.id),
-              inArray(product.status, ['ACTIVE', 'ON_ORDER']),
-              eq(product.kind, 'GOODS'),
-            ),
-          )
-          .orderBy(asc(product.name));
-        // R-PRE-02: what customers have pre-ordered is added to the suggestion.
-        const reserved = await reservedByProduct(
-          tx,
-          prods.map((p) => p.id),
-        );
-        lines = prods
-          .map((p) => ({
-            productId: p.id,
-            qty: milliToDecimal(
-              suggestedOrderQtyMilli(
-                p.minStock === null ? null : parseQtyToMilli(p.minStock),
-                parseQtyToMilli(p.stockQty)!,
-                reserved.get(p.id) ?? 0,
-              ),
-            ),
-            unitPriceExcl: p.purchasePriceExcl ?? '0',
-          }))
-          .filter((l) => l.qty !== '0.000');
-      }
+      // « Qté Commande » starts at 0 on every reference: the draft has no line until one is typed.
+      const lines = b.lines ?? [];
       await writeLines(tx, o!.id, lines);
       await audit(tx, req, {
         action: 'order.create',
@@ -563,8 +636,15 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         db,
         prods.map((p) => p.id),
       );
+      const last = await lastOrderedQty(
+        db,
+        o.supplierId,
+        o.id,
+        prods.map((p) => p.id),
+      );
       return prods.map((p) => ({
         productId: p.id,
+        lastOrderedQty: last.get(p.id) ?? null,
         code: p.code,
         name: p.name,
         unit: p.unit,
@@ -596,14 +676,16 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .for('update');
         if (!o) throw notFound('Commande introuvable.');
         if (o.status !== 'DRAFT') throw conflict('Seule une commande en brouillon est modifiable.');
-        await tx
-          .update(purchaseOrder)
-          .set({
-            ...(req.body.date ? { date: req.body.date } : {}),
-            ...(req.body.comment !== undefined ? { comment: req.body.comment } : {}),
-          })
-          .where(eq(purchaseOrder.id, o.id));
+        if (req.body.date || req.body.comment !== undefined)
+          await tx
+            .update(purchaseOrder)
+            .set({
+              ...(req.body.date ? { date: req.body.date } : {}),
+              ...(req.body.comment !== undefined ? { comment: req.body.comment } : {}),
+            })
+            .where(eq(purchaseOrder.id, o.id));
         await writeLines(tx, o.id, req.body.lines);
+        await propagatePurchasePrices(tx, req, req.body.lines);
         await audit(tx, req, {
           action: 'order.update',
           entity: 'purchase_order',

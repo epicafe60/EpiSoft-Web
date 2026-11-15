@@ -26,12 +26,15 @@ import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/inputs';
 import { ProductPicker } from '@/components/product-picker';
 import { type OrderDetail } from '@/lib/types-supplies';
+import { orderLinesPayload } from './order-payload';
 
 interface EditLine {
   productId: string;
   code: string;
   name: string;
   qty: string;
+  /** « Quantité dernière commande »: information only. */
+  lastQty: string | null;
   unitPriceExcl: string;
   vatRate: string;
 }
@@ -47,6 +50,7 @@ interface SupplierProduct {
   purchasePriceExcl: string;
   vatRate: string;
   suggestedQty: string;
+  lastOrderedQty: string | null;
 }
 
 const trimPrice = (v: string) => (v.includes('.') ? v.replace(/0+$/, '').replace(/\.$/, '') : v);
@@ -112,6 +116,7 @@ export function DraftEditor({
       code: l.code,
       name: l.name,
       qty: formatQty(parseQtyToMilli(l.qtyOrdered)!),
+      lastQty: l.lastOrderedQty,
       unitPriceExcl: trimPrice(l.unitPriceExcl),
       vatRate: l.vatRate,
     }));
@@ -122,7 +127,8 @@ export function DraftEditor({
         productId: p.productId,
         code: p.code,
         name: p.name,
-        qty: '',
+        qty: '0',
+        lastQty: p.lastOrderedQty,
         unitPriceExcl: trimPrice(p.purchasePriceExcl),
         vatRate: p.vatRate,
       }));
@@ -130,18 +136,13 @@ export function DraftEditor({
     setComment(order.comment ?? '');
   }, [order, supplierProducts.data]);
   const save = useMutation({
-    mutationFn: () =>
-      api.put(`/purchase-orders/${order.id}`, {
-        comment,
-        // Lines left empty or at zero are not recorded (R-EVO-10).
-        lines: lines
-          .filter((l) => (parseQtyToMilli(l.qty || '0') ?? 0) > 0)
-          .map((l) => ({
-            productId: l.productId,
-            qty: l.qty,
-            unitPriceExcl: l.unitPriceExcl || '0',
-          })),
-      }),
+    mutationFn: () => {
+      // Lines left empty or at zero are not recorded (R-CMD-02, R-EVO-10). A PA HT changed here
+      // is carried over to the product sheet when saving.
+      const payload = orderLinesPayload(lines);
+      if (!payload.ok) throw new Error(payload.error);
+      return api.put(`/purchase-orders/${order.id}`, { comment, lines: payload.lines });
+    },
     onSuccess: onSaved,
   });
   const totals = useMemo(
@@ -165,7 +166,9 @@ export function DraftEditor({
     setLines(
       lines.map((l) => {
         const sg = info.get(l.productId)?.suggestedQty;
-        return !l.qty && sg && sg !== '0.000' ? { ...l, qty: formatQty(parseQtyToMilli(sg)!) } : l;
+        return (parseQtyToMilli(l.qty || '0') ?? 0) === 0 && sg && sg !== '0.000'
+          ? { ...l, qty: formatQty(parseQtyToMilli(sg)!) }
+          : l;
       }),
     );
 
@@ -185,7 +188,9 @@ export function DraftEditor({
                 code: p.code,
                 name: p.name,
                 qty: '1',
-                unitPriceExcl: '0',
+                lastQty: null,
+                // To be keyed in: the price typed here becomes the product's.
+                unitPriceExcl: '',
                 vatRate: '5.50',
               },
             ]);
@@ -212,8 +217,9 @@ export function DraftEditor({
               <th>Produit</th>
               <th className="w-20 text-right">Stock</th>
               <th className="w-20 text-right">Mini</th>
-              <th className="w-28 text-right">Qté commandée</th>
-              <th className="w-32 text-right">PA HT</th>
+              <th className="w-28 text-right">Quantité dernière commande</th>
+              <th className="w-28 text-right">Qté Commande</th>
+              <th className="w-32 text-right">PA HT unitaire en €</th>
               <th className="text-right">Total HT</th>
               <th className="w-0" />
             </tr>
@@ -234,7 +240,10 @@ export function DraftEditor({
                     ? formatQty(parseQtyToMilli(info.get(l.productId)!.minStock!)!)
                     : '—'}
                 </td>
-                <td data-label="Quantité">
+                <td className="text-right tabular-nums" data-label="Quantité dernière commande">
+                  {l.lastQty ? formatQty(parseQtyToMilli(l.lastQty)!) : '—'}
+                </td>
+                <td data-label="Qté Commande">
                   <Input
                     aria-label={`Quantité ${l.name}`}
                     inputMode="decimal"
@@ -243,7 +252,7 @@ export function DraftEditor({
                     onChange={(e) => set(i, { qty: e.target.value })}
                   />
                 </td>
-                <td data-label="PA HT">
+                <td data-label="PA HT unitaire en €">
                   <Input
                     aria-label={`PA HT ${l.name}`}
                     inputMode="decimal"
@@ -282,7 +291,7 @@ export function DraftEditor({
             ht={centsToDecimal(totals.exclCents)}
             vat={centsToDecimal(totals.vatCents)}
             ttc={centsToDecimal(totals.inclCents)}
-            span={5}
+            span={6}
           />
         </Table>
         {min && totals.exclCents < Math.round(Number(min) * 100) ? (

@@ -329,6 +329,17 @@ describe('undoing an action (R-ADM-06)', () => {
     const o = await api('POST', '/purchase-orders', { supplierId });
     expect(o.statusCode, o.body).toBe(200);
     const orderId = o.json().id as string;
+    const toOrder = (await api('GET', `/purchase-orders/${orderId}/supplier-products`)).json() as {
+      productId: string;
+      purchasePriceExcl: string;
+    }[];
+    await api('PUT', `/purchase-orders/${orderId}`, {
+      lines: toOrder.map((p) => ({
+        productId: p.productId,
+        qty: '3',
+        unitPriceExcl: p.purchasePriceExcl,
+      })),
+    });
     const lines = async () =>
       (
         await t.db.execute<{ product_id: string; qty_ordered: string }>(
