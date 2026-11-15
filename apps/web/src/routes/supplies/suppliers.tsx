@@ -302,10 +302,17 @@ function SupplierForm({
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               {text('minOrderAmount', 'Minimum de commande (€ HT)', { inputMode: 'decimal' })}
-              <Field label="Délai de paiement (jours)" error={errors.paymentTermsDays}>
+              <Field
+                label="Délai de paiement (jours)"
+                error={errors.paymentTermsDays}
+                {...(f.payAtMonthEnd
+                  ? { hint: 'Sans effet : paiement à réception fin de mois.' }
+                  : {})}
+              >
                 {(p) => (
                   <Input
                     {...p}
+                    disabled={f.payAtMonthEnd}
                     inputMode="numeric"
                     value={String(f.paymentTermsDays)}
                     onChange={(e) =>
@@ -315,6 +322,22 @@ function SupplierForm({
                 )}
               </Field>
               {text('deliveryDay', 'Jour de livraison')}
+            </div>
+            <div className="grid gap-1">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="s-month-end"
+                  checked={f.payAtMonthEnd}
+                  onChange={(e) => set('payAtMonthEnd', e.target.checked)}
+                />
+                <Label htmlFor="s-month-end" className="font-normal">
+                  À réception fin de mois
+                </Label>
+              </div>
+              <p className="pl-6 text-xs text-muted-foreground">
+                Les factures de ce fournisseur sont à payer à la fin du mois où elles sont saisies :
+                le rappel « à payer » apparaît alors.
+              </p>
             </div>
             {text('priceListUrl', 'Lien vers les tarifs')}
             <div className="flex flex-wrap gap-6">

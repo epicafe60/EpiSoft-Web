@@ -28,6 +28,7 @@ export const EMPTY_SUPPLIER_FORM: SupplierFormState = {
   accountNumber: '',
   minOrderAmount: null,
   paymentTermsDays: 30,
+  payAtMonthEnd: false,
   deliveryDay: '',
 };
 
@@ -52,6 +53,7 @@ export function supplierToForm(s: SupplierDetail): SupplierFormState {
     accountNumber: s.accountNumber ?? '',
     minOrderAmount: s.minOrderAmount,
     paymentTermsDays: s.paymentTermsDays,
+    payAtMonthEnd: s.payAtMonthEnd,
     deliveryDay: s.deliveryDay ?? '',
   };
 }
