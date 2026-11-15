@@ -34,9 +34,9 @@ function StatusIndicator() {
       </span>
       {rejectedCount ? (
         <Link
-          to="/caisse/tickets"
+          to="/caisse/operations"
           className="font-medium text-destructive underline"
-          title="Voir les tickets refusés"
+          title="Voir les opérations refusées"
         >
           {rejectedCount} refusé(s) : voir
         </Link>
@@ -190,8 +190,8 @@ function TillHeader() {
           <Link to="/caisse" className={tab} activeOptions={{ exact: true }}>
             Vente
           </Link>
-          <Link to="/caisse/tickets" className={tab}>
-            Tickets du jour
+          <Link to="/caisse/operations" className={tab}>
+            Opérations du jour
           </Link>
           <Link to="/caisse/cloture" className={tab}>
             Clôture

@@ -98,9 +98,13 @@ test('CA §4.4: the till sells offline and sends every ticket once when the netw
   );
   expect(Number(stock[0]!.stock_qty)).toBe(stockBefore - 3);
 
-  // Tickets of the day carry their final numbers (R-SYNC-05).
-  await page.getByRole('link', { name: 'Tickets du jour' }).click();
+  // The operations of the session carry the final numbers of the tickets (R-SYNC-05), the way of
+  // payment of each, and can be exported.
+  await page.getByRole('link', { name: 'Opérations du jour' }).click();
+  await expect(page.getByRole('heading', { name: 'Opérations de la session' })).toBeVisible();
   await expect(page.getByText(/T-\d{4}-\d{6}/).first()).toBeVisible();
+  await expect(page.getByRole('row', { name: /Vente.*Espèces/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Exporter en Excel' })).toBeVisible();
 
   // Closing (R-SES-02): 100 float + 5 cash = 105 expected.
   await page.getByRole('link', { name: 'Clôture' }).click();

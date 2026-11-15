@@ -139,14 +139,12 @@ test('R-EVO-06: a second till joins the open session and sells in it', async ({
   await expect.poll(sessions, { timeout: 20_000 }).toEqual([{ device: 'EVO5', opener: 'EVO4' }]);
 
   // The first till sees what the second one sold: the session is the shop's.
-  await page.getByRole('link', { name: 'Tickets du jour' }).click();
-  const others = page.getByRole('region', { name: 'Tickets des autres caissiers' });
-  await expect(others.getByRole('row', { name: /Carl CAISSE/ }).first()).toBeVisible({
-    timeout: 20_000,
-  });
+  await page.getByRole('link', { name: 'Opérations du jour' }).click();
+  const others = page.getByRole('row', { name: /Carl CAISSE/ });
+  await expect(others.first()).toBeVisible({ timeout: 20_000 });
   await others
-    .getByRole('button', { name: /^T-\d{4}-/ })
     .first()
+    .getByRole('button', { name: /^T-\d{4}-/ })
     .click();
   await expect(page.getByRole('dialog', { name: /^Ticket / })).toContainText('Carl CAISSE');
   await other.close();

@@ -171,10 +171,10 @@ export interface OperationFilter {
 
 const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function filterOperations(
-  rows: readonly OperationRow[],
+export function filterOperations<T extends OperationRow>(
+  rows: readonly T[],
   f: OperationFilter,
-): OperationRow[] {
+): T[] {
   const q = f.q ? plain(f.q.trim()) : '';
   return rows.filter((r) => {
     if (f.type && r.type !== f.type) return false;

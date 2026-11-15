@@ -43,6 +43,7 @@ import { euros, queueSaleReceipt } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { assertCashier, checkCashierPin, checkMemberPassword } from '../../lib/till-cashier';
 import { sessionSummary, type SessionSummary } from './closing';
+import { listOperations } from './operations';
 import { closingPdf } from './closing-pdf';
 import { generateSessionEntry, regularizeSessionEntry } from '../accounting/auto';
 import { pdfAttachment } from '../../lib/mail';
@@ -827,6 +828,29 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           .filter((p) => p.saleId === r.id)
           .map((p) => ({ method: p.method as PaymentMethod, amount: p.amount })),
       }));
+    },
+  );
+
+  // The operations of a session or of a day: tickets and payments made outside a ticket.
+  app.get(
+    '/pos/operations',
+    {
+      preHandler: app.requireRoles('CAISSE', 'ADHERENTS', 'ADMIN'),
+      schema: {
+        querystring: z.object({
+          sessionId: z.string().uuid().optional(),
+          /** Every operation of a day (Paris time), whichever till and session made it. */
+          day: z.string().date().optional(),
+        }),
+      },
+    },
+    async (req) => {
+      const { sessionId, day } = req.query;
+      if (!sessionId && !day) throw badRequest('Précisez une session ou un jour.');
+      return listOperations(
+        db,
+        sessionId ? { sessionId: await resolveSession(sessionId) } : { day: day! },
+      );
     },
   );
 

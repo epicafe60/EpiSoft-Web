@@ -121,7 +121,7 @@ export function ReviewPage() {
         <CardContent className="grid gap-3 text-sm">
           <p className="text-muted-foreground">
             Un ticket refusé n’a modifié ni le stock ni la cagnotte. Le caissier le retrouve dans «
-            Tickets du jour » pour le ressaisir. Classez-le ici une fois le cas réglé.
+            Opérations du jour » pour le ressaisir. Classez-le ici une fois le cas réglé.
           </p>
           {rejections.error ? <QueryError error={rejections.error} /> : null}
           {rejections.data?.length === 0 ? <AllClear>Aucun ticket refusé.</AllClear> : null}

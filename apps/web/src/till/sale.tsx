@@ -18,6 +18,7 @@ import {
   formatQty,
   decodeScaleBarcode,
   DEFAULT_THRESHOLDS,
+  DONATION_PRODUCT_CODE,
   lineEntryBlocked,
   ticketWarnings,
   type TicketWarning,
@@ -57,9 +58,6 @@ import { TopupDialog } from './topup';
 import { Receipt } from './receipt';
 import { WeightDialog, LineDialog } from './line-dialogs';
 import { openCashierSwitch, useCashierName } from './cashier-switch';
-
-/** R-EVO-08: the service product of the donations (account 754 at closing). */
-const DONATION_CODE = '01004';
 
 const eur = (c: number) => formatEuro(centsToDecimal(c));
 
@@ -175,7 +173,7 @@ export function SalePage() {
     // R-EVO-01: a member or a membership line comes first (a membership or a donation is allowed).
     if (
       !membershipProducts.has(p.id) &&
-      p.code !== DONATION_CODE &&
+      p.code !== DONATION_PRODUCT_CODE &&
       lineEntryBlocked({
         memberId: draft.memberId,
         hasMembershipLine,
@@ -202,7 +200,7 @@ export function SalePage() {
   /** R-EVO-08: a donation is the « Don » service line, its amount typed by the cashier. */
   const addDonation = async () => {
     if (!draft) return;
-    const p = sellable.find((x) => x.code === DONATION_CODE);
+    const p = sellable.find((x) => x.code === DONATION_PRODUCT_CODE);
     if (!p) {
       setMessage({ kind: 'error', text: 'Le produit « Don » est introuvable dans le catalogue.' });
       return;
@@ -850,7 +848,7 @@ export function SalePage() {
         onClose={() => {
           // R-EVO-08: a donation left at 0 € is dropped.
           const l = editing !== null ? draft.lines[editing] : null;
-          const don = sellable.find((x) => x.code === DONATION_CODE);
+          const don = sellable.find((x) => x.code === DONATION_PRODUCT_CODE);
           if (l && don && l.productId === don.id && lineCents(l) === 0)
             void updateDraft(draft.id, (d) => ({
               lines: d.lines.filter((x) => x.productId !== don.id),

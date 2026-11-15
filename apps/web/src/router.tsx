@@ -64,7 +64,7 @@ import { ClosingPage as YearClosingPage } from './routes/compta/closing';
 import { TillLayout } from './till/layout';
 import { TillGate } from './till/gate';
 import { SalePage } from './till/sale';
-import { TicketsPage } from './till/tickets';
+import { OperationsPage } from './till/operations';
 import { ClosingPage } from './till/closing';
 
 export const queryClient = new QueryClient({
@@ -413,14 +413,22 @@ const saleRoute = createRoute({
     </TillGate>
   ),
 });
-const ticketsRoute = createRoute({
+const operationsRoute = createRoute({
   getParentRoute: () => tillRoute,
-  path: '/tickets',
+  path: '/operations',
   component: () => (
     <TillGate>
-      <TicketsPage />
+      <OperationsPage />
     </TillGate>
   ),
+});
+// The old address of « Tickets du jour » (bookmarks, the link of the refused tickets).
+const ticketsRedirectRoute = createRoute({
+  getParentRoute: () => tillRoute,
+  path: '/tickets',
+  beforeLoad: () => {
+    throw redirect({ to: '/caisse/operations' });
+  },
 });
 const closingRoute = createRoute({
   getParentRoute: () => tillRoute,
@@ -552,7 +560,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   forgotRoute,
   setPasswordRoute,
-  tillRoute.addChildren([saleRoute, ticketsRoute, closingRoute]),
+  tillRoute.addChildren([saleRoute, operationsRoute, ticketsRedirectRoute, closingRoute]),
   appRoute.addChildren([
     homeRoute,
     ...moduleRoutes,
