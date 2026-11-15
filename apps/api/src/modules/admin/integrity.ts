@@ -257,15 +257,6 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
       from acc, wallet where acc.v <> wallet.v`,
   },
   {
-    id: 'FAC-01',
-    label: 'Une facture fournisseur : TTC = HT + TVA',
-    severity: 'error',
-    query: sql`
-      select i.id::text as ref, 'HT ' || i.total_excl || ' + TVA ' || i.total_vat || ' ≠ TTC ' || i.total_incl as detail,
-             '/appros/factures/' || i.id as link
-      from app.supplier_invoice i where i.total_excl + i.total_vat <> i.total_incl`,
-  },
-  {
     id: 'PRE-01',
     label: 'Une précommande retirée est liée à son ticket de caisse',
     severity: 'warning',
@@ -451,7 +442,6 @@ const LISTS: Record<string, { to: string; label: string }> = {
     to: '/compta/editions?edition=wallet-411',
     label: 'Rapprochement cagnottes / 411000',
   },
-  'FAC-01': { to: '/appros/factures', label: 'Factures' },
   'PRE-01': { to: '/precommandes', label: 'Précommandes' },
 };
 

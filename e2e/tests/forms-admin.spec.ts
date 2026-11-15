@@ -45,6 +45,7 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   await page.getByLabel('Date', { exact: true }).fill('2026-11-02');
   await page.getByLabel('Total HT (€)').fill('120,50');
   await page.getByLabel('TVA (€)').fill('0');
+  await page.getByLabel('Total TTC (€)').fill('120,52'); // typed, not computed: no warning
   // The piece number is required: refused under its field.
   await page.getByRole('button', { name: 'Créer la facture' }).click();
   await expect(page.getByText('N° de pièce requis.')).toBeVisible();
@@ -54,7 +55,7 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   const rows = await query<{ total_incl: string; total_vat: string }>(
     `select total_incl, total_vat from app.supplier_invoice where piece_ref = '${piece}'`,
   );
-  expect(rows).toEqual([{ total_incl: '120.50', total_vat: '0.00' }]);
+  expect(rows).toEqual([{ total_incl: '120.52', total_vat: '0.00' }]);
 });
 
 test('the cashier-code setting is saved and read back', async ({ page }) => {

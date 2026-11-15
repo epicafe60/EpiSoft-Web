@@ -1,0 +1,1 @@
+ALTER TABLE "app"."supplier_invoice" DROP CONSTRAINT "supplier_invoice_totals";

@@ -186,29 +186,6 @@ const ANALYSES: Record<string, Analysis> = {
        limit 500`,
   },
 
-  invoices: {
-    title: 'Factures fournisseur : TTC ≠ HT + TVA',
-    subtitle:
-      'Écart = TTC − (HT + TVA) (doit être 0). Comparez à la pièce papier et corrigez le montant erroné sur la facture.',
-    columns: [
-      text('supplier', 'Fournisseur', 2.5),
-      text('piece', 'Pièce', 1.4),
-      text('day', 'Date', 1.1),
-      money('excl', 'HT'),
-      money('vat', 'TVA'),
-      money('incl', 'TTC'),
-      money('gap', 'Écart'),
-    ],
-    query: sql`
-      select s.name as supplier, i.piece_ref as piece, to_char(i.date, 'DD/MM/YYYY') as day,
-             i.total_excl::text as excl, i.total_vat::text as vat, i.total_incl::text as incl,
-             (i.total_incl - i.total_excl - i.total_vat)::text as gap,
-             '/appros/factures/' || i.id as link
-        from app.supplier_invoice i join app.supplier s on s.id = i.supplier_id
-       where i.total_excl + i.total_vat <> i.total_incl
-       order by i.date desc limit 500`,
-  },
-
   preorders: {
     title: 'Précommandes retirées sans ticket',
     subtitle:
@@ -282,7 +259,6 @@ export const ANALYSIS_OF: Record<string, keyof typeof ANALYSES> = {
   'CPT-01': 'entries',
   'CPT-02': 'entries',
   'CPT-03': 'wallet411',
-  'FAC-01': 'invoices',
   'PRE-01': 'preorders',
 };
 

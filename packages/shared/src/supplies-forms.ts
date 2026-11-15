@@ -210,6 +210,8 @@ export const invoiceSchema = z.object({
   totalExcl: amountInput,
   /** R-FAC-01: the VAT may be 0. */
   totalVat: amountInput,
+  /** Amount due to the supplier, typed by the team. Not checked against HT + TVA (no rounding warning). */
+  totalIncl: amountInput,
   paymentMethod: z.enum(SUPPLIER_PAYMENT_METHODS).nullable(),
   comment: text(500),
   receiptIds: z.array(z.string().uuid()).max(50).default([]),

@@ -335,6 +335,7 @@ describe('invoices (R-FAC-01, R-FAC-02, R-FAC-05)', () => {
       date,
       totalExcl: '50',
       totalVat: '2,75',
+      totalIncl: '52,75',
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [r.id],

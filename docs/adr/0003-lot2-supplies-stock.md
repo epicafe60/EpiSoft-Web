@@ -29,7 +29,7 @@ Date: 2026-10-03. Status: proposed, to be confirmed.
 
 - Orders keep their EpiSoft id in the number (`CF-<year>-<FNRCOMID>`); status 3 orders get
   a receipt document, without stock movement (the opening stock already includes it).
-- Invoices: TTC = HT + VAT enforced, ambiguous payment modes left empty, duplicate pieces
+- Invoices: HT, VAT and TTC typed freely since 0039 (no TTC = HT + VAT constraint); legacy import still derives the VAT from TTC − HT, ambiguous payment modes left empty, duplicate pieces
   suffixed, document links kept in the comment; all listed in the report.
 - Inventories are kept as history; no stock is replayed.
 - Tested as a dry run on the local EpiSoft copy (older than production). The real run is

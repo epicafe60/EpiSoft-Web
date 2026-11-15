@@ -9,6 +9,7 @@ export interface InvoiceFormValues {
   dueDate: string;
   totalExcl: string;
   totalVat: string;
+  totalIncl: string;
   method: SupplierPaymentMethod | '';
   comment: string;
   receiptIds: string[];
@@ -22,6 +23,7 @@ export function invoicePayload(v: InvoiceFormValues) {
     dueDate: v.dueDate || undefined,
     totalExcl: v.totalExcl,
     totalVat: v.totalVat || '0',
+    totalIncl: v.totalIncl,
     paymentMethod: v.method || null,
     comment: v.comment,
     receiptIds: v.receiptIds,

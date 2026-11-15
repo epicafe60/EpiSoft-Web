@@ -135,6 +135,7 @@ describe('invoices (R-FAC-01)', () => {
     date: '2026-10-01',
     totalExcl: '100',
     totalVat: '0',
+    totalIncl: '100',
     paymentMethod: null,
     comment: '',
   };
@@ -143,9 +144,20 @@ describe('invoices (R-FAC-01)', () => {
     expect(r).toMatchObject({
       totalExcl: '100.00',
       totalVat: '0.00',
+      totalIncl: '100.00',
       receiptIds: [],
       comment: null,
     });
+  });
+  it('keeps HT, VAT and TTC as typed, with no check that they add up', () => {
+    const r = invoiceSchema.parse({
+      ...base,
+      totalExcl: '100',
+      totalVat: '5,50',
+      totalIncl: '105.51',
+    });
+    expect(r).toMatchObject({ totalExcl: '100.00', totalVat: '5.50', totalIncl: '105.51' });
+    expect(invoiceSchema.safeParse({ ...base, totalIncl: '' }).success).toBe(false);
   });
   it('requires a piece number', () => {
     expect(invoiceSchema.safeParse({ ...base, pieceRef: ' ' }).success).toBe(false);

@@ -1050,7 +1050,6 @@ export const supplierInvoice = app.table(
     uniqueIndex('supplier_invoice_piece_uq').on(t.supplierId, t.pieceRef),
     index('supplier_invoice_due_idx').on(t.status, t.dueDate),
     check('supplier_invoice_due_after_date', sql`${t.dueDate} >= ${t.date}`),
-    check('supplier_invoice_totals', sql`${t.totalIncl} = ${t.totalExcl} + ${t.totalVat}`),
   ],
 );
 
