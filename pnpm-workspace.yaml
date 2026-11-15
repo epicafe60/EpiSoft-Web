@@ -14,7 +14,8 @@ overrides:
   # ExcelJS pins uuid 8, which has a moderate advisory (audit KV2, D02). It only calls v4(), the
   # same in uuid 11, which still loads with require().
   "exceljs>uuid": "^11.1.1"
-# The e-mail editor (Tiptap) is released often and was installed days after a release: the
+# The e-mail editor (Tiptap, built on ProseMirror) is released often and was installed days after a release: the
 # installer of Dependabot refuses a version younger than its minimum age and then fails every update.
 minimumReleaseAgeExclude:
   - "@tiptap/*"
+  - "prosemirror-*"

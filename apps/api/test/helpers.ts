@@ -40,8 +40,20 @@ export async function setupTestApp() {
       await waitForIdle(db);
       const unattributed = await expectAllAttributed(db).catch((e: Error) => e);
       // audit_log and data_change are append-only (trigger): TRUNCATE is the only way to clear them.
-      await db.execute(sql`truncate app.audit_log, app.data_change, app.login_log, app.session, app.password_reset_token,
+      // A background task of the previous test can still hold a lock for a moment: a deadlock
+      // (40P01) means the database chose this statement as the victim, so it is simply run again.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await db.execute(sql`truncate app.audit_log, app.data_change, app.login_log, app.session, app.password_reset_token,
         app.email_outbox, app.import_mapping, app.setting, app.user_role, app.member, app.household cascade`);
+          break;
+        } catch (e) {
+          const code = (e as { cause?: { code?: string } }).cause?.code;
+          if (code !== '40P01' || attempt >= 5) throw e;
+          await new Promise((r) => setTimeout(r, 200 * attempt));
+          await waitForIdle(db);
+        }
+      }
       // CASCADE reaches the catalogue (member → supplier → product): restore the seeds.
       await seedMembershipTypes(db);
       // Reported once, by the test that follows the one that left them.
