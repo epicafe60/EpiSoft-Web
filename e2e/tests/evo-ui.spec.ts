@@ -183,7 +183,7 @@ test('R-EVO-20: the supplier of an invoice is found by typing its first letters'
   await field.fill(SEED.honey.supplier);
   await page.getByLabel('Total HT (€)').fill('10');
   await page.getByLabel('TVA (€)').fill('0,55');
-  await page.getByLabel('Total TTC').fill('10,55'); // typed, not computed
+  await page.getByLabel('Total TTC').fill('10,55');
   await expect(page.getByLabel('Total TTC')).toHaveValue('10,55');
 });
 

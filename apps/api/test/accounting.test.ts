@@ -391,17 +391,32 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
     ).toMatchObject({ status: 'PAID', paymentEntryId: pay.entryId });
   });
 
-  it('keeps HT, VAT and TTC as typed (no check) and the entry stays balanced on the TTC', async () => {
+  it('refuses totals that do not add up, and keeps the entry balanced on the TTC', async () => {
     await year2026();
     const s = (await post('/api/v1/suppliers', supplierForm)).json();
-    // HT 100 + VAT 5.50 is not TTC 105.49: accepted, no warning, nothing recomputed.
+    // HT 100 + VAT 5.50 is not TTC 105.49: refused.
+    expect(
+      (
+        await post('/api/v1/supplier-invoices', {
+          supplierId: s.id,
+          pieceRef: 'F-BAD',
+          date: '2026-03-10',
+          totalExcl: '100',
+          totalVat: '5,50',
+          totalIncl: '105,49',
+          paymentMethod: 'TRANSFER',
+          comment: '',
+          receiptIds: [],
+        })
+      ).statusCode,
+    ).toBe(400);
     const res = await post('/api/v1/supplier-invoices', {
       supplierId: s.id,
       pieceRef: 'F-FREE',
       date: '2026-03-10',
       totalExcl: '100',
       totalVat: '5,50',
-      totalIncl: '105,49',
+      totalIncl: '105,50',
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [],
@@ -411,7 +426,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
     expect((await get(`/api/v1/supplier-invoices/${id}`)).json()).toMatchObject({
       totalExcl: '100.00',
       totalVat: '5.50',
-      totalIncl: '105.49',
+      totalIncl: '105.50',
     });
     const [row] = await t.db.select().from(supplierInvoice).where(eq(supplierInvoice.id, id));
     const e = (await get(`/api/v1/entries/${row!.entryId}`)).json();
@@ -420,8 +435,8 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         (n: number, l: Record<string, string>) => n + Math.round(Number(l[k]) * 100),
         0,
       );
-    expect(sum('debit')).toBe(10549);
-    expect(sum('credit')).toBe(10549);
+    expect(sum('debit')).toBe(10550);
+    expect(sum('credit')).toBe(10550);
     // The payment follows the TTC too.
     expect(
       (
@@ -492,6 +507,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         await put(`/api/v1/supplier-invoices/${inv.id}`, {
           ...same,
           totalExcl: '300',
+          totalVat: '0',
           totalIncl: '300',
           comment: '',
         })

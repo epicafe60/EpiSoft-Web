@@ -149,14 +149,20 @@ describe('invoices (R-FAC-01)', () => {
       comment: null,
     });
   });
-  it('keeps HT, VAT and TTC as typed, with no check that they add up', () => {
+  it('keeps HT, VAT and TTC as typed, and refuses totals that do not add up', () => {
     const r = invoiceSchema.parse({
       ...base,
       totalExcl: '100',
       totalVat: '5,50',
-      totalIncl: '105.51',
+      totalIncl: '105.50',
     });
-    expect(r).toMatchObject({ totalExcl: '100.00', totalVat: '5.50', totalIncl: '105.51' });
+    expect(r).toMatchObject({ totalExcl: '100.00', totalVat: '5.50', totalIncl: '105.50' });
+    const bad = (o: object) => invoiceSchema.safeParse({ ...base, ...o }).success;
+    expect(bad({ totalExcl: '100', totalVat: '5,50', totalIncl: '105,51' })).toBe(false);
+    expect(bad({ totalExcl: '-100', totalVat: '-5,50', totalIncl: '-105,50' })).toBe(false);
+    expect(bad({ totalExcl: '100', totalVat: '-5', totalIncl: '95' })).toBe(false);
+    expect(bad({ totalExcl: '100', totalVat: '25', totalIncl: '125' })).toBe(false);
+    expect(bad({ totalExcl: '100', totalVat: '20', totalIncl: '120' })).toBe(true);
     expect(invoiceSchema.safeParse({ ...base, totalIncl: '' }).success).toBe(false);
   });
   it('requires a piece number', () => {
