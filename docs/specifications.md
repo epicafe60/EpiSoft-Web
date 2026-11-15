@@ -647,7 +647,7 @@ L'écran de caisse est composé de quatre zones :
 1. **En-tête :** caissier, adhérent (scan QR, numéro, recherche), indicateurs d'adhésion et de solde.
 2. **Saisie :** champ de scan toujours actif, recherche, onglets de boutons-images.
 3. **Ticket en cours :** lignes, quantités, total.
-4. **Actions :** mettre en attente, valider, annuler, tickets du jour.
+4. **Actions :** mettre en attente, valider, annuler, opérations du jour.
 
 **Règles :**
 
@@ -685,6 +685,7 @@ L'écran de caisse est composé de quatre zones :
 - **R-VTE-14 [reprise]** Les onglets de boutons-images (ex-`imgtabs`, `prodimages`) sont gérés dans le catalogue (§4.6) : ordre, activation, image et libellé.
 - **R-VTE-15 [nouveau]** Tous les raccourcis sont utilisables au clavier : F2 recherche, F4 valider, F8 mettre en attente, Échap annuler la saisie. Les cibles tactiles mesurent au moins 44 px.
 - **R-VTE-16 [reprise]** Historique des achats d'un adhérent consultable depuis la caisse. Renvoi d'un ticket par courriel.
+- **R-VTE-17 [nouveau]** « Opérations du jour » : depuis la caisse, un tableau liste une ligne par opération de la session (bascule : toute la journée, tous les postes) : les tickets et les versements faits hors ticket (rechargement de cagnotte, adhésion, don). Colonnes : heure, n°, type, encaissé par, adhérent, paiement, montant total, dont don, dont adhésion, mouvement de cagnotte, état. Pied : totaux par moyen de paiement, ventes, versements, don, adhésion, mouvement net de cagnotte. Une vente annulée reste visible, barrée, et sort de tous les totaux. Le poste lit sa propre file hors ligne ; en ligne il y ajoute le serveur. Export Excel du tableau affiché.
 - **CA :**
   - Scanner un EAN inconnu n'ajoute jamais un autre produit.
   - Couper le réseau, vendre 50 tickets, rétablir le réseau : 50 tickets sont enregistrés une seule fois, avec le stock et les cagnottes à jour.

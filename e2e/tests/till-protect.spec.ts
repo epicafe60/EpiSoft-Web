@@ -108,7 +108,7 @@ test('a double click on « Valider le ticket » makes one ticket only', async ({
     .toBe(1);
 });
 
-test('a refused ticket is flagged in the header and entered again from « Tickets du jour »', async ({
+test('a refused ticket is flagged in the header and entered again from « Opérations du jour »', async ({
   page,
 }) => {
   await startTill(page, 'PROT5');

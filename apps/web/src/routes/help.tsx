@@ -144,6 +144,15 @@ const SECTIONS: Section[] = [
         ],
       },
       {
+        question: 'Où voir ce qui a été encaissé depuis l’ouverture de la caisse ?',
+        answer: [
+          'Dans « Opérations du jour » : une ligne par opération de la session, la plus récente en haut. Ce sont les tickets et les versements faits hors ticket (rechargement de cagnotte, adhésion, don). Cliquez sur le numéro pour ouvrir le ticket.',
+          'Les colonnes disent l’heure, le type, qui a encaissé (avec le nom du poste s’il s’agit d’un autre), l’adhérent, le paiement (espèces, chèque, carte, cagnotte…), le montant total, ce qu’il contient de don et d’adhésion, et le mouvement de cagnotte : en vert ce qui s’ajoute (rechargement, monnaie versée sur la cagnotte), en orange ce qui est retiré (achat payé par cagnotte). Le pied du tableau donne les totaux par moyen de paiement.',
+          'Un ticket annulé reste affiché, barré, et n’entre dans aucun total. Cochez « Toute la journée (tous les postes) » pour voir aussi les autres sessions du jour. Les filtres (type, caissier, moyen de paiement, recherche) s’appliquent au tableau et aux totaux. Hors ligne, seules les opérations de ce poste sont visibles.',
+          '« Exporter en Excel » enregistre le tableau tel qu’il est affiché, filtres compris ; la colonne « État » garde l’information des tickets annulés ou en attente.',
+        ],
+      },
+      {
         question: 'L’application me demande de vérifier avant d’encaisser',
         answer: [
           'Quelque chose sort de l’ordinaire : une grosse quantité (un 100 tapé au lieu d’un 10 ?), un prix très différent du prix habituel, une grosse remise.',
@@ -168,7 +177,7 @@ const SECTIONS: Section[] = [
         question: 'Plusieurs personnes utilisent la caisse en même temps',
         answer: [
           'Le premier caissier qui arrive ouvre la caisse de la journée ; les suivants la rejoignent tout seuls, d’où qu’ils se connectent. Il n’y a qu’un tiroir et qu’une clôture.',
-          'Les ventes sont comptées au nom du caissier affiché en haut de la caisse (« Encaissé par »). Les tickets de tous sont dans « Tickets du jour ».',
+          'Les ventes sont comptées au nom du caissier affiché en haut de la caisse (« Encaissé par »). Les opérations de tous sont dans « Opérations du jour ».',
           'N’importe quel caissier peut clôturer ; la clôture indique si un autre caissier a vendu il y a peu.',
         ],
       },
