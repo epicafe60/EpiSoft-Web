@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { emailOutbox, feedbackTicket } from '@episoft/db';
-import { createUser, login, setupTestApp } from './helpers';
+import { createUser, login, setupTestApp, waitForIdle } from './helpers';
 
 // Signalements: any signed-in person reports a bug or an idea; the author follows their own, the
 // administrators handle all.
@@ -17,6 +17,7 @@ beforeAll(async () => {
   t = await setupTestApp();
 });
 afterAll(() => t.close());
+afterEach(() => waitForIdle(t.db));
 beforeEach(async () => {
   await t.reset();
   await t.db.execute(

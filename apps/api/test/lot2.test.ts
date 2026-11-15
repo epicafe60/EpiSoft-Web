@@ -149,6 +149,12 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
     expect(pdf.headers['content-type']).toBe('application/pdf');
     expect(pdf.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
 
+    // The window proposes the wording of the « Commande fournisseur » e-mail, variables filled in.
+    const draft = (await get(`/api/v1/purchase-orders/${o.id}/mail-draft`)).json();
+    expect(draft.subject).toContain(o.number);
+    expect(draft.message).toContain(`notre commande ${o.number}`);
+    expect(draft.message).not.toContain('{{');
+
     expect(
       (
         await post(`/api/v1/purchase-orders/${o.id}/send`, {
@@ -159,7 +165,13 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
       ).statusCode,
     ).toBe(200);
     const [mail] = await t.db.select().from(emailOutbox);
-    expect((mail!.attachments as { filename: string }[])[0]!.filename).toBe(`${o.number}.pdf`);
+    expect((mail!.attachments as { filename: string }[]).map((a) => a.filename)).toContain(
+      `${o.number}.pdf`,
+    );
+    // The typed text goes inside the common layout of the e-mails.
+    expect(mail!.html).toContain('<table');
+    expect(mail!.html).toContain('<p>Bonjour</p>');
+    expect(mail!.text).toContain('Bonjour');
 
     const line = detail.lines[0];
     const r1 = await post(`/api/v1/purchase-orders/${o.id}/receipts`, {

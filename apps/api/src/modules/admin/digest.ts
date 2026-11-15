@@ -5,7 +5,7 @@ import { addDays, decimalToCents } from '@episoft/shared';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
 import { notifyStaff } from '../../lib/alerts';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { sendPush } from '../../lib/push';
 import { eur } from '../../lib/pdf';
 import { loadSettings } from './settings-store';
@@ -69,7 +69,10 @@ export async function sendExpiryDigest(
       db,
       config,
       ['APPROS'],
-      { subject: `Épicafé : ${rows.rows.length} lot(s) à surveiller (dates limites)`, lines },
+      {
+        template: 'alert_batches_due',
+        values: { nombre: String(rows.rows.length), liste: htmlList(lines) },
+      },
       {
         title: 'Dates limites',
         body: `${rows.rows.length} lot(s) périmé(s) ou proches de leur date.`,
@@ -122,11 +125,9 @@ export async function sendLowWalletReminders(
         : `Votre cagnotte n’est plus que de ${eur(d.balance)}. Pensez à la recharger lors de votre prochain passage.`;
       const to = people.find((p) => p.referent && p.email) ?? people.find((p) => p.email);
       if (to?.email)
-        await queueEmail(db, {
-          to: to.email,
-          subject: 'Épicafé : votre cagnotte est basse',
-          text: `Bonjour ${to.firstName},\n\n${body}\n\nMerci !`,
-          html: `<p>Bonjour ${escapeHtml(to.firstName)},</p><p>${escapeHtml(body)}</p><p>Merci !</p>`,
+        await queueTemplatedEmail(db, 'wallet_low', to.email, {
+          prenom: to.firstName,
+          message: body,
         });
       for (const p of people)
         await sendPush(db, config, p.id, { title: 'Épicafé', body, url: '/mon-foyer' }, log);
@@ -157,8 +158,11 @@ export async function sendIntegrityAlert(
       config,
       ['ADMIN', 'COMPTA'],
       {
-        subject: `Épicafé : ${report.errors} contrôle(s) d’intégrité en échec`,
-        lines: failing.map((c) => `${c.id} · ${c.label} : ${c.count}`),
+        template: 'alert_integrity',
+        values: {
+          nombre: String(report.errors),
+          liste: htmlList(failing.map((c) => `${c.id} · ${c.label} : ${c.count}`)),
+        },
       },
       {
         title: 'Contrôles d’intégrité',
@@ -194,8 +198,8 @@ export async function sendAttentionSummary(
       config,
       ['ADMIN', 'COMPTA'],
       {
-        subject: 'Épicafé : points à surveiller',
-        lines: items.map((i) => `${i.count} · ${i.label}`),
+        template: 'daily_digest',
+        values: { liste: htmlList(items.map((i) => `${i.count} · ${i.label}`)) },
       },
       {
         title: 'Points à surveiller',

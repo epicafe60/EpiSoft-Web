@@ -5,7 +5,7 @@ import { addDays } from '@episoft/shared';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
 import { sendPush } from '../../lib/push';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { queueTemplatedEmail } from '../../lib/email-render';
 import { loadSettings } from '../admin/settings-store';
 
 /**
@@ -66,11 +66,9 @@ export async function sendMembershipReminders(
         .values({ membershipId: d.membership_id, to: to?.email ?? null });
       if (!to?.email) continue;
       const end = d.end_date.split('-').reverse().join('/');
-      await queueEmail(tx, {
-        to: to.email,
-        subject: 'Épicafé : votre adhésion arrive à échéance',
-        text: `Bonjour ${to.firstName},\n\nL’adhésion de votre foyer à l’Épicafé se termine le ${end}. Vous pouvez la renouveler à la caisse lors de votre prochain passage.\n\nMerci de votre soutien !`,
-        html: `<p>Bonjour ${escapeHtml(to.firstName)},</p><p>L’adhésion de votre foyer à l’Épicafé se termine le <strong>${end}</strong>. Vous pouvez la renouveler à la caisse lors de votre prochain passage.</p><p>Merci de votre soutien !</p>`,
+      await queueTemplatedEmail(tx, 'membership_reminder', to.email, {
+        prenom: to.firstName,
+        date_fin: end,
       });
       sent++;
     }

@@ -13,6 +13,8 @@ export interface EmailAttachment {
   contentType: string;
   /** Base64, stored as is in the outbox. */
   contentBase64: string;
+  /** An image shown inside the message (`cid:` in its HTML) rather than attached to it. */
+  cid?: string;
 }
 
 export interface OutgoingEmail {
@@ -37,6 +39,17 @@ export async function queueEmail(db: DbOrTx, email: OutgoingEmail): Promise<void
     attachments: email.attachments ?? null,
     ...(enabled ? {} : { status: 'FAILED' as const, lastError: EMAIL_DISABLED_NOTE }),
   });
+}
+
+/**
+ * Once a message is sent, the images inside it (`cid:`, the header of the layout) are not kept in
+ * the outbox: the same image would otherwise be stored again with every e-mail. The library still
+ * has it, and the viewer of sent e-mails (monitoring.ts) shows it from there.
+ */
+export function withoutInlineImages(attachments: unknown): EmailAttachment[] | null {
+  if (!Array.isArray(attachments)) return null;
+  const kept = (attachments as EmailAttachment[]).filter((a) => !a.cid);
+  return kept.length ? kept : null;
 }
 
 export function pdfAttachment(filename: string, pdf: Buffer): EmailAttachment {
@@ -114,6 +127,7 @@ export function startMailer(db: Db, config: Config, log: FastifyBaseLogger): () 
                 filename: a.filename,
                 contentType: a.contentType,
                 content: Buffer.from(a.contentBase64, 'base64'),
+                ...(a.cid ? { cid: a.cid, contentDisposition: 'inline' as const } : {}),
               })),
             });
             await tx
@@ -122,6 +136,7 @@ export function startMailer(db: Db, config: Config, log: FastifyBaseLogger): () 
                 status: 'SENT',
                 sentAt: new Date(),
                 attempts: sql`${emailOutbox.attempts} + 1`,
+                attachments: withoutInlineImages(mail.attachments),
               })
               .where(eq(emailOutbox.id, mail.id));
           } catch (e) {

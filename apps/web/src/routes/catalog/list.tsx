@@ -66,7 +66,7 @@ export function ProductsPage() {
   return (
     <>
       <PageHeader
-        title="Catalogue"
+        title="Produits"
         description="Produits, prix et boutons de caisse."
         actions={
           canEdit ? (

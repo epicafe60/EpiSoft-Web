@@ -30,14 +30,16 @@ import {
   type CashierCheck,
   type SessionPresence,
   type PaymentMethod,
+  type Values,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { alertNow } from '../../lib/alerts';
+import { queueTemplatedEmail } from '../../lib/email-render';
 import { formatParis } from '../../lib/dates';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { escapeHtml } from '../../lib/mail';
 import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
-import { euros, saleReceiptEmail } from '../../lib/receipts';
+import { euros, queueSaleReceipt } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { assertCashier, checkCashierPin, checkMemberPassword } from '../../lib/till-cashier';
 import { sessionSummary, type SessionSummary } from './closing';
@@ -84,12 +86,8 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         config,
         ['ADMIN'],
         {
-          subject: `Épicafé : codes caissier faux répétés (${c?.name ?? 'inconnu'})`,
-          lines: [
-            `${wrongCodes} codes faux en 15 minutes pour le caissier ${c?.name ?? 'inconnu'}.`,
-            'Quelqu’un essaie peut-être de deviner son code. Le code est bloqué quelques minutes.',
-            'Détails dans Administration › Connexions.',
-          ],
+          template: 'alert_pin_guessing',
+          values: { caissier: c?.name ?? 'inconnu', nombre: String(wrongCodes) },
         },
         { title: 'Codes caissier faux', body: c?.name ?? '', url: '/surveillance' },
         req.log,
@@ -573,10 +571,13 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
 
       const treasurer = (await loadSettings(tx))['pos.treasurerEmail'].email;
       if (treasurer) {
-        await queueEmail(tx, {
-          ...closingReportEmail(treasurer, s.openedAt, closedAt, summary, values, b.forced),
-          attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))],
-        });
+        await queueTemplatedEmail(
+          tx,
+          'closing_report',
+          treasurer,
+          closingReportValues(s.openedAt, closedAt, summary, values, b.forced),
+          { attachments: [pdfAttachment('cloture.pdf', await closingPdf(tx, s.id))] },
+        );
       }
       return { ...values, closedAt: closedAt.toISOString() };
     });
@@ -897,17 +898,14 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           .where(eq(saleLine.saleId, s.id))
           .orderBy(saleLine.lineNo);
         const pays = await tx.select().from(salePayment).where(eq(salePayment.saleId, s.id));
-        await queueEmail(
-          tx,
-          saleReceiptEmail(m.email, m.firstName, {
-            number: s.number,
-            soldAt: s.soldAt,
-            total: s.total,
-            lines,
-            payments: pays.map((p) => ({ method: p.method as PaymentMethod, amount: p.amount })),
-            cashierName: null,
-          }),
-        );
+        await queueSaleReceipt(tx, m.email, m.firstName, {
+          number: s.number,
+          soldAt: s.soldAt,
+          total: s.total,
+          lines,
+          payments: pays.map((p) => ({ method: p.method as PaymentMethod, amount: p.amount })),
+          cashierName: null,
+        });
         await tx.update(sale).set({ emailSentAt: new Date() }).where(eq(sale.id, s.id));
         await audit(tx, req, {
           action: 'sale.email_sent',
@@ -921,8 +919,7 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
   );
 };
 
-function closingReportEmail(
-  to: string,
+function closingReportValues(
   openedAt: Date,
   closedAt: Date,
   summary: SessionSummary,
@@ -938,7 +935,7 @@ function closingReportEmail(
     comment: string | null;
   },
   forced: boolean,
-) {
+): Values {
   const rows: [string, string][] = [
     ['Caissiers', summary.byCashier?.map((c) => c.name).join(', ') || '—'],
     ['Ouverture', formatParis(openedAt)],
@@ -972,19 +969,14 @@ function closingReportEmail(
       'Attention',
       'Clôture forcée : des opérations du poste n’étaient pas encore envoyées.',
     ]);
-  const html =
-    `<div style="font-family:system-ui,sans-serif;max-width:560px"><h2>Clôture de caisse</h2><table style="border-collapse:collapse">` +
+  const table =
+    `<table style="border-collapse:collapse">` +
     rows
       .map(
         ([k, v]) =>
           `<tr><td style="padding:3px 12px 3px 0;color:#555">${escapeHtml(k)}</td><td style="padding:3px 0"><strong>${escapeHtml(v)}</strong></td></tr>`,
       )
       .join('') +
-    `</table></div>`;
-  return {
-    to,
-    subject: `Épicafé : clôture de caisse du ${formatParis(closedAt)}`,
-    html,
-    text: rows.map(([k, v]) => `${k} : ${v}`).join('\n'),
-  };
+    `</table>`;
+  return { date_cloture: formatParis(closedAt), tableau: table };
 }

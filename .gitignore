@@ -27,3 +27,6 @@ Thumbs.db
 .idea/
 *.log
 apps/web/.vite/
+
+# Security audit reports: they list findings that are not all fixed, and the repository is public.
+/apps/audit/

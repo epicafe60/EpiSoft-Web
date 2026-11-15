@@ -60,14 +60,13 @@ async function recordServerError(
     config,
     ['ADMIN'],
     {
-      subject: 'Épicafé : une erreur inattendue est survenue',
-      lines: [
-        `Page : ${e.route}`,
-        `Référence donnée à l’utilisateur : ${e.ref}`,
-        `Message : ${e.message.slice(0, 200)}`,
-        `Nombre de fois (même erreur) : ${row?.count ?? 1}`,
-        'Détails dans Surveillance › Erreurs du serveur.',
-      ],
+      template: 'alert_server_error',
+      values: {
+        page: e.route,
+        reference: e.ref,
+        message: e.message.slice(0, 200),
+        nombre: String(row?.count ?? 1),
+      },
     },
     { title: 'Erreur du serveur', body: `Référence ${e.ref}`, url: '/surveillance/erreurs' },
     log,

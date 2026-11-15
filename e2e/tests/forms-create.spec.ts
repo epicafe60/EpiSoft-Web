@@ -71,6 +71,39 @@ test('a product is created with a name, a code and a selling price', async ({ pa
   expect(rows).toEqual([{ sale_price: '2.50' }]);
 });
 
+test('a service has no quantity or unit to choose: one at a time, in euros', async ({ page }) => {
+  const name = `Cotisation ${unique()}`;
+  const code = String(900000 + Math.floor(Math.random() * 99999));
+  await login(page, USERS.admin);
+  await page.goto('/catalogue/nouveau');
+  await page.getByLabel('Nom', { exact: true }).fill(name);
+  await page.getByLabel('Code', { exact: true }).fill(code);
+  // A goods product: the choices are there.
+  await expect(page.getByLabel('Unité')).toBeEnabled();
+  await page.getByLabel('Type', { exact: true }).selectOption('SERVICE');
+  // A service: its terms are shown, not asked.
+  await expect(page.getByLabel('Quantité unitaire')).toBeDisabled();
+  await expect(page.getByLabel('Quantité unitaire')).toHaveValue('1');
+  await expect(page.getByLabel('Unité')).toBeDisabled();
+  await expect(page.getByLabel('Unité')).toHaveValue('€');
+  await expect(page.getByText('la quantité est toujours 1')).toBeVisible();
+  await page.getByLabel('Prix de vente TTC (€)').fill('10');
+  await page.getByRole('button', { name: 'Créer le produit' }).click();
+  await expect(page.getByRole('heading', { name })).toBeVisible();
+  const rows = await query<{
+    kind: string;
+    sale_mode: string;
+    unit_qty: string;
+    unit: string | null;
+  }>(
+    `select kind::text, sale_mode::text, unit_qty::text, unit::text from app.product where code = '${code}'`,
+  );
+  expect(rows).toEqual([{ kind: 'SERVICE', sale_mode: 'UNIT', unit_qty: '1.000', unit: null }]);
+  // Back to a goods product: the choices come back.
+  await page.getByLabel('Type', { exact: true }).selectOption('GOODS');
+  await expect(page.getByLabel('Unité')).toBeEnabled();
+});
+
 test('a refused product says which field is wrong', async ({ page }) => {
   await login(page, USERS.admin);
   await page.goto('/catalogue/nouveau');

@@ -1,7 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import { passwordResetToken, userRole, type DbOrTx } from '@episoft/db';
 import { identityChangeAllowed, isStaffAccount, type RoleCode } from '@episoft/shared';
-import { escapeHtml, queueEmail } from './mail';
+import { queueTemplatedEmail } from './email-render';
 import { forbidden } from './problem';
 
 // The sign-in identity of an account (e-mail, user name): the e-mail receives the « mot de passe
@@ -70,13 +70,5 @@ export async function afterIdentityChange(
   if (!change.emailChanged && !change.usernameChanged) return;
   await revokeResetLinks(db, target.id);
   if (!change.emailChanged || !target.email || !isStaffAccount(change.targetRoles)) return;
-  const what = 'L’adresse de courriel de votre compte EpiSoft vient d’être modifiée.';
-  const todo =
-    'Si vous n’êtes pas à l’origine de ce changement, prévenez sans attendre un administrateur de l’association.';
-  await queueEmail(db, {
-    to: target.email,
-    subject: 'Épicafé : l’adresse de votre compte a changé',
-    text: `Bonjour ${target.firstName},\n\n${what}\n${todo}`,
-    html: `<p>Bonjour ${escapeHtml(target.firstName)},</p><p>${what}</p><p>${todo}</p>`,
-  });
+  await queueTemplatedEmail(db, 'identity_changed', target.email, { prenom: target.firstName });
 }

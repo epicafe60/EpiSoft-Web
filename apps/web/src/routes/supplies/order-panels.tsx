@@ -332,14 +332,23 @@ export function SendDialog({
     if (open) {
       setPreviewing(false);
       setTo(order.supplier?.email ?? '');
-      setSubject(`Commande ${order.number} d’Épicafé de Montjavoult`);
-      // Like the window of the previous application: the text can be edited before it leaves.
-      const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-      setMessage(
-        `Bonjour,\nVeuillez trouver ci-joint notre commande ${order.number} du ${now}.\n\n\nBien cordialement !\nL’équipe Épicafé de Montjavoult`,
-      );
     }
   }, [open, order]);
+  // The wording comes from the « Commande fournisseur » e-mail (Administration › Courriels); it can
+  // still be edited here before it leaves.
+  const draft = useQuery({
+    queryKey: ['order-mail-draft', order.id, open],
+    queryFn: () =>
+      api.get<{ subject: string; message: string }>(`/purchase-orders/${order.id}/mail-draft`),
+    enabled: open,
+    staleTime: 0,
+  });
+  useEffect(() => {
+    if (open && draft.data) {
+      setSubject(draft.data.subject);
+      setMessage(draft.data.message);
+    }
+  }, [open, draft.data]);
   const confirm = useConfirm();
   /** Under the supplier's minimum order the delivery may be refused or charged: ask first. */
   const confirmSend = async () => {

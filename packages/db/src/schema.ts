@@ -1758,3 +1758,45 @@ export const feedbackComment = app.table(
   },
   (t) => [index('feedback_comment_ticket_idx').on(t.ticketId, t.createdAt)],
 );
+
+// --- E-mail templates ---------------------------------------------------------------------------
+
+/**
+ * The wording of an e-mail edited by the administrators. No row: the wording of the application
+ * (packages/shared/src/email-templates.ts). Deleting the row puts the original back.
+ */
+export const emailTemplate = app.table('email_template', {
+  key: text('key').primaryKey(),
+  subject: text('subject').notNull(),
+  /** HTML of the body, cleaned by the server when it is saved. */
+  bodyHtml: text('body_html').notNull(),
+  updatedBy: uuid('updated_by').references(() => member.id, { onDelete: 'set null' }),
+  updatedAt: tz('updated_at').notNull().defaultNow(),
+});
+
+/** An image of the library of the e-mails (logo, header, footer), embedded in the messages. */
+export const emailAsset = app.table('email_asset', {
+  id: id(),
+  name: text('name').notNull(),
+  mime: text('mime').notNull(),
+  bytes: bytea('bytes').notNull(),
+  createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+});
+
+/** The header, the footer and the colour common to every e-mail: one row. */
+export const emailLayout = app.table(
+  'email_layout',
+  {
+    id: integer('id').primaryKey().default(1),
+    headerImageId: uuid('header_image_id').references(() => emailAsset.id, {
+      onDelete: 'set null',
+    }),
+    headerAlt: text('header_alt').notNull().default(''),
+    footerHtml: text('footer_html').notNull(),
+    accentColor: text('accent_color').notNull(),
+    updatedBy: uuid('updated_by').references(() => member.id, { onDelete: 'set null' }),
+    updatedAt: tz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [check('email_layout_single_row', sql`${t.id} = 1`)],
+);

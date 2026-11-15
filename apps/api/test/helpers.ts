@@ -87,6 +87,23 @@ export async function createUser(
 export const csrf = { [CSRF_HEADER]: '1' };
 
 /**
+ * Waits until the database has nothing running but this connection. What the application does in
+ * the background after answering (an alert to the team, a notification) must be over before the
+ * next test empties the tables: a TRUNCATE meeting it would end in a deadlock.
+ */
+export async function waitForIdle(db: Db): Promise<void> {
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    const { rows } = await db.execute<{ n: number }>(
+      sql`select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and pid <> pg_backend_pid() and state <> 'idle'`,
+    );
+    if (rows[0]!.n === 0 || Date.now() > deadline) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+/**
  * What the database answers to a statement run with the application's role (episoft_app after the
  * split of the roles, D01), as if a flaw let someone run SQL through the application: the SQLSTATE
  * of the refusal, or null when the statement went through. Always rolled back.

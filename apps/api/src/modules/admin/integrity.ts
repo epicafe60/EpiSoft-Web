@@ -437,7 +437,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
 
 /** Where to review all the items of a check. */
 const LISTS: Record<string, { to: string; label: string }> = {
-  'STK-01': { to: '/catalogue', label: 'Catalogue' },
+  'STK-01': { to: '/catalogue', label: 'Produits' },
   'STK-02': { to: '/appros/stock', label: 'Stock' },
   'STK-03': { to: '/appros/commandes', label: 'Commandes' },
   'STK-04': { to: '/appros/inventaires', label: 'Inventaires' },

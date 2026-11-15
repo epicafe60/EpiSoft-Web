@@ -1,10 +1,10 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { jobRun, member, userRole, type Db, type DbOrTx } from '@episoft/db';
-import type { RoleCode } from '@episoft/shared';
+import type { EmailTemplateKey, RoleCode, Values } from '@episoft/shared';
 import type { Config } from '../config';
 import { auditSystem } from './audit';
-import { escapeHtml, queueEmail } from './mail';
+import { queueTemplatedEmail, renderSubject } from './email-render';
 import { sendPush, type PushMessage } from './push';
 
 /** Active members holding at least one of the roles. */
@@ -16,29 +16,32 @@ export async function staffWith(db: DbOrTx, roles: RoleCode[]) {
     .where(and(inArray(userRole.roleCode, roles), sql`${member.status} <> 'ARCHIVED'`));
 }
 
+/** An e-mail to the team: which template, and what fills its variables. */
+export interface StaffMail {
+  template: EmailTemplateKey;
+  values: Values;
+}
+
 /** One e-mail (when an address is known) and one push per recipient. Returns the recipients. */
 export async function notifyStaff(
   db: Db,
   config: Config,
   roles: RoleCode[],
-  mail: { subject: string; lines: string[] },
+  mail: StaffMail,
   push: PushMessage,
   log?: FastifyBaseLogger,
 ): Promise<number> {
   const staff = await staffWith(db, roles);
   await db.transaction(async (tx) => {
     for (const s of staff)
-      if (s.email)
-        await queueEmail(tx, {
-          to: s.email,
-          subject: mail.subject,
-          text: mail.lines.join('\n'),
-          html: `<ul>${mail.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
-        });
+      if (s.email) await queueTemplatedEmail(tx, mail.template, s.email, mail.values);
     await auditSystem(tx, {
       action: 'staff.notified',
       entity: 'email_outbox',
-      after: { subject: mail.subject, recipients: staff.length },
+      after: {
+        subject: await renderSubject(tx, mail.template, mail.values),
+        recipients: staff.length,
+      },
     });
   });
   for (const s of staff) await sendPush(db, config, s.id, push, log);
@@ -54,7 +57,7 @@ export async function alertNow(
   db: Db,
   config: Config,
   roles: RoleCode[],
-  mail: { subject: string; lines: string[] },
+  mail: StaffMail,
   push: PushMessage,
   log?: FastifyBaseLogger,
   now = new Date(),
@@ -62,9 +65,10 @@ export async function alertNow(
   // One slot per subject and hour, claimed in the database: holds even when nobody has an
   // e-mail address (push only) and whatever the number of API processes.
   const hour = now.toISOString().slice(0, 13);
+  const subject = await renderSubject(db, mail.template, mail.values);
   const [claimed] = await db
     .insert(jobRun)
-    .values({ name: `alert:${mail.subject}:${hour}`, day: now.toISOString().slice(0, 10) })
+    .values({ name: `alert:${subject}:${hour}`, day: now.toISOString().slice(0, 10) })
     .onConflictDoNothing()
     .returning({ name: jobRun.name });
   if (!claimed) return 0;

@@ -7,6 +7,17 @@ export const PRODUCT_KIND_LABELS: Record<ProductKind, string> = {
   SERVICE: 'Service',
 };
 
+/**
+ * A service (a membership, a donation) is sold one at a time, in euros: there is no quantity or
+ * unit to choose. Whatever a form or a file says, the product is saved like this.
+ */
+export const SERVICE_SALE = { saleMode: 'UNIT', unitQty: '1', unit: null } as const;
+
+/** The product as it is saved: a service gets its fixed sale terms, any other kind is left alone. */
+export function withServiceSale<T extends { kind: ProductKind }>(p: T): T {
+  return p.kind === 'SERVICE' ? { ...p, ...SERVICE_SALE } : p;
+}
+
 export const SALE_MODES = ['UNIT', 'WEIGHT', 'VOLUME'] as const;
 export type SaleMode = (typeof SALE_MODES)[number];
 export const SALE_MODE_LABELS: Record<SaleMode, string> = {

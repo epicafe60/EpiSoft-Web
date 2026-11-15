@@ -18,6 +18,39 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
+    title: 'Modifier les courriels de l’application',
+    roles: ['ADMIN'],
+    topics: [
+      {
+        question: 'Où changer le texte des courriels (ticket, mot de passe, rappels…) ?',
+        answer: [
+          'Administration › Courriels. À gauche, la liste des courriels ; choisissez-en un pour modifier son objet et son message. L’aperçu, à droite ou en dessous, montre le résultat avec des valeurs d’exemple.',
+          '« M’envoyer un essai » envoie le courriel enregistré à votre propre adresse, pour le voir dans une vraie boîte. « Rétablir la version d’origine » remet le texte de l’application.',
+        ],
+      },
+      {
+        question: 'Que sont les variables entre accolades ?',
+        answer: [
+          'Des mots comme {{prenom}} ou {{numero}} sont remplacés au moment de l’envoi par le prénom de la personne, le numéro du ticket… Utilisez « Insérer une variable » plutôt que de les taper : chaque courriel n’en connaît que certaines, la liste est sous le message.',
+          'Certaines sont indispensables : le courriel « mot de passe » doit contenir {{lien}}, sinon la personne ne pourrait pas se connecter.',
+        ],
+      },
+      {
+        question: 'Comment mettre un logo, un en-tête ou un pied de page ?',
+        answer: [
+          'L’onglet « Mise en page commune » règle l’en-tête (une image, par exemple le logo), le pied de page et la couleur : ils s’appliquent à tous les courriels.',
+          'Les images se gèrent dans l’onglet « Images » (PNG, JPEG, WebP ou GIF, 500 Ko au plus) et s’insèrent aussi dans un message avec le bouton « Insérer une image ». Elles partent dans le courriel lui-même : elles s’affichent sans connexion au serveur.',
+        ],
+      },
+      {
+        question: 'Puis-je écrire du code HTML ?',
+        answer: [
+          'Oui : le bouton « Voir le code HTML » de l’éditeur. Par sécurité, l’application ne garde que ce dont un courriel a besoin (texte, listes, liens, tableaux, vos images) : scripts, formulaires et images venues d’ailleurs sont retirés à l’enregistrement.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'Exporter une liste en Excel',
     roles: [],
     topics: [

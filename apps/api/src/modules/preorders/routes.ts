@@ -27,7 +27,7 @@ import type { Config } from '../../config';
 import { sendPush } from '../../lib/push';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { queueTemplatedEmail } from '../../lib/email-render';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/problem';
 import { shopOpen } from '../../lib/shop-gate';
 import { nextNumber } from '../pos/numbers';
@@ -328,15 +328,10 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
             .where(eq(member.id, o.memberId));
           if (m?.email) {
             const day = o.pickupDate.split('-').reverse().join('/');
-            await queueEmail(tx, {
-              to: m.email,
-              subject: `Épicafé : votre commande ${o.number} est prête`,
-              text: `Bonjour ${m.firstName},
-
-Votre commande ${o.number} est prête. Vous pouvez la retirer à l’Épicafé (retrait prévu le ${day}) et la régler à la caisse.
-
-À bientôt !`,
-              html: `<p>Bonjour ${escapeHtml(m.firstName)},</p><p>Votre commande <strong>${escapeHtml(o.number)}</strong> est prête. Vous pouvez la retirer à l’Épicafé (retrait prévu le ${day}) et la régler à la caisse.</p><p>À bientôt !</p>`,
+            await queueTemplatedEmail(tx, 'preorder_ready', m.email, {
+              prenom: m.firstName,
+              numero: o.number,
+              date_retrait: day,
             });
           }
         }

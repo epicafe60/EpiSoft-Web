@@ -46,7 +46,7 @@ export const FEEDBACK_PRIORITY_LABELS: Record<FeedbackPriority, string> = {
 export const FEEDBACK_MODULES = [
   { key: 'caisse', label: 'Caisse', prefix: '/caisse' },
   { key: 'membres', label: 'Membres', prefix: '/membres' },
-  { key: 'catalogue', label: 'Catalogue', prefix: '/catalogue' },
+  { key: 'catalogue', label: 'Produits', prefix: '/catalogue' },
   { key: 'appros', label: 'Approvisionnements', prefix: '/appros' },
   { key: 'precommandes', label: 'Précommandes', prefix: '/precommandes' },
   { key: 'compta', label: 'Comptabilité', prefix: '/compta' },

@@ -213,7 +213,10 @@ describe('an urgent alert', () => {
         t.db,
         t.config,
         ['ADMIN'],
-        { subject: 'Test', lines: ['x'] },
+        {
+          template: 'alert_server_error',
+          values: { page: 'x', reference: 'R', message: 'm', nombre: '1' },
+        },
         { title: 't', body: 'b' },
       );
     expect(await send()).toBe(1);

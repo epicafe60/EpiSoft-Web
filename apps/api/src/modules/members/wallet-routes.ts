@@ -12,7 +12,8 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { formatParis, toParisDate } from '../../lib/dates';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { queueTemplatedEmail } from '../../lib/email-render';
+import { escapeHtml } from '../../lib/mail';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { householdDetail } from './routes';
 import { cancelTopupEntry } from './wallet-cancel';
@@ -76,18 +77,10 @@ export const walletRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
               `<tr><td style="padding:2px 8px 2px 0">${formatParis(new Date(w.at))}</td><td style="padding:2px 8px">${escapeHtml(WALLET_ENTRY_KIND_LABELS[w.kind])}${w.saleNumber ? ` (${escapeHtml(w.saleNumber)})` : ''}</td><td style="padding:2px 0;text-align:right">${formatEuro(w.amount)}</td></tr>`,
           )
           .join('');
-        await queueEmail(tx, {
-          to: to.email,
-          subject: `Épicafé : historique de votre cagnotte (solde ${formatEuro(h.balance)})`,
-          html: `<p>Bonjour ${escapeHtml(to.firstName)},</p><p>Solde actuel de la cagnotte de votre foyer : <strong>${formatEuro(h.balance)}</strong>.</p><table style="border-collapse:collapse;font-size:14px">${rows}</table>`,
-          text:
-            `Bonjour ${to.firstName},\n\nSolde actuel : ${formatEuro(h.balance)}\n\n` +
-            h.wallet
-              .map(
-                (w) =>
-                  `${formatParis(new Date(w.at))}  ${WALLET_ENTRY_KIND_LABELS[w.kind]}  ${formatEuro(w.amount)}`,
-              )
-              .join('\n'),
+        await queueTemplatedEmail(tx, 'wallet_history', to.email, {
+          prenom: to.firstName,
+          solde: formatEuro(h.balance),
+          historique: `<table style="border-collapse:collapse;font-size:14px">${rows}</table>`,
         });
         await audit(tx, req, {
           action: 'wallet.history_sent',

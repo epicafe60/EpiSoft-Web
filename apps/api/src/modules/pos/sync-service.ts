@@ -50,8 +50,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
 import { proofIsValid } from '../../lib/till-cashier';
-import { queueEmail } from '../../lib/mail';
-import { saleReceiptEmail, topupReceiptEmail } from '../../lib/receipts';
+import { queueSaleReceipt, queueTopupReceipt } from '../../lib/receipts';
 import { alertNow } from '../../lib/alerts';
 import { loadSettings } from '../admin/settings-store';
 import { recordMovement } from '../stock/ledger';
@@ -241,12 +240,8 @@ async function processOne(
         config,
         ['ADMIN', 'COMPTA'],
         {
-          subject: 'Épicafé : un ticket de caisse a été refusé',
-          lines: [
-            'Un poste de caisse a envoyé une opération que le serveur a refusée.',
-            `Motif : ${result.error ?? 'inconnu'}`,
-            'Ouvrez Surveillance › Tickets à vérifier pour la voir et la faire ressaisir.',
-          ],
+          template: 'alert_ticket_rejected',
+          values: { motif: result.error ?? 'inconnu' },
         },
         {
           title: 'Ticket refusé',
@@ -783,26 +778,23 @@ async function recordSale(
       where: eq(member.id, p.cashierId),
       columns: { firstName: true, lastName: true },
     });
-    await queueEmail(
-      tx,
-      saleReceiptEmail(buyer.email, buyer.firstName, {
-        number,
-        soldAt,
-        total: centsToDecimal(totalCents),
-        lines: lines.map((x) => ({
-          label: x.l.label,
-          qty: milliToDecimal(x.qtyMilli),
-          unitPrice: x.l.unitPrice,
-          lineTotal: centsToDecimal(x.totalCents),
-        })),
-        payments: payments.map((x) => ({
-          method: x.method as PaymentMethod,
-          amount: centsToDecimal(x.cents),
-        })),
-        cashierName: cashier ? `${cashier.firstName} ${cashier.lastName}` : null,
-        balance,
-      }),
-    );
+    await queueSaleReceipt(tx, buyer.email, buyer.firstName, {
+      number,
+      soldAt,
+      total: centsToDecimal(totalCents),
+      lines: lines.map((x) => ({
+        label: x.l.label,
+        qty: milliToDecimal(x.qtyMilli),
+        unitPrice: x.l.unitPrice,
+        lineTotal: centsToDecimal(x.totalCents),
+      })),
+      payments: payments.map((x) => ({
+        method: x.method as PaymentMethod,
+        amount: centsToDecimal(x.cents),
+      })),
+      cashierName: cashier ? `${cashier.firstName} ${cashier.lastName}` : null,
+      balance,
+    });
     await tx.update(sale).set({ emailSentAt: new Date() }).where(eq(sale.id, saleId));
   }
   // R-PRE-03: the pre-order collected at the till is closed and linked to its ticket.
@@ -1150,6 +1142,5 @@ export async function sendTopupReceipt(
     : await tx.query.member.findFirst({
         where: and(eq(member.householdId, householdId), sql`${member.email} is not null`),
       });
-  if (to?.email && !to.ticketEmailOptOut)
-    await queueEmail(tx, topupReceiptEmail(to.email, to.firstName, r));
+  if (to?.email && !to.ticketEmailOptOut) await queueTopupReceipt(tx, to.email, to.firstName, r);
 }
