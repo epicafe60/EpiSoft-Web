@@ -234,7 +234,6 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   ) => {
     const s = await tx.query.supplier.findFirst({ where: eq(supplier.id, b.supplierId) });
     if (!s) throw badRequest('Fournisseur inconnu.');
-    const totalIncl = centsToDecimal(decimalToCents(b.totalExcl) + decimalToCents(b.totalVat));
     const dueDate =
       b.dueDate ??
       invoiceDueDateFor({
@@ -264,7 +263,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       dueDate,
       totalExcl: b.totalExcl,
       totalVat: b.totalVat,
-      totalIncl,
+      totalIncl: b.totalIncl,
       paymentMethod: b.paymentMethod,
       comment: b.comment,
     };

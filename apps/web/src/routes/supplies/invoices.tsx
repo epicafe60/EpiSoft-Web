@@ -228,6 +228,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   const [dueDate, setDueDate] = useState(invoice?.dueDate ?? '');
   const [totalExcl, setTotalExcl] = useState(invoice?.totalExcl ?? '');
   const [totalVat, setTotalVat] = useState(invoice?.totalVat ?? '0');
+  const [totalIncl, setTotalIncl] = useState(invoice?.totalIncl ?? '');
   const [method, setMethod] = useState<SupplierPaymentMethod | ''>(invoice?.paymentMethod ?? '');
   const [comment, setComment] = useState(invoice?.comment ?? '');
   const [receiptIds, setReceiptIds] = useState<string[]>(invoice?.receipts.map((r) => r.id) ?? []);
@@ -249,19 +250,20 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
       );
   }, [supplier.data, date, invoice]);
 
-  const totalIncl = (() => {
-    const a = parseAmountToCents(totalExcl || '0');
-    const b = parseAmountToCents(totalVat || '0');
-    return a !== null && b !== null ? centsToDecimal(a + b) : '';
-  })();
   const check = useQuery({
     queryKey: ['invoice-check', supplierId, pieceRef, date, totalIncl, invoice?.id],
     queryFn: () =>
       api.post<{ duplicates: { id: string; pieceRef: string; date: string; totalIncl: string }[] }>(
         '/supplier-invoices/check',
-        { id: invoice?.id, supplierId, pieceRef, date, totalIncl },
+        {
+          id: invoice?.id,
+          supplierId,
+          pieceRef,
+          date,
+          totalIncl: centsToDecimal(parseAmountToCents(totalIncl) ?? 0),
+        },
       ),
-    enabled: !!supplierId && !!pieceRef && !!totalIncl,
+    enabled: !!supplierId && !!pieceRef && parseAmountToCents(totalIncl) !== null,
   });
 
   const save = useMutation({
@@ -273,6 +275,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
         dueDate,
         totalExcl,
         totalVat,
+        totalIncl,
         method,
         comment,
         receiptIds,
@@ -391,8 +394,16 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
                   />
                 )}
               </Field>
-              <Field label="Total TTC">
-                {(p) => <Input {...p} disabled value={totalIncl ? euro(totalIncl) : ''} />}
+              <Field label="Total TTC (€)" error={errors.totalIncl}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    inputMode="decimal"
+                    disabled={paid}
+                    value={totalIncl}
+                    onChange={(e) => setTotalIncl(e.target.value)}
+                  />
+                )}
               </Field>
             </div>
             <Field label="Mode de paiement prévu">

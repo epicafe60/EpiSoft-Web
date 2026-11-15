@@ -74,10 +74,6 @@ export const INTEGRITY_HELP: Record<string, IntegrityHelp> = {
     what: 'Le compte 411000 de la comptabilité représente ce que l’association doit aux adhérents : il doit être égal au total des cagnottes de tous les foyers.',
     todo: 'Ouvrez les éditions comptables, regardez le compte 411000 et comparez-le au total des cagnottes. Cherchez les versements non comptabilisés ou les écritures de reprise manquantes, et passez une écriture de régularisation décidée avec le trésorier. Si l’écart est connu (reprise de l’ancienne comptabilité), « Accepter » avec une note.',
   },
-  'FAC-01': {
-    what: 'Pour une facture fournisseur, le montant TTC doit être égal au montant HT plus la TVA.',
-    todo: 'Ouvrez la facture, comparez-la à la pièce papier et corrigez le montant erroné. Si son écriture comptable est déjà validée, il faut d’abord l’extourner.',
-  },
   'SYN-01': {
     what: 'Un poste de caisse a envoyé un ticket (ou un versement) que le serveur a refusé : il n’a donc modifié ni le stock ni la cagnotte.',
     todo: 'Ouvrez Surveillance › Tickets à vérifier : lisez le motif, faites ressaisir le ticket à la caisse (bouton « Ressaisir ce ticket » dans « Tickets du jour ») si la vente a bien eu lieu, puis classez le refus.',

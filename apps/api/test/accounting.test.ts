@@ -305,6 +305,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         date: '2026-03-10',
         totalExcl: '240',
         totalVat: '15,64',
+        totalIncl: '255,64',
         paymentMethod: 'TRANSFER',
         comment: '',
         receiptIds: [],
@@ -346,6 +347,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       date: '2026-03-10',
       totalExcl: '250',
       totalVat: '0',
+      totalIncl: '250',
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [],
@@ -389,6 +391,100 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
     ).toMatchObject({ status: 'PAID', paymentEntryId: pay.entryId });
   });
 
+  it('refuses totals that do not add up, and keeps the entry balanced on the TTC', async () => {
+    await year2026();
+    const s = (await post('/api/v1/suppliers', supplierForm)).json();
+    // HT 100 + VAT 5.50 is not TTC 105.49: refused.
+    expect(
+      (
+        await post('/api/v1/supplier-invoices', {
+          supplierId: s.id,
+          pieceRef: 'F-BAD',
+          date: '2026-03-10',
+          totalExcl: '100',
+          totalVat: '5,50',
+          totalIncl: '105,49',
+          paymentMethod: 'TRANSFER',
+          comment: '',
+          receiptIds: [],
+        })
+      ).statusCode,
+    ).toBe(400);
+    const res = await post('/api/v1/supplier-invoices', {
+      supplierId: s.id,
+      pieceRef: 'F-FREE',
+      date: '2026-03-10',
+      totalExcl: '100',
+      totalVat: '5,50',
+      totalIncl: '105,50',
+      paymentMethod: 'TRANSFER',
+      comment: '',
+      receiptIds: [],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const id = res.json().id as string;
+    expect((await get(`/api/v1/supplier-invoices/${id}`)).json()).toMatchObject({
+      totalExcl: '100.00',
+      totalVat: '5.50',
+      totalIncl: '105.50',
+    });
+    const [row] = await t.db.select().from(supplierInvoice).where(eq(supplierInvoice.id, id));
+    const e = (await get(`/api/v1/entries/${row!.entryId}`)).json();
+    const sum = (k: 'debit' | 'credit') =>
+      e.lines.reduce(
+        (n: number, l: Record<string, string>) => n + Math.round(Number(l[k]) * 100),
+        0,
+      );
+    expect(sum('debit')).toBe(10550);
+    expect(sum('credit')).toBe(10550);
+    // The payment follows the TTC too.
+    expect(
+      (
+        await post(`/api/v1/supplier-invoices/${id}/pay`, {
+          date: '2026-03-20',
+          method: 'TRANSFER',
+        })
+      ).statusCode,
+    ).toBe(200);
+    // The TTC is required.
+    expect(
+      (
+        await post('/api/v1/supplier-invoices', {
+          supplierId: s.id,
+          pieceRef: 'F-NO-TTC',
+          date: '2026-03-10',
+          totalExcl: '1',
+          totalVat: '0',
+          paymentMethod: null,
+          comment: '',
+          receiptIds: [],
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it('lets the supply role create an invoice and refuses a till-only user', async () => {
+    await year2026();
+    const s = (await post('/api/v1/suppliers', supplierForm)).json();
+    const body = {
+      supplierId: s.id,
+      pieceRef: 'F-ROLE',
+      date: '2026-03-10',
+      totalExcl: '10',
+      totalVat: '0',
+      totalIncl: '10',
+      paymentMethod: null,
+      comment: '',
+      receiptIds: [],
+    };
+    const appros = await login(t.app, (await createUser(t.db, { roles: ['APPROS'] })).username!);
+    const caisse = await login(t.app, (await createUser(t.db, { roles: ['CAISSE'] })).username!);
+    const as = (headers: typeof h) =>
+      t.app.inject({ method: 'POST', url: '/api/v1/supplier-invoices', headers, payload: body });
+    expect((await as(caisse)).statusCode).toBe(403);
+    expect((await as(appros)).statusCode).toBe(200);
+  });
+
   it('a validated purchase entry blocks a change of amount (409) but not a comment', async () => {
     const { s, inv } = await newInvoice();
     const [row] = await t.db.select().from(supplierInvoice).where(eq(supplierInvoice.id, inv.id));
@@ -399,6 +495,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       date: '2026-03-10',
       totalExcl: '240',
       totalVat: '15,64',
+      totalIncl: '255,64',
       paymentMethod: 'TRANSFER',
       receiptIds: [],
     };
@@ -406,8 +503,15 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       (await put(`/api/v1/supplier-invoices/${inv.id}`, { ...same, comment: 'note' })).statusCode,
     ).toBe(200);
     expect(
-      (await put(`/api/v1/supplier-invoices/${inv.id}`, { ...same, totalExcl: '300', comment: '' }))
-        .statusCode,
+      (
+        await put(`/api/v1/supplier-invoices/${inv.id}`, {
+          ...same,
+          totalExcl: '300',
+          totalVat: '0',
+          totalIncl: '300',
+          comment: '',
+        })
+      ).statusCode,
     ).toBe(409);
   });
 });

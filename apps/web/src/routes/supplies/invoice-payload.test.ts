@@ -10,6 +10,7 @@ const values = (over: Partial<InvoiceFormValues> = {}): InvoiceFormValues => ({
   dueDate: '',
   totalExcl: '120,50',
   totalVat: '',
+  totalIncl: '120,50',
   method: '',
   comment: '',
   receiptIds: [],
@@ -24,6 +25,7 @@ describe('the invoice form produces a payload the schema accepts', () => {
   it('the minimum: supplier, piece, date, total; a blank VAT is 0', () => {
     expect(issues(values())).toEqual([]);
     expect(invoicePayload(values()).totalVat).toBe('0');
+    expect(invoicePayload(values({ totalVat: '5', totalIncl: '130' })).totalIncl).toBe('130');
   });
   it('a blank due date is not sent at all', () => {
     expect('dueDate' in JSON.parse(JSON.stringify(invoicePayload(values())))).toBe(false);

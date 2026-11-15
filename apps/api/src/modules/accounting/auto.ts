@@ -242,6 +242,9 @@ export async function syncInvoiceEntry(
   await ensureAccount(tx, expense, 'Achats');
   const planned = buildInvoiceEntry({
     supplierAccount: sup.number,
+    // Free totals: HT, VAT and TTC are typed by the team and may not add up. The entry uses the
+    // TTC alone (the amount due: credit of 401, debit of the expense), so it always balances;
+    // the VAT is implicitly TTC - HT and is not posted on its own.
     expenseLines: [{ account: expense, cents: decimalToCents(inv.totalIncl) }],
     label: `Facture ${sup.name}`,
   });
