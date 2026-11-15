@@ -16,7 +16,7 @@ import { audit } from '../../lib/audit';
 import { revokeResetLinks } from '../../lib/identity';
 import { checkMemberPassword } from '../../lib/till-cashier';
 import { HttpProblem, badRequest } from '../../lib/problem';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { queueTemplatedEmail } from '../../lib/email-render';
 import { hashPassword, hashToken, newToken, verifyDummy, verifyPassword } from '../../lib/tokens';
 import { canLogIn } from '../../plugins/auth';
 import { loadSettings } from '../admin/settings-store';
@@ -260,11 +260,9 @@ export async function sendPasswordLink(
   });
   const link = `${config.APP_URL}/mot-de-passe?jeton=${encodeURIComponent(token)}`;
   if (!user.email) return link;
-  await queueEmail(tx, {
-    to: user.email,
-    subject: 'Épicafé : définir votre mot de passe',
-    text: `Bonjour ${user.firstName},\n\nPour définir votre mot de passe EpiSoft, ouvrez ce lien (valable 1 heure) :\n${link}\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez ce message.`,
-    html: `<p>Bonjour ${escapeHtml(user.firstName)},</p><p>Pour définir votre mot de passe EpiSoft, ouvrez ce lien (valable 1&nbsp;heure)&nbsp;:<br><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p>Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.</p>`,
+  await queueTemplatedEmail(tx, 'password_link', user.email, {
+    prenom: user.firstName,
+    lien: link,
   });
   return link;
 }

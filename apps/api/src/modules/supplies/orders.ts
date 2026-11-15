@@ -40,7 +40,8 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { parisYear, toParisDate } from '../../lib/dates';
-import { escapeHtml, pdfAttachment, queueEmail } from '../../lib/mail';
+import { pdfAttachment, queueEmail } from '../../lib/mail';
+import { renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
 import { eur, keyValues, letterhead, pdfText, render, table } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -664,6 +665,19 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       .send(pdf);
   });
 
+  /** The wording proposed in the sending window: the « Commande fournisseur » e-mail, filled in. */
+  app.get('/purchase-orders/:id/mail-draft', { ...appros, schema: idParams }, async (req) => {
+    const o = await db.query.purchaseOrder.findFirst({
+      where: eq(purchaseOrder.id, req.params.id),
+      columns: { number: true },
+    });
+    if (!o) throw notFound('Commande introuvable.');
+    return renderPlainDraft(db, 'purchase_order', {
+      numero: o.number,
+      date: new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }),
+    });
+  });
+
   /** R-CMD-04: e-mailed with the PDF attached; the order becomes "sent". */
   app.post(
     '/purchase-orders/:id/send',
@@ -684,12 +698,14 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .where(eq(purchaseOrderLine.orderId, o.id))) as [{ n: number }];
         if (!n) throw badRequest('La commande est vide.');
         const pdf = await orderPdf(tx, o.id);
+        // The text typed in the window, inside the common layout (header, footer) of the e-mails.
+        const mail = await renderPlainEmail(tx, req.body.subject, req.body.message);
         await queueEmail(tx, {
           to: req.body.to,
-          subject: req.body.subject,
-          text: req.body.message,
-          html: `<div style="font-family:system-ui,sans-serif;white-space:pre-line">${escapeHtml(req.body.message)}</div>`,
-          attachments: [pdfAttachment(`${o.number}.pdf`, pdf)],
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
+          attachments: [...mail.attachments, pdfAttachment(`${o.number}.pdf`, pdf)],
         });
         await tx
           .update(purchaseOrder)

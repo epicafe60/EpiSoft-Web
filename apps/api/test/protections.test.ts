@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { emailOutbox, errorLog, integrityRun, product, sale, syncRejection } from '@episoft/db';
 import { DEFAULT_THRESHOLDS, type SyncOp } from '@episoft/shared';
 import { queueEmail } from '../src/lib/mail';
-import { createUser, login, setupTestApp } from './helpers';
+import { createUser, login, setupTestApp, waitForIdle } from './helpers';
 import { addProduct as addProductTo, openTill, type Till } from './till-fixtures';
 
 // Protections and monitoring: refused tickets, warnings, « À surveiller », errors, backups.
@@ -604,6 +604,16 @@ describe('an operation that arrives before what it depends on is never lost', ()
 describe('what changed lately', () => {
   it('lists the latest changes in plain sentences, with who did them', async () => {
     await push([saleOp([{ productId: randomUUID(), unitPrice: '2.50' }], '2.50')]);
+    // The alert to the team is written in the background: wait for its entry in the journal, so that
+    // it cannot land after the next one (a moment of idleness is not proof that it is over).
+    for (let i = 0; i < 160; i++) {
+      const { rows } = await t.db.execute<{ n: number }>(
+        sql`select count(*)::int as n from app.audit_log where action = 'staff.notified'`,
+      );
+      if (rows[0]!.n > 0) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    await waitForIdle(t.db);
     const [r] = (await get('/admin/rejections')).json() as { id: string }[];
     await post(`/admin/rejections/${r!.id}/ack`);
     const feed = (await get('/admin/activity')).json() as {

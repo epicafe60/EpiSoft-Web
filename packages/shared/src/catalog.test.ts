@@ -10,6 +10,8 @@ import {
   SALE_MODE_LABELS,
   UNITS,
   UNIT_LABELS,
+  SERVICE_SALE,
+  withServiceSale,
   WALLET_ENTRY_KINDS,
   WALLET_ENTRY_KIND_LABELS,
   MEMBER_PAYMENT_PURPOSES,
@@ -74,5 +76,27 @@ describe('memberStatusFromLegacy (§6.3)', () => {
     expect(memberStatusFromLegacy(undefined)).toBeNull();
     expect(memberStatusFromLegacy(4)).toBeNull();
     expect(memberStatusFromLegacy(-1)).toBeNull();
+  });
+});
+
+describe('a service is sold one at a time, in euros', () => {
+  it('gets a quantity of 1 and no unit, whatever it held', () => {
+    const asked = {
+      kind: 'SERVICE' as const,
+      saleMode: 'WEIGHT',
+      unitQty: '500',
+      unit: 'G',
+      name: 'Don',
+    };
+    expect(withServiceSale(asked)).toEqual({ ...asked, ...SERVICE_SALE });
+    expect(withServiceSale(asked)).toMatchObject({ saleMode: 'UNIT', unitQty: '1', unit: null });
+  });
+
+  it('leaves goods alone, and does not change what it is given', () => {
+    const goods = { kind: 'GOODS' as const, saleMode: 'WEIGHT', unitQty: '500', unit: 'G' };
+    expect(withServiceSale(goods)).toBe(goods);
+    const service = { kind: 'SERVICE' as const, saleMode: 'WEIGHT', unitQty: '2', unit: 'KG' };
+    withServiceSale(service);
+    expect(service.unit).toBe('KG');
   });
 });

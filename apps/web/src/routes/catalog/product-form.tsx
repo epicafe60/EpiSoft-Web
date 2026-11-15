@@ -142,7 +142,7 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
   const incl = excl !== null ? purchasePriceIncl(centsToDecimal(excl), form.vatRate) : null;
   const sale = parseAmountToCents(form.salePrice);
   const perUnit =
-    sale !== null && form.unit
+    sale !== null && form.unit && form.kind !== 'SERVICE'
       ? pricePerKgOrLitreCents(
           sale,
           parseQtyToMilli(form.unitQty.replace(',', '.')) ?? 0,
@@ -196,13 +196,19 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
     </Field>
   );
 
+  const isService = form.kind === 'SERVICE';
+  // A service has no quantity or unit to choose: its terms are shown, not asked.
+  const fixed = (label: string, value: string) => (
+    <Field label={label}>{(p) => <Input {...p} disabled readOnly value={value} />}</Field>
+  );
+
   const universeName = (id: string) => refs.data?.universes.find((u) => u.id === id)?.name ?? '';
 
   return (
     <>
       <Breadcrumbs
         items={[
-          { label: 'Catalogue', to: '/catalogue' },
+          { label: 'Produits', to: '/catalogue' },
           { label: product ? product.name : 'Nouveau produit' },
         ]}
       />
@@ -323,7 +329,7 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
                   Visible dans la boutique en ligne
                   <span className="block text-xs text-muted-foreground">
                     Décochez pour masquer ce produit de la boutique, sans toucher à sa vente en
-                    caisse. Un rayon entier se masque dans Catalogue › Rayons.
+                    caisse. Un rayon entier se masque dans Produits › Rayons.
                   </span>
                 </Label>
               </div>
@@ -336,19 +342,35 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
             </CardHeader>
             <CardContent className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-3">
-                {select(
-                  'saleMode',
-                  'Vente',
-                  SALE_MODES.map((m) => [m, SALE_MODE_LABELS[m]]),
-                )}
-                {text('unitQty', 'Quantité unitaire', { inputMode: 'decimal' })}
-                {select(
-                  'unit',
-                  'Unité',
-                  UNITS.map((u) => [u, UNIT_LABELS[u]]),
-                  true,
+                {isService ? (
+                  <>
+                    {fixed('Vente', SALE_MODE_LABELS.UNIT)}
+                    {fixed('Quantité unitaire', '1')}
+                    {fixed('Unité', '€')}
+                  </>
+                ) : (
+                  <>
+                    {select(
+                      'saleMode',
+                      'Vente',
+                      SALE_MODES.map((m) => [m, SALE_MODE_LABELS[m]]),
+                    )}
+                    {text('unitQty', 'Quantité unitaire', { inputMode: 'decimal' })}
+                    {select(
+                      'unit',
+                      'Unité',
+                      UNITS.map((u) => [u, UNIT_LABELS[u]]),
+                      true,
+                    )}
+                  </>
                 )}
               </div>
+              {isService ? (
+                <p className="text-sm text-muted-foreground">
+                  Un service (adhésion, don…) se vend à l’unité : la quantité est toujours 1 et le
+                  montant est en euros, sans unité de poids ni de volume.
+                </p>
+              ) : null}
               <div className="grid gap-4 sm:grid-cols-4">
                 {text('purchasePriceExcl', 'PA HT (€)', { inputMode: 'decimal' })}
                 {select(

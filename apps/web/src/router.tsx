@@ -46,6 +46,7 @@ import { StatsPage } from './routes/stats/stats-page';
 import { ImportsPage } from './routes/stats/imports-page';
 import { IntegrityPage } from './routes/admin/integrity';
 import { HelpPage } from './routes/help';
+import { EmailTemplatesPage } from './routes/admin/email/email-templates-page';
 import { FeedbackDetailPage, ManageFeedbackPage, MyFeedbackPage } from './routes/feedback/pages';
 import {
   ActivityPage,
@@ -530,6 +531,11 @@ const adminTypesRoute = createRoute({
   path: '/adhesions',
   component: MembershipTypesPage,
 });
+const adminEmailsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/courriels',
+  component: EmailTemplatesPage,
+});
 const adminTillRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/caisse',
@@ -607,6 +613,7 @@ const routeTree = rootRoute.addChildren([
       adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,
+      adminEmailsRoute,
     ]),
   ]),
 ]);

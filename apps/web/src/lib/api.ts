@@ -62,6 +62,38 @@ async function upload<T>(path: string, file: Blob): Promise<T> {
   return data as T;
 }
 
+/** An image sent as it is (POST), its type announced as such and its name in a header. */
+async function postImage<T>(path: string, file: File): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/v1${path}`, {
+      method: 'POST',
+      headers: {
+        [CSRF_HEADER]: '1',
+        'content-type': file.type,
+        'x-file-name': encodeURIComponent(file.name),
+      },
+      credentials: 'same-origin',
+      body: file,
+    });
+  } catch {
+    throw new ApiError({
+      type: 'about:blank',
+      title: 'Hors ligne',
+      status: 0,
+      detail: 'Le serveur est injoignable. Vérifiez la connexion réseau.',
+    });
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok)
+    throw new ApiError(
+      data && typeof data === 'object' && 'status' in data
+        ? (data as Problem)
+        : { type: 'about:blank', title: 'Erreur', status: res.status, detail: res.statusText },
+    );
+  return data as T;
+}
+
 /** A file made by the server from a JSON body (the Excel export of a list), with its name. */
 async function postForFile(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
   let res: Response;
@@ -122,4 +154,5 @@ export const api = {
   upload: <T = void>(path: string, file: Blob) => upload<T>(path, file),
   postFile: <T = void>(path: string, file: File) => postFile<T>(path, file),
   postForFile: (path: string, body: unknown) => postForFile(path, body),
+  postImage: <T = void>(path: string, file: File) => postImage<T>(path, file),
 };

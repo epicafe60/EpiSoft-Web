@@ -1,11 +1,12 @@
-import type {
-  ProductCreate,
-  ProductKind,
-  ProductStatus,
-  Quality,
-  SaleCondition,
-  SaleMode,
-  Unit,
+import {
+  withServiceSale,
+  type ProductCreate,
+  type ProductKind,
+  type ProductStatus,
+  type Quality,
+  type SaleCondition,
+  type SaleMode,
+  type Unit,
 } from '@episoft/shared';
 import type { ProductDetail } from '@/lib/types';
 
@@ -93,7 +94,7 @@ export function productToForm(p: ProductDetail): ProductFormState {
 }
 
 export function productToPayload(f: ProductFormState): ProductCreate {
-  return {
+  return withServiceSale({
     name: f.name,
     description: f.description,
     kind: f.kind,
@@ -116,7 +117,7 @@ export function productToPayload(f: ProductFormState): ProductCreate {
     posLabel: f.posLabel,
     posSort: Number(f.posSort) || 0,
     ...(f.code ? { code: f.code } : {}),
-  };
+  });
 }
 
 const FIELD_LABELS: Record<string, string> = {

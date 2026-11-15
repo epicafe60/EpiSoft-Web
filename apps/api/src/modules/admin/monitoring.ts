@@ -13,6 +13,7 @@ import {
   posDevice,
   sale,
   syncRejection,
+  emailAsset,
   type Db,
 } from '@episoft/db';
 import type { Config } from '../../config';
@@ -322,6 +323,23 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
       const [m] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, req.params.id));
       if (!m) throw notFound('Courriel introuvable.');
       const files = attachmentsOf(m.attachments);
+      // The images inside the message (cid:) are shown as data in the preview, and are not listed as
+      // attachments: they are part of the message, not files that came with it.
+      let html = m.html;
+      for (const f of files.filter((x) => x.cid))
+        html = html.split(`cid:${f.cid}`).join(`data:${f.contentType};base64,${f.contentBase64}`);
+      // A sent message no longer holds its images (mail.ts): they are read again from the library,
+      // and an image that was deleted since is left out.
+      for (const [, cid, id] of m.html.matchAll(/cid:(asset-([0-9a-f-]{36})@episoft)/gi)) {
+        if (!html.includes(`cid:${cid}`)) continue;
+        const [a] = await db
+          .select({ mime: emailAsset.mime, bytes: emailAsset.bytes })
+          .from(emailAsset)
+          .where(eq(emailAsset.id, id!));
+        html = a
+          ? html.split(`cid:${cid}`).join(`data:${a.mime};base64,${a.bytes.toString('base64')}`)
+          : html.replace(new RegExp(`<img[^>]*cid:${cid}[^>]*>`, 'gi'), '');
+      }
       await audit(db, req, {
         action: 'email.view',
         entity: 'email_outbox',
@@ -337,16 +355,20 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
         attempts: m.attempts,
         createdAt: m.createdAt.toISOString(),
         sentAt: m.sentAt?.toISOString() ?? null,
-        attachments: files.map((f) => f.filename),
+        attachments: files.filter((f) => !f.cid).map((f) => f.filename),
         from: config.SMTP_FROM,
         text: m.text,
-        html: m.html,
-        files: files.map((f, index) => ({
-          index,
-          filename: f.filename,
-          contentType: f.contentType,
-          sizeBytes: Buffer.from(f.contentBase64, 'base64').length,
-        })),
+        html,
+        files: files
+          .map((f, index) => ({
+            index,
+            filename: f.filename,
+            contentType: f.contentType,
+            sizeBytes: Buffer.from(f.contentBase64, 'base64').length,
+            inline: !!f.cid,
+          }))
+          .filter((f) => !f.inline)
+          .map(({ inline: _inline, ...f }) => f),
       };
     },
   );

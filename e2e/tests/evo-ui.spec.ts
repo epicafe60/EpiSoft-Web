@@ -140,7 +140,7 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
   await expect(shown.getByLabel('Corps du message')).toContainText('Veuillez trouver ci-joint');
   await shown.getByRole('button', { name: 'Modifier' }).click();
   const body = mail.getByLabel('Message', { exact: true });
-  await expect(body).toHaveValue(/^Bonjour,\nVeuillez trouver ci-joint notre commande CF-/);
+  await expect(body).toHaveValue(/^Bonjour,\n+Veuillez trouver ci-joint notre commande CF-/);
   const edited = 'Bonjour,\nMerci de livrer mardi matin.\n\nBien cordialement !';
   await body.fill(edited);
   await mail.getByRole('button', { name: 'Envoyer', exact: true }).click();
@@ -151,7 +151,9 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
     `select "to", text, attachments from app.email_outbox where subject like 'Commande CF-%' order by created_at desc limit 1`,
   );
   expect(queued!.to).toBe('ferme@example.org');
-  expect(queued!.text).toBe(edited);
+  // The text as edited, then the footer common to every e-mail.
+  expect(queued!.text.startsWith(edited)).toBe(true);
+  expect(queued!.text).toContain('Épicafé de Montjavoult');
   expect(queued!.attachments[0]!.filename).toMatch(/^CF-.*\.pdf$/);
 
   // Cancel, then delete: the order is gone.

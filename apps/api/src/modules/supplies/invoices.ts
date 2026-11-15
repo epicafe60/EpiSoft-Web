@@ -29,7 +29,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toParisDate } from '../../lib/dates';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { payInvoice, syncInvoiceEntry } from '../accounting/auto';
 import { eur } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
@@ -426,11 +426,9 @@ export async function sendDueInvoiceAlerts(db: Db, now = new Date()): Promise<nu
       (d) =>
         `${d.dueDate.split('-').reverse().join('/')} · ${d.supplierName} · pièce ${d.pieceRef} · ${eur(d.totalIncl)}`,
     );
-    await queueEmail(tx, {
-      to,
-      subject: `Épicafé : ${due.length} facture(s) fournisseur à régler sous 3 jours`,
-      text: lines.join('\n'),
-      html: `<p>Factures à régler :</p><ul>${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
+    await queueTemplatedEmail(tx, 'alert_invoices_due', to, {
+      nombre: String(due.length),
+      liste: htmlList(lines),
     });
     await tx
       .update(supplierInvoice)

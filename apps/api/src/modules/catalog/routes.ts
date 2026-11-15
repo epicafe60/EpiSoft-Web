@@ -22,6 +22,8 @@ import {
   productPatchSchema,
   purchasePriceIncl,
   contentMatchesType,
+  SERVICE_SALE,
+  withServiceSale,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -187,7 +189,9 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   );
 
   app.post('/products', { ...editors, schema: { body: productCreateSchema } }, async (req) => {
-    const { eans, code, ...fields } = req.body;
+    const { eans, code, ...asked } = req.body;
+    // A service is sold one at a time, in euros, whatever the form sent.
+    const fields = withServiceSale(asked);
     return db.transaction(async (tx) => {
       const finalCode =
         code ?? (fields.categoryId ? await nextProductCode(tx, fields.categoryId) : null);
@@ -254,6 +258,8 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
             throw conflict(`Le code ${fields.code} est déjà utilisé.`);
         }
         const set: Partial<typeof product.$inferInsert> = { ...fields };
+        // Still, or just made, a service: its sale terms are fixed.
+        if ((fields.kind ?? before.kind) === 'SERVICE') Object.assign(set, SERVICE_SALE);
         const excl =
           fields.purchasePriceExcl !== undefined
             ? fields.purchasePriceExcl

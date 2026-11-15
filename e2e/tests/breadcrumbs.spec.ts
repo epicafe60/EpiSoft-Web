@@ -6,11 +6,11 @@ test('form and detail pages show a trail at the top, with the way back up', asyn
 
   await page.goto('/catalogue/nouveau');
   const trail = page.getByRole('navigation', { name: 'Fil d’Ariane' });
-  await expect(trail).toContainText('Catalogue');
+  await expect(trail).toContainText('Produits');
   await expect(trail.getByText('Nouveau produit')).toHaveAttribute('aria-current', 'page');
   // The old button at the bottom of the form is gone.
   await expect(page.getByRole('link', { name: 'Retour au catalogue' })).toHaveCount(0);
-  await trail.getByRole('link', { name: 'Catalogue' }).click();
+  await trail.getByRole('link', { name: 'Produits' }).click();
   await expect(page).toHaveURL(/\/catalogue$/);
 
   await page.goto('/appros/fournisseurs/nouveau');

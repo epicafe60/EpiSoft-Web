@@ -1,3 +1,4 @@
+import type { DbOrTx } from '@episoft/db';
 import {
   centsToDecimal,
   formatEuro,
@@ -5,14 +6,14 @@ import {
   PAYMENT_METHOD_LABELS,
   parseQtyToMilli,
   type PaymentMethod,
+  type Values,
 } from '@episoft/shared';
 import { formatParis } from './dates';
-import { escapeHtml, type OutgoingEmail } from './mail';
+import { queueTemplatedEmail } from './email-render';
+import { escapeHtml } from './mail';
 
-const wrap = (title: string, body: string) =>
-  `<div style="font-family:system-ui,sans-serif;max-width:520px;color:#1c2b22">` +
-  `<h2 style="font-size:18px;margin:0 0 12px">${escapeHtml(title)}</h2>${body}` +
-  `<p style="margin-top:24px;font-size:12px;color:#5b6b61">Épicafé de Montjavoult</p></div>`;
+// The values that fill the receipts (ticket, top-up). The wording around them is a template that
+// the administrators can edit (packages/shared/src/email-templates.ts).
 
 const td = 'padding:4px 6px;border-bottom:1px solid #e3e8e4';
 
@@ -27,8 +28,10 @@ export interface ReceiptSale {
   balance?: { beforeCents: number; afterCents: number };
 }
 
-/** R-VTE-11 / R-VTE-16: the ticket by e-mail, sent only once the sale is recorded. */
-export function saleReceiptEmail(to: string, firstName: string, s: ReceiptSale): OutgoingEmail {
+export const euros = (cents: number) => formatEuro(centsToDecimal(cents));
+
+/** R-VTE-11 / R-VTE-16: what fills the ticket e-mail. */
+export function saleReceiptValues(firstName: string, s: ReceiptSale): Values {
   const rows = s.lines
     .map(
       (l) =>
@@ -38,60 +41,50 @@ export function saleReceiptEmail(to: string, firstName: string, s: ReceiptSale):
         `<td style="${td};text-align:right">${formatEuro(l.lineTotal)}</td></tr>`,
     )
     .join('');
-  const pays = s.payments
-    .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} : ${formatEuro(p.amount)}`)
-    .join('<br>');
-  const before = s.balance ? `Solde de votre cagnotte avant : ${euros(s.balance.beforeCents)}` : '';
-  const after = s.balance ? `Solde de votre cagnotte après : ${euros(s.balance.afterCents)}` : '';
-  const html = wrap(
-    `Ticket ${s.number}`,
-    `<p>Bonjour ${escapeHtml(firstName)},<br>voici votre ticket du ${formatParis(s.soldAt)}.</p>` +
-      (before ? `<p>${before}</p>` : '') +
-      `<table style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr>` +
-      `<th style="${td};text-align:left">Article</th><th style="${td};text-align:right">Qté</th>` +
-      `<th style="${td};text-align:right">P.U.</th><th style="${td};text-align:right">Total</th></tr></thead>` +
-      `<tbody>${rows}</tbody></table>` +
-      `<p style="font-size:16px"><strong>Total : ${formatEuro(s.total)}</strong></p><p>${pays}</p>` +
-      (after ? `<p><strong>${after}</strong></p>` : ''),
-  );
-  const text =
-    `Ticket ${s.number} du ${formatParis(s.soldAt)}\n\n` +
-    (before ? `${before}\n\n` : '') +
-    s.lines
-      .map(
-        (l) =>
-          `${l.label}  ${formatQty(parseQtyToMilli(l.qty) ?? 0)} × ${formatEuro(l.unitPrice)} = ${formatEuro(l.lineTotal)}`,
-      )
-      .join('\n') +
-    `\n\nTotal : ${formatEuro(s.total)}\n` +
-    s.payments
-      .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} : ${formatEuro(p.amount)}`)
-      .join('\n') +
-    (after ? `\n\n${after}` : '');
-  return { to, subject: `Épicafé : ticket ${s.number}`, html, text };
-}
-
-/** R-CAG-06: top-up receipt with the old balance, the amount, the new balance and the mode. */
-export function topupReceiptEmail(
-  to: string,
-  firstName: string,
-  r: { at: Date; amountCents: number; beforeCents: number; method: PaymentMethod },
-): OutgoingEmail {
-  const after = r.beforeCents + r.amountCents;
-  const lines = [
-    `Ancien solde : ${formatEuro(centsToDecimal(r.beforeCents))}`,
-    `Versement : ${formatEuro(centsToDecimal(r.amountCents))} (${PAYMENT_METHOD_LABELS[r.method]})`,
-    `Nouveau solde : ${formatEuro(centsToDecimal(after))}`,
-  ];
+  const table =
+    `<table style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr>` +
+    `<th style="${td};text-align:left">Article</th><th style="${td};text-align:right">Qté</th>` +
+    `<th style="${td};text-align:right">P.U.</th><th style="${td};text-align:right">Total</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
   return {
-    to,
-    subject: 'Épicafé : reçu de versement sur votre cagnotte',
-    html: wrap(
-      'Reçu de versement',
-      `<p>Bonjour ${escapeHtml(firstName)},<br>nous avons bien reçu votre versement du ${formatParis(r.at)}.</p><p>${lines.join('<br>')}</p>`,
-    ),
-    text: `Bonjour ${firstName},\n\nVersement du ${formatParis(r.at)}\n${lines.join('\n')}`,
+    prenom: firstName,
+    numero: s.number,
+    date: formatParis(s.soldAt),
+    total: formatEuro(s.total),
+    lignes: table,
+    paiements: s.payments
+      .map((p) => `${PAYMENT_METHOD_LABELS[p.method]} : ${formatEuro(p.amount)}`)
+      .join('<br>'),
+    cagnotte_avant: s.balance
+      ? `<p>Solde de votre cagnotte avant : ${euros(s.balance.beforeCents)}</p>`
+      : '',
+    cagnotte_apres: s.balance
+      ? `<p><strong>Solde de votre cagnotte après : ${euros(s.balance.afterCents)}</strong></p>`
+      : '',
   };
 }
 
-export const euros = (cents: number) => formatEuro(centsToDecimal(cents));
+export const queueSaleReceipt = (tx: DbOrTx, to: string, firstName: string, s: ReceiptSale) =>
+  queueTemplatedEmail(tx, 'sale_receipt', to, saleReceiptValues(firstName, s));
+
+/** R-CAG-06: top-up receipt with the old balance, the amount, the new balance and the mode. */
+export function topupReceiptValues(
+  firstName: string,
+  r: { at: Date; amountCents: number; beforeCents: number; method: PaymentMethod },
+): Values {
+  return {
+    prenom: firstName,
+    date: formatParis(r.at),
+    ancien_solde: euros(r.beforeCents),
+    montant: euros(r.amountCents),
+    mode: PAYMENT_METHOD_LABELS[r.method],
+    nouveau_solde: euros(r.beforeCents + r.amountCents),
+  };
+}
+
+export const queueTopupReceipt = (
+  tx: DbOrTx,
+  to: string,
+  firstName: string,
+  r: { at: Date; amountCents: number; beforeCents: number; method: PaymentMethod },
+) => queueTemplatedEmail(tx, 'topup_receipt', to, topupReceiptValues(firstName, r));

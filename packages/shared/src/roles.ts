@@ -89,7 +89,7 @@ export function identityChangeAllowed(
 export const MODULES = [
   { key: 'caisse', label: 'Caisse', path: '/caisse', roles: ['CAISSE'] },
   { key: 'membres', label: 'Membres', path: '/membres', roles: ['ADHERENTS'] },
-  { key: 'catalogue', label: 'Catalogue', path: '/catalogue', roles: ['PRODUITS'] },
+  { key: 'catalogue', label: 'Produits', path: '/catalogue', roles: ['PRODUITS'] },
   { key: 'appros', label: 'Approvisionnements', path: '/appros', roles: ['APPROS'] },
   {
     key: 'precommandes',

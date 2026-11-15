@@ -7,6 +7,9 @@ const SIGNATURES: Record<string, (b: Uint8Array) => boolean> = {
   // RIFF....WEBP
   'image/webp': (b) =>
     starts(b, [0x52, 0x49, 0x46, 0x46]) && starts(b.subarray(8), [0x57, 0x45, 0x42, 0x50]),
+  // GIF87a / GIF89a
+  'image/gif': (b) =>
+    starts(b, [0x47, 0x49, 0x46, 0x38]) && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61,
   'application/pdf': (b) => starts(b, [0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
 };
 

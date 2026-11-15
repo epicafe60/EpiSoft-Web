@@ -12,6 +12,8 @@ const NO_WRITE: Record<string, string> = {
   'POST /bank/rules/test': 'essaie une règle sur des lignes, sans rien enregistrer',
   'POST /imports/:kind/preview': 'aperçu d’un import, rien n’est enregistré',
   'POST /supplier-invoices/check': 'vérifie une facture avant de la saisir',
+  'POST /email-templates/:key/preview':
+    'aperçu d’un courriel avec des valeurs d’exemple, rien n’est enregistré',
 };
 
 /** Helpers that record the action themselves. */

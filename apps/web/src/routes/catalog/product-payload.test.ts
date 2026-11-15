@@ -61,6 +61,37 @@ describe('the new-product form produces a payload the schema accepts', () => {
   });
 });
 
+describe('a service form', () => {
+  const service = (over: Partial<ProductFormState> = {}) =>
+    form({ name: 'Adhésion', kind: 'SERVICE', salePrice: '10', ...over });
+
+  it('is sent one at a time, with a quantity of 1 and no unit', () => {
+    const payload = productToPayload(service());
+    expect(payload).toMatchObject({ kind: 'SERVICE', saleMode: 'UNIT', unitQty: '1', unit: null });
+    expect(issues(service())).toEqual([]);
+  });
+
+  it('forgets a weight or a volume left from when it was a goods product', () => {
+    const payload = productToPayload(service({ saleMode: 'WEIGHT', unitQty: '0,5', unit: 'KG' }));
+    expect(payload).toMatchObject({ saleMode: 'UNIT', unitQty: '1', unit: null });
+  });
+
+  it('keeps the choices of a goods product, which come back if the type is changed back', () => {
+    const goods = form({
+      name: 'Miel',
+      salePrice: '6',
+      saleMode: 'WEIGHT',
+      unitQty: '0,5',
+      unit: 'KG',
+    });
+    expect(productToPayload(goods)).toMatchObject({
+      saleMode: 'WEIGHT',
+      unitQty: '0,5',
+      unit: 'KG',
+    });
+  });
+});
+
 describe('describeFieldErrors', () => {
   it('names the field of each refusal', () => {
     expect(

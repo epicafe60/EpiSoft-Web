@@ -22,7 +22,7 @@ import {
 import type { Config } from '../../config';
 import { notifyStaff } from '../../lib/alerts';
 import { audit } from '../../lib/audit';
-import { escapeHtml, queueEmail } from '../../lib/mail';
+import { queueTemplatedEmail } from '../../lib/email-render';
 import { notFound } from '../../lib/problem';
 import { canLogIn } from '../../plugins/auth';
 import { nextNumber } from '../pos/numbers';
@@ -66,8 +66,7 @@ const toRow = (r: Row): FeedbackRow => ({
 async function tellAuthor(
   tx: DbOrTx,
   t: { authorId: string | null; number: number; title: string },
-  headline: string,
-  detail: string,
+  what: { kind: 'reply'; message: string } | { kind: 'status'; state: string },
 ) {
   if (!t.authorId) return;
   const [a] = await tx
@@ -75,13 +74,10 @@ async function tellAuthor(
     .from(member)
     .where(eq(member.id, t.authorId));
   if (!a?.email || !canLogIn(a.status)) return;
-  const ref = `${formatFeedbackNumber(t.number)} — ${t.title}`;
-  await queueEmail(tx, {
-    to: a.email,
-    subject: `Épicafé : ${headline} (${formatFeedbackNumber(t.number)})`,
-    text: `Bonjour ${a.firstName},\n\n${headline}.\n${ref}\n\n${detail}\n\nVous retrouvez votre signalement dans EpiSoft, menu « Signalements ».`,
-    html: `<p>Bonjour ${escapeHtml(a.firstName)},</p><p>${escapeHtml(headline)}.</p><p><strong>${escapeHtml(ref)}</strong></p><p>${escapeHtml(detail).replace(/\n/g, '<br>')}</p><p>Vous retrouvez votre signalement dans EpiSoft, menu « Signalements ».</p>`,
-  });
+  const common = { prenom: a.firstName, numero: formatFeedbackNumber(t.number), titre: t.title };
+  if (what.kind === 'reply')
+    await queueTemplatedEmail(tx, 'feedback_reply', a.email, { ...common, message: what.message });
+  else await queueTemplatedEmail(tx, 'feedback_status', a.email, { ...common, etat: what.state });
 }
 
 /**
@@ -148,13 +144,14 @@ export const feedbackRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         config,
         ['ADMIN'],
         {
-          subject: `Épicafé : nouveau signalement ${formatFeedbackNumber(created.number)}`,
-          lines: [
-            `${FEEDBACK_KIND_LABELS[b.kind]} — ${feedbackModuleLabel(b.module)}`,
-            b.title,
-            `Signalé par ${req.user!.firstName} ${req.user!.lastName}.`,
-            'À traiter dans Signalements › Gestion.',
-          ],
+          template: 'feedback_new',
+          values: {
+            numero: formatFeedbackNumber(created.number),
+            type: FEEDBACK_KIND_LABELS[b.kind],
+            module: feedbackModuleLabel(b.module),
+            titre: b.title,
+            auteur: `${req.user!.firstName} ${req.user!.lastName}`,
+          },
         },
         { title: 'Nouveau signalement', body: b.title, url: '/signalements/gestion' },
         req.log,
@@ -275,8 +272,7 @@ export const feedbackRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
             .update(feedbackTicket)
             .set({ updatedAt: new Date() })
             .where(eq(feedbackTicket.id, t.id));
-        if (fromTeam)
-          await tellAuthor(tx, t, 'L’équipe a répondu à votre signalement', req.body.body);
+        if (fromTeam) await tellAuthor(tx, t, { kind: 'reply', message: req.body.body });
         await audit(tx, req, {
           action: 'feedback.comment',
           entity: 'feedback_ticket',
@@ -314,12 +310,7 @@ export const feedbackRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
           .where(eq(feedbackTicket.id, before.id))
           .returning();
         if (status !== undefined && status !== before.status)
-          await tellAuthor(
-            tx,
-            before,
-            `Votre signalement est passé à « ${FEEDBACK_STATUS_LABELS[status]} »`,
-            `Nouvel état : ${FEEDBACK_STATUS_LABELS[status]}.`,
-          );
+          await tellAuthor(tx, before, { kind: 'status', state: FEEDBACK_STATUS_LABELS[status] });
         await audit(tx, req, {
           action: 'feedback.update',
           entity: 'feedback_ticket',
