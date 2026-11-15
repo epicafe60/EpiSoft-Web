@@ -13,7 +13,7 @@ import {
   PRODUCT_STATUS_LABELS,
   PRODUCT_STATUSES,
   productCreateSchema,
-  purchasePriceIncl,
+  parsePrice4,
   QUALITIES,
   QUALITY_LABELS,
   SALE_CONDITION_LABELS,
@@ -138,8 +138,9 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
     save.mutate();
   };
 
-  const excl = parseAmountToCents(form.purchasePriceExcl);
-  const incl = excl !== null ? purchasePriceIncl(centsToDecimal(excl), form.vatRate) : null;
+  // PA TTC is whatever the team typed (R-PRD-04): it is only read here, for the margin.
+  const incl4 = parsePrice4(form.purchasePriceIncl);
+  const incl = incl4 !== null && incl4 > 0 ? incl4 / 10_000 : null;
   const sale = parseAmountToCents(form.salePrice);
   const perUnit =
     sale !== null && form.unit && form.kind !== 'SERVICE'
@@ -149,9 +150,8 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
           form.unit,
         )
       : null;
-  const margin = sale && incl ? ((sale - Math.round(Number(incl) * 100)) / sale) * 100 : null;
-  const belowCost =
-    sale !== null && incl !== null && sellsBelowCost(sale, Math.round(Number(incl) * 100));
+  const margin = sale && incl ? ((sale - Math.round(incl * 100)) / sale) * 100 : null;
+  const belowCost = sale !== null && incl !== null && sellsBelowCost(sale, Math.round(incl * 100));
 
   const text = (
     k: keyof FormState,
@@ -371,22 +371,21 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
                   montant est en euros, sans unité de poids ni de volume.
                 </p>
               ) : null}
-              <div className="grid gap-4 sm:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-3">
                 {text('purchasePriceExcl', 'PA HT (€)', { inputMode: 'decimal' })}
+                {text('purchaseVatAmount', 'Montant de TVA (€)', { inputMode: 'decimal' })}
+                {text('purchasePriceIncl', 'PA TTC (€)', { inputMode: 'decimal' })}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Ces trois montants se saisissent à la main : l’application ne les calcule pas et ne
+                les compare pas entre eux.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3">
                 {select(
                   'vatRate',
-                  'TVA',
+                  'Taux de TVA',
                   VAT_RATES.map((v) => [v, `${Number(v).toLocaleString('fr-FR')} %`]),
                 )}
-                <Field label="PA TTC (€)">
-                  {(p) => (
-                    <Input
-                      {...p}
-                      disabled
-                      value={incl ? Number(incl).toFixed(4).replace('.', ',') : ''}
-                    />
-                  )}
-                </Field>
                 {text('salePrice', 'Prix de vente TTC (€)', { inputMode: 'decimal' })}
               </div>
               <p className="text-sm text-muted-foreground">

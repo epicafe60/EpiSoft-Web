@@ -5,8 +5,17 @@ import { query } from '../helpers';
 // Administration › Documents PDF: the wording and the columns of the PDF documents are edited in the
 // application, with variables and a preview drawn by the server.
 
+// A 1×1 PNG, and a GIF (an image a PDF cannot draw).
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+const GIF = Buffer.from('R0lGODlhAQABAAAAACw=', 'base64');
+
 const resetAll = async () => {
   await query(`delete from app.pdf_template`);
+  await query(`delete from app.setting where key = 'documents.logo'`);
+  await query(`delete from app.email_asset where name in ('logo-pdf.png', 'anim.gif')`);
 };
 test.afterEach(resetAll);
 
@@ -74,6 +83,57 @@ test('the columns and the wording of the purchase order are chosen, previewed an
     `select action from app.audit_log where entity = 'pdf_template'`,
   );
   expect(journal.map((j) => j.action)).toContain('pdf_template.update');
+});
+
+test('the logo of the PDF can be the one of the e-mails or another image of the library', async ({
+  page,
+}) => {
+  const add = async (name: string, type: string, bytes: Buffer) =>
+    page.request.post('/api/v1/email-assets', {
+      headers: { 'x-episoft-csrf': '1', 'content-type': type, 'x-file-name': name },
+      data: bytes,
+    });
+  await login(page, USERS.admin);
+  expect((await add('logo-pdf.png', 'image/png', PNG)).ok()).toBe(true);
+  expect((await add('anim.gif', 'image/gif', GIF)).ok()).toBe(true);
+  await openDocument(page, 'Bon de commande fournisseur');
+
+  // By default, the same image as the e-mails.
+  await expect(page.getByLabel('La même image que les courriels')).toBeChecked();
+
+  // Another image: only the ones a PDF can draw are offered; the preview is drawn again.
+  await page.getByLabel('Une autre image de la bibliothèque').check();
+  const dialog = page.getByRole('dialog', { name: 'Choisir le logo des PDF' });
+  await expect(dialog.getByRole('button', { name: 'Choisir l’image logo-pdf.png' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Choisir l’image anim.gif' })).toHaveCount(0);
+  const redrawn = previewResponse(page);
+  await dialog.getByRole('button', { name: 'Choisir l’image logo-pdf.png' }).click();
+  await expect(page.getByText('Logo des documents enregistré.')).toBeVisible();
+  await redrawn;
+  const [chosen] = await query<{ value: { source: string; imageId: string } }>(
+    `select value from app.setting where key = 'documents.logo'`,
+  );
+  expect(chosen!.value.source).toBe('IMAGE');
+  const [asset] = await query<{ id: string }>(
+    `select id from app.email_asset where name = 'logo-pdf.png'`,
+  );
+  expect(chosen!.value.imageId).toBe(asset!.id);
+  await expect(page.getByRole('img', { name: 'Logo des documents PDF' })).toHaveAttribute(
+    'src',
+    new RegExp(asset!.id),
+  );
+
+  // Back to the one of the e-mails.
+  await page.getByLabel('La même image que les courriels').check();
+  await expect(page.getByLabel('La même image que les courriels')).toBeChecked();
+  await expect
+    .poll(async () => {
+      const [row] = await query<{ value: { source: string } }>(
+        `select value from app.setting where key = 'documents.logo'`,
+      );
+      return row?.value.source;
+    })
+    .toBe('EMAIL');
 });
 
 test('the original comes back, after a confirmation', async ({ page }) => {

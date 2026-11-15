@@ -436,6 +436,8 @@ export const supplier = app.table('supplier', {
   minOrderAmount: money('min_order_amount'),
   /** Days between the invoice date and its due date (R-FAC-01). */
   paymentTermsDays: integer('payment_terms_days').notNull().default(30),
+  /** Paid « à réception fin de mois »: due at the end of the month the invoice is entered. */
+  payAtMonthEnd: boolean('pay_at_month_end').notNull().default(false),
   deliveryDay: text('delivery_day'),
   legacyFnrcode: text('legacy_fnrcode').unique(),
   createdAt: createdAt(),
@@ -485,6 +487,8 @@ export const product = app.table(
     status: productStatus('status').notNull().default('ACTIVE'),
     purchasePriceExcl: price4('purchase_price_excl'),
     purchasePriceIncl: price4('purchase_price_incl'),
+    /** Typed by hand like the two prices around it: never derived from them (spec R-PRD-04). */
+    purchaseVatAmount: price4('purchase_vat_amount'),
     salePrice: money('sale_price').notNull().default('0'),
     minStock: qty('min_stock'),
     /** Cache of the sum of stock_movement.qty, updated in the same transaction (principle 6). */

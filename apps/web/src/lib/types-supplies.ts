@@ -46,6 +46,7 @@ export interface SupplierDetail {
   accountNumber: string | null;
   minOrderAmount: string | null;
   paymentTermsDays: number;
+  payAtMonthEnd: boolean;
   deliveryDay: string | null;
   updatedAt: string;
   products: {

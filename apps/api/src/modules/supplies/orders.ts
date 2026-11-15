@@ -42,9 +42,9 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { parisYear, toParisDate } from '../../lib/dates';
 import { pdfAttachment, queueEmail } from '../../lib/mail';
-import { loadHeaderLogo, renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
+import { renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
 import { drawOrderSheet, prepareOrderSheet, type OrderSheet } from '../../lib/order-sheet';
-import { loadPdfConfig } from '../../lib/pdf-template';
+import { loadPdfConfig, loadPdfLogo } from '../../lib/pdf-template';
 import { render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -283,7 +283,7 @@ export async function orderPdf(db: Db | Tx, id: string): Promise<Buffer> {
   const o = await orderDetail(db, id);
   if (!o) throw notFound('Commande introuvable.');
   const settings = await loadSettings(db);
-  const logo = await loadHeaderLogo(db);
+  const logo = await loadPdfLogo(db);
   const { config } = await loadPdfConfig(db, 'purchase_order');
   // Amounts have a comma and no currency sign: the header of the column says what it is.
   const money = (cents: number) => centsToDecimal(cents).replace('.', ',');

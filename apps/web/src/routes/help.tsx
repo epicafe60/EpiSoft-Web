@@ -69,6 +69,13 @@ const SECTIONS: Section[] = [
         ],
       },
       {
+        question: 'Comment changer le logo des PDF ?',
+        answer: [
+          'En haut de la page Administration › Documents PDF : « Logo des documents PDF ». Par défaut, c’est la même image que l’en-tête des courriels ; vous pouvez aussi choisir une autre image de la bibliothèque (PNG ou JPEG) ou en ajouter une nouvelle.',
+          'Le logo s’imprime en haut à droite de chaque document ; chaque document peut le masquer (case « Imprimer le logo »). Les courriels gardent leur propre image d’en-tête, réglée dans Courriels › Mise en page commune.',
+        ],
+      },
+      {
         question: 'Que devient une ligne dont la variable est vide ?',
         answer: [
           'Elle disparaît : si l’association n’a pas de SIREN dans les paramètres, la ligne « SIREN : » n’est pas imprimée. « Rétablir la version d’origine » remet le texte et les colonnes de l’application.',

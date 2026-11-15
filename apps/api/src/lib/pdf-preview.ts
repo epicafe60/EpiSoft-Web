@@ -7,8 +7,7 @@ import {
 } from '@episoft/shared';
 import { drawOrderSheet, prepareOrderSheet, type OrderSheet } from './order-sheet';
 import { eur, keyValues, render, table } from './pdf';
-import { drawPdfHtml } from './pdf-html';
-import { associationValues, installFooter } from './pdf-template';
+import { associationValues, drawHeader, installFooter } from './pdf-template';
 import { loadSettings } from '../modules/admin/settings-store';
 import type { DbOrTx } from '@episoft/db';
 
@@ -89,9 +88,10 @@ export async function previewPdf(
     const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const left = doc.page.margins.left;
     installFooter(doc, fillZone(config.zones.footer ?? '', values, def.variables), left, width);
-    doc.y = drawPdfHtml(
+    doc.y = drawHeader(
       doc,
       fillZone(config.zones.header ?? '', values, def.variables),
+      config.logo ? logo : null,
       left,
       doc.page.margins.top,
       width,

@@ -36,6 +36,31 @@ test('a supplier sheet is changed, saved and read back after a reload', async ({
   await expect(page.getByLabel('Téléphone')).toHaveValue(phone);
 });
 
+test('a supplier paid « à réception fin de mois » is saved, read back, and its payment terms are set aside', async ({
+  page,
+}) => {
+  await login(page, USERS.admin);
+  await page.goto('/appros/fournisseurs');
+  await page.getByRole('link', { name: SEED.honey.supplier }).click();
+  const terms = page.getByLabel('Délai de paiement (jours)');
+  await expect(terms).toBeEnabled();
+  await page.getByLabel('À réception fin de mois').check();
+  await expect(terms).toBeDisabled();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Fiche enregistrée.')).toBeVisible();
+  const [saved] = await query<{ pay_at_month_end: boolean }>(
+    `select pay_at_month_end from app.supplier where name = '${SEED.honey.supplier}'`,
+  );
+  expect(saved!.pay_at_month_end).toBe(true);
+  await page.reload();
+  await expect(page.getByLabel('À réception fin de mois')).toBeChecked();
+  // Put back, so that the other tests keep the usual terms.
+  await page.getByLabel('À réception fin de mois').uncheck();
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Fiche enregistrée.')).toBeVisible();
+  await expect(page.getByLabel('Délai de paiement (jours)')).toBeEnabled();
+});
+
 test('a product sheet is changed and saved; a stale sheet is refused with an explanation', async ({
   browser,
 }) => {
