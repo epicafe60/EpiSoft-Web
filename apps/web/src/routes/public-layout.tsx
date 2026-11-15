@@ -19,12 +19,13 @@ export function PublicLayout({
       </div>
       <main className="flex flex-1 items-start justify-center px-4 pt-[8vh] pb-12">
         <div className="w-full max-w-sm">
-          <div className="mb-6 flex items-center justify-center gap-2.5">
-            <img src="/favicon.svg" alt="" className="size-9" />
-            <div>
-              <p className="text-lg font-semibold leading-tight">EpiSoft</p>
-              <p className="text-xs text-muted-foreground">Épicafé de Montjavoult</p>
-            </div>
+          <div className="mb-6 flex flex-col items-center gap-1">
+            <img
+              src="/logo.png"
+              alt="Épicafé de Montjavoult"
+              className="h-24 w-auto dark:brightness-0 dark:invert"
+            />
+            <p className="text-sm font-medium text-muted-foreground">EpiSoft</p>
           </div>
           <Card>
             <CardHeader>

@@ -41,8 +41,9 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { parisYear, toParisDate } from '../../lib/dates';
 import { pdfAttachment, queueEmail } from '../../lib/mail';
-import { renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
-import { eur, keyValues, letterhead, pdfText, render, table } from '../../lib/pdf';
+import { loadHeaderLogo, renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
+import { drawOrderSheet } from '../../lib/order-sheet';
+import { render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
 import { nextNumber } from '../pos/numbers';
@@ -193,55 +194,40 @@ export async function orderPdf(db: Db | Tx, id: string): Promise<Buffer> {
   const o = await orderDetail(db, id);
   if (!o) throw notFound('Commande introuvable.');
   const settings = await loadSettings(db);
-  return render((doc) => {
-    letterhead(doc, settings['association.identity']);
-    doc.font('Helvetica-Bold').fontSize(16).text(`Bon de commande ${o.number}`);
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .text(`Date : ${o.date.split('-').reverse().join('/')}`);
-    doc.moveDown(0.5);
-    if (o.supplier) {
-      doc
-        .font('Helvetica-Bold')
-        .text(pdfText(`Fournisseur : ${o.supplier.name} (${o.supplier.code})`));
-      doc.font('Helvetica');
-      for (const l of [o.supplier.street, o.supplier.postcode, o.supplier.phone, o.supplier.email])
-        if (l) doc.text(pdfText(l));
-    }
-    doc.moveDown();
-    table(
-      doc,
-      [
-        { header: 'Réf. fournisseur', width: 90 },
-        { header: 'Désignation', width: 215 },
-        { header: 'Qté', width: 50, align: 'right' },
-        { header: 'PA HT', width: 70, align: 'right' },
-        { header: 'Total HT', width: 90, align: 'right' },
-      ],
-      o.lines.map((l) => [
-        l.supplierRef ?? '',
-        l.name,
-        formatQty(parseQtyToMilli(l.qtyOrdered)!),
-        eur(l.unitPriceExcl),
-        eur(l.totalExcl),
-      ]),
-    );
-    doc.moveDown();
-    keyValues(
-      doc,
-      [
-        ['Total HT', eur(o.totalExcl)],
-        ['TVA', eur(o.totalVat)],
-        ['Total TTC', eur(o.totalIncl)],
-      ],
-      { x: 305, width: 210, bold: ['Total TTC'] },
-    );
-    if (o.comment) {
-      doc.moveDown();
-      doc.fontSize(10).text(pdfText(`Commentaire : ${o.comment}`));
-    }
-  });
+  const logo = await loadHeaderLogo(db);
+  // Prices and totals are shown with VAT included (the price the association pays), as on the paper
+  // order it has always sent; a number such as 5,60 has no currency sign, the column says what it is.
+  const price = (cents: number) => centsToDecimal(cents).replace('.', ',');
+  return render((doc) =>
+    drawOrderSheet(doc, {
+      identity: settings['association.identity'],
+      number: o.number,
+      date: o.date.split('-').reverse().join('/'),
+      supplier: o.supplier
+        ? {
+            name: o.supplier.name,
+            lines: [o.supplier.street, o.supplier.postcode].filter((x): x is string => !!x),
+          }
+        : null,
+      rows: o.lines.map((l) => {
+        const unitIncl4 = inclFromExcl4(parsePrice4(l.unitPriceExcl)!, l.vatRate);
+        const t = orderLineTotals({
+          qtyMilli: parseQtyToMilli(l.qtyOrdered)!,
+          unitPriceExcl4: parsePrice4(l.unitPriceExcl)!,
+          vatRate: l.vatRate,
+        });
+        return [
+          l.name,
+          price(Math.round(unitIncl4 / 100)),
+          formatQty(parseQtyToMilli(l.qtyOrdered)!),
+          price(t.inclCents),
+        ];
+      }),
+      total: price(Math.round(Number(o.totalIncl) * 100)),
+      comment: o.comment,
+      logo,
+    }),
+  );
 }
 
 export interface ReceiptInput {

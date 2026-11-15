@@ -10,6 +10,21 @@ test('a wrong password is refused with a clear message', async ({ page }) => {
   await expect(page.getByRole('alert')).toHaveText('Identifiant ou mot de passe incorrect.');
 });
 
+test('the logo of the Épicafé is on the sign-in page and in the menu', async ({ page }) => {
+  const logoLoaded = (img: import('@playwright/test').Locator) =>
+    img.evaluate(
+      (el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0,
+    );
+  await page.goto('/connexion');
+  const signIn = page.getByRole('img', { name: 'Épicafé de Montjavoult' });
+  await expect(signIn).toBeVisible();
+  expect(await logoLoaded(signIn)).toBe(true);
+  await login(page, USERS.cashier);
+  const menuLogo = page.getByRole('img', { name: 'Épicafé de Montjavoult' }).first();
+  await expect(menuLogo).toBeVisible();
+  expect(await logoLoaded(menuLogo)).toBe(true);
+});
+
 test('the menu only shows the modules of the user roles (R-AUTH-05)', async ({ page }) => {
   await login(page, USERS.cashier);
   const nav = page.getByRole('navigation', { name: 'Menu principal' });

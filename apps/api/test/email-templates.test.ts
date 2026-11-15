@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { emailAsset, emailOutbox, emailTemplate, member } from '@episoft/db';
 import { EMAIL_TEMPLATES, EMAIL_TEMPLATE_KEYS, sampleValues } from '@episoft/shared';
 import { notifyStaff } from '../src/lib/alerts';
-import { queueTemplatedEmail, renderEmail } from '../src/lib/email-render';
+import { loadHeaderLogo, queueTemplatedEmail, renderEmail } from '../src/lib/email-render';
 import { withoutInlineImages } from '../src/lib/mail';
 import { sanitizeEmailHtml } from '../src/lib/email-sanitize';
 import { createUser, login, setupTestApp, waitForIdle } from './helpers';
@@ -497,7 +499,7 @@ describe('the images of the e-mails', () => {
     await t.db.delete(emailAsset).where(eq(emailAsset.id, id));
     await call('POST', '/email-templates/wallet_low/test', admin);
     const [mail] = await outbox();
-    expect(mail!.html).not.toContain('<img src="cid:');
+    expect(mail!.html).not.toContain('cid:asset-');
     expect(mail!.html).not.toContain('/api/v1/email-assets/');
     expect(mail!.html).toContain('Pensez à la recharger');
   });
@@ -529,5 +531,57 @@ describe('the images inside a sent message', () => {
     expect(withoutInlineImages([img, pdf])).toEqual([pdf]);
     expect(withoutInlineImages([img])).toBeNull();
     expect(withoutInlineImages(null)).toBeNull();
+  });
+});
+
+describe('the logo of the association', () => {
+  const sample = sampleValues(EMAIL_TEMPLATES.find((d) => d.key === 'wallet_low')!);
+  const migration = readFileSync(
+    join(__dirname, '../../../packages/db/drizzle/0035_email_logo.sql'),
+    'utf8',
+  );
+
+  it('is put in the library of the images by the migration, and is the header of the e-mails', () => {
+    const hex = /decode\('([0-9a-f]+)', 'hex'\)/.exec(migration)![1]!;
+    const png = Buffer.from(hex, 'hex');
+    expect(png.subarray(1, 4).toString()).toBe('PNG');
+    // 609 x 332 pixels, read in the header of the PNG.
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([609, 332]);
+    expect(migration).toContain('INSERT INTO "app"."email_asset"');
+    expect(migration).toMatch(/INSERT INTO "app"."email_layout"[\s\S]*VALUES \(1, '/);
+  });
+
+  it('is the image of the library chosen for the header, and the PDF takes the same one', async () => {
+    const { id } = (await upload(admin, PNG, 'image/png', 'Logo.png')).json();
+    await call('PUT', '/email-layout', admin, {
+      headerImageId: id,
+      headerAlt: 'Épicafé de Montjavoult',
+      footerHtml: '<p>Pied</p>',
+      accentColor: '#14532d',
+    });
+    const mail = await renderEmail(t.db, 'wallet_low', sample);
+    expect(mail.html).toContain(`cid:asset-${id}@episoft`);
+    expect(mail.attachments[0]).toMatchObject({ cid: `asset-${id}@episoft`, filename: 'Logo.png' });
+    expect((await loadHeaderLogo(t.db))?.equals(PNG)).toBe(true);
+    // It is listed in the library, used by the common header, and cannot be deleted while it is.
+    const list = (await call('GET', '/email-assets', admin)).json() as {
+      id: string;
+      usedBy: string[];
+    }[];
+    expect(list.find((a) => a.id === id)!.usedBy).toContain('En-tête commun');
+    expect((await call('DELETE', `/email-assets/${id}`, admin)).statusCode).toBe(409);
+  });
+
+  it('is left out of a document when there is no header image, or it is not a PNG or a JPEG', async () => {
+    expect(await loadHeaderLogo(t.db)).toBeNull();
+    const gif = Buffer.from('R0lGODlhAQABAAAAACw=', 'base64');
+    const { id } = (await upload(admin, gif, 'image/gif', 'anim.gif')).json();
+    await call('PUT', '/email-layout', admin, {
+      headerImageId: id,
+      headerAlt: '',
+      footerHtml: '<p>Pied</p>',
+      accentColor: '#14532d',
+    });
+    expect(await loadHeaderLogo(t.db)).toBeNull();
   });
 });

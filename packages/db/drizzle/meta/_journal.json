@@ -246,6 +246,13 @@
       "when": 1794683123317,
       "tag": "0034_email_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794751583002,
+      "tag": "0035_email_logo",
+      "breakpoints": true
     }
   ]
 }

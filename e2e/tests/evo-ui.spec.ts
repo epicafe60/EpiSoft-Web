@@ -154,7 +154,9 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
   // The text as edited, then the footer common to every e-mail.
   expect(queued!.text.startsWith(edited)).toBe(true);
   expect(queued!.text).toContain('Épicafé de Montjavoult');
-  expect(queued!.attachments[0]!.filename).toMatch(/^CF-.*\.pdf$/);
+  expect(queued!.attachments.map((a) => a.filename)).toEqual(
+    expect.arrayContaining([expect.stringMatching(/^CF-.*\.pdf$/)]),
+  );
 
   // Cancel, then delete: the order is gone.
   await page.getByRole('button', { name: 'Annuler', exact: true }).click();

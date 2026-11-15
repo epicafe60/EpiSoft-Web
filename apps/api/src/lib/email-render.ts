@@ -43,6 +43,20 @@ export async function loadLayout(db: DbOrTx): Promise<EmailLayout> {
   };
 }
 
+/**
+ * The header image of the layout (the logo of the association until another is chosen), for the
+ * documents that carry it too: a PDF takes PNG and JPEG, any other type is left out.
+ */
+export async function loadHeaderLogo(db: DbOrTx): Promise<Buffer | null> {
+  const { headerImageId } = await loadLayout(db);
+  if (!headerImageId) return null;
+  const [img] = await db
+    .select({ mime: emailAsset.mime, bytes: emailAsset.bytes })
+    .from(emailAsset)
+    .where(eq(emailAsset.id, headerImageId));
+  return img && ['image/png', 'image/jpeg'].includes(img.mime) ? img.bytes : null;
+}
+
 /** The wording an administrator saved, or the one of the application. */
 export async function loadTemplate(
   db: DbOrTx,
@@ -57,8 +71,8 @@ export async function loadTemplate(
 }
 
 /**
- * The page of the e-mail: a header (the image of the library, or the name of the association on the
- * accent colour), the message, a footer. Tables and inline styles: what mail readers understand.
+ * The page of the e-mail: a header (the image of the library, which is the logo of the association
+ * until another is chosen, or the name of the association on the accent colour), the message, a footer. Tables and inline styles: what mail readers understand.
  */
 export function layoutHtml(
   layout: EmailLayout,
