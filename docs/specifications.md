@@ -739,7 +739,7 @@ L'écran de caisse est composé de quatre zones :
   - coefficient : `PV_TTC / PA_TTC`.
 
   Les deux valeurs sont affichées. La saisie de l'une recalcule l'autre et le prix de vente, avec un arrondi paramétrable (au centime, ou à 0,05 / 0,10 €).
-- **R-PRD-04 [reprise]** `PA_TTC = PA_HT × (1 + TVA)` et inversement. Le prix au kg/L est calculé automatiquement selon l'unité et affiché sur l'étiquette.
+- **R-PRD-04 [modifié]** `PA HT`, `Montant de TVA` et `PA TTC` sont trois champs libres de la fiche produit : aucun calcul entre eux, aucun recalcul à la modification de l'un d'eux, aucun avertissement d'incohérence (décision de l'équipe : la vigilance est humaine, l'ancien logiciel bouclait sur ce calcul). Le taux de TVA reste une donnée de la fiche. Le prix au kg/L est calculé automatiquement selon l'unité et affiché sur l'étiquette.
 - **R-PRD-05 [nouveau]** **Historique des prix :** chaque changement de PA ou de PV est horodaté, avec son auteur et son origine (fiche, réception, import, mise à jour en masse).
 - **R-PRD-06 [reprise + corrigé]** **Étiquettes à imprimer :** un changement de PV, une création ou une demande manuelle ajoute le produit à la file des étiquettes. Cette file ne se vide que lorsque l'étiquette a été imprimée ou marquée comme faite.
   - **[nouveau]** Impression d'une planche d'étiquettes PDF (format A4, 24 ou 40 par page, paramétrable) avec nom, prix, prix au kg/L, origine et code-barres.

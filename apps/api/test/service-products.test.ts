@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { product } from '@episoft/db';
 import { createUser, login, setupTestApp } from './helpers';
@@ -89,6 +89,69 @@ describe('creating a service', () => {
       unit: null,
     });
     expect(Number((await row(id)).unitQty)).toBe(1);
+  });
+});
+
+describe('purchase prices typed by hand (R-PRD-04)', () => {
+  it('keeps HT, VAT amount and TTC as given, even when they do not add up', async () => {
+    const { id } = await create({
+      purchasePriceExcl: '4.10',
+      purchaseVatAmount: '7',
+      purchasePriceIncl: '1.5',
+    });
+    expect(await row(id)).toMatchObject({
+      purchasePriceExcl: '4.1000',
+      purchaseVatAmount: '7.0000',
+      purchasePriceIncl: '1.5000',
+    });
+  });
+
+  it('changing the VAT rate or the HT never recomputes the others', async () => {
+    const { id } = await create({
+      purchasePriceExcl: '4.10',
+      purchaseVatAmount: '0.2255',
+      purchasePriceIncl: '4.3255',
+    });
+    const before = await detail(id);
+    const res = await patch(id, before.updatedAt, { vatRate: '20.00', purchasePriceExcl: '5' });
+    expect(res.statusCode).toBe(200);
+    expect(await row(id)).toMatchObject({
+      purchasePriceExcl: '5.0000',
+      purchaseVatAmount: '0.2255',
+      purchasePriceIncl: '4.3255',
+    });
+  });
+
+  it('lets the TTC be overwritten by hand, with before and after in the audit log', async () => {
+    const { id } = await create({ purchasePriceExcl: '4.10', purchasePriceIncl: '4.3255' });
+    const before = await detail(id);
+    const res = await patch(id, before.updatedAt, {
+      purchasePriceIncl: '4.40',
+      purchaseVatAmount: '0.30',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(await row(id)).toMatchObject({
+      purchasePriceIncl: '4.4000',
+      purchaseVatAmount: '0.3000',
+    });
+    const { rows } = await t.db.execute<{
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    }>(
+      sql`select before, after from app.audit_log where action = 'product.update' and entity_id = ${id} order by at desc limit 1`,
+    );
+    const log = rows[0];
+    expect(log!.before).toMatchObject({ purchasePriceIncl: '4.3255', purchaseVatAmount: null });
+    expect(log!.after).toMatchObject({ purchasePriceIncl: '4.4000', purchaseVatAmount: '0.3000' });
+  });
+
+  it('a product without any purchase price stays possible', async () => {
+    const { id } = await create({ kind: 'SERVICE', name: 'Don', purchasePriceExcl: null });
+    expect(await row(id)).toMatchObject({
+      purchasePriceExcl: null,
+      purchaseVatAmount: null,
+      purchasePriceIncl: null,
+    });
   });
 });
 

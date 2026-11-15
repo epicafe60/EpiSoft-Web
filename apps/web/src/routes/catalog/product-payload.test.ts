@@ -46,6 +46,27 @@ describe('the new-product form produces a payload the schema accepts', () => {
     ).toEqual([]);
   });
 
+  it('R-PRD-04: HT, VAT amount and TTC go through as typed, with no calculation', () => {
+    const f = form({
+      name: 'Miel',
+      salePrice: '6',
+      purchasePriceExcl: '4,10',
+      purchaseVatAmount: '7',
+      purchasePriceIncl: '1,5',
+    });
+    expect(issues(f)).toEqual([]);
+    expect(productToPayload(f)).toMatchObject({
+      purchasePriceExcl: '4,10',
+      purchaseVatAmount: '7',
+      purchasePriceIncl: '1,5',
+    });
+    expect(productToPayload(form({ name: 'Don', salePrice: '5' }))).toMatchObject({
+      purchasePriceExcl: null,
+      purchaseVatAmount: null,
+      purchasePriceIncl: null,
+    });
+  });
+
   it('a missing selling price is the only thing refused on an otherwise empty form', () => {
     expect(issues(form({ name: 'Chips' }))).toEqual(['salePrice: Montant invalide.']);
   });

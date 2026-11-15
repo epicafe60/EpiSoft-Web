@@ -204,6 +204,7 @@ export interface ProductDetail {
   status: ProductStatus;
   purchasePriceExcl: string | null;
   purchasePriceIncl: string | null;
+  purchaseVatAmount: string | null;
   salePrice: string;
   minStock: string | null;
   stockQty: string;

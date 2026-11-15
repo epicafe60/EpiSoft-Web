@@ -93,6 +93,8 @@ export interface ProductDraft {
   status: ProductStatus;
   purchasePriceExcl: string | null;
   purchasePriceIncl: string | null;
+  /** PA TTC - PA HT when both are known (the legacy app stored no VAT amount). */
+  purchaseVatAmount: string | null;
   salePrice: string;
   stock: string;
   minStock: string | null;
@@ -191,6 +193,7 @@ export function transformProduct(r: LegacyProductRow): { draft: ProductDraft; is
       status,
       purchasePriceExcl: fixed(r.PRODPAHT, 4),
       purchasePriceIncl: fixed(r.PRODPATTC, 4),
+      purchaseVatAmount: vatAmount4(fixed(r.PRODPAHT, 4), fixed(r.PRODPATTC, 4)),
       salePrice: salePrice.startsWith('-') ? '0.00' : salePrice,
       stock: kind === 'SERVICE' ? '0.000' : (fixed(r.PRODSTOCK, 3) ?? '0.000'),
       minStock: fixed(r.PRODSTKMIN, 3),
@@ -350,4 +353,12 @@ export function firstContinuousTicketDate(days: readonly string[], maxGapDays = 
     if (gap > maxGapDays) start = sorted[i]!;
   }
   return start;
+}
+
+/** TTC - HT to 4 decimals, null when one of them is missing. */
+function vatAmount4(excl: string | null, incl: string | null): string | null {
+  if (excl === null || incl === null) return null;
+  return ((Math.round(Number(incl) * 10_000) - Math.round(Number(excl) * 10_000)) / 10_000).toFixed(
+    4,
+  );
 }
