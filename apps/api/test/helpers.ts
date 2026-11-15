@@ -35,6 +35,9 @@ export async function setupTestApp() {
     jobsDb,
     config,
     async reset() {
+      // What the previous test started in the background (alerts, notifications) must be over: a
+      // TRUNCATE meeting it ends in a deadlock, whichever file that test was in.
+      await waitForIdle(db);
       const unattributed = await expectAllAttributed(db).catch((e: Error) => e);
       // audit_log and data_change are append-only (trigger): TRUNCATE is the only way to clear them.
       await db.execute(sql`truncate app.audit_log, app.data_change, app.login_log, app.session, app.password_reset_token,
@@ -46,6 +49,7 @@ export async function setupTestApp() {
     },
     async close() {
       try {
+        await waitForIdle(db);
         await expectAllAttributed(db);
       } finally {
         await app.close();
