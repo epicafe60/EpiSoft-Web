@@ -56,13 +56,13 @@ Rewrite of **EpiSoft**, the management suite of the Epicafé de Montjavoult asso
 
 ## Roadmap (spec §10)
 
-| Lot | Scope |
-|---|---|
-| 0 | Foundations: monorepo, CI, Docker, auth and roles, settings, audit log, UI shell, migration of reference data and members |
-| 1 | Members, households, memberships, cagnotte, offline PWA till, cash sessions and closing |
-| 2 | Catalogue, suppliers, purchase orders and receipts, supplier invoices, stock ledger, inventory |
-| 3 | Accounting |
-| 4 | Dashboards, statistics, exports, imports, pre-orders |
+| Lot | Scope                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Foundations: monorepo, CI, Docker, auth and roles, settings, audit log, UI shell, migration of reference data and members |
+| 1   | Members, households, memberships, cagnotte, offline PWA till, cash sessions and closing                                   |
+| 2   | Catalogue, suppliers, purchase orders and receipts, supplier invoices, stock ledger, inventory                            |
+| 3   | Accounting                                                                                                                |
+| 4   | Dashboards, statistics, exports, imports, pre-orders                                                                      |
 
 ## Working conventions
 
@@ -71,3 +71,4 @@ Rewrite of **EpiSoft**, the management suite of the Epicafé de Montjavoult asso
 - Use parameterized queries only, through Drizzle. Never build SQL by concatenating strings.
 - Everything is audited (ADR 0008): every write calls `audit()` in the same transaction as the change; a new action gets a sentence in `audit-sentences.ts` and an undo decision in `admin/revert/policies.ts`; a migration that adds a table ends with `select app.attach_change_capture();`.
 - Open questions Q1–Q10 (spec §11) are still undecided. Use the documented default and flag it.
+- Team decisions (2026-11-15, `docs/decisions-equipe.md`): prices and VAT are typed, never computed; no rounding warnings; do not build PDF import, AI reading or an expense module for a team that does not exist yet. Before adding automation, a warning or a module, check that the team asked for it.
