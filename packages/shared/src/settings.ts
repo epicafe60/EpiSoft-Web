@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { parseAmountToCents, centsToDecimal } from './money';
 import { DEFAULT_ACCOUNTS } from './accounting';
 import { DEFAULT_THRESHOLDS } from './controls';
+import { brandingSchema, DEFAULT_BRANDING } from './branding';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
 // Lot 0 covers the general settings; later lots add their keys here.
@@ -26,6 +27,8 @@ const optionalText = (max: number) =>
     .nullable();
 
 export const settingSchemas = {
+  /** The name, the logo and the colour of the application (shown to everyone, signed in or not). */
+  'app.branding': brandingSchema,
   'association.identity': z.object({
     name: z.string().trim().min(1, 'Nom requis.').max(200),
     street: optionalText(200),
@@ -158,6 +161,7 @@ export type Settings = { [K in SettingKey]: SettingValue<K> };
 export const SETTING_KEYS = Object.keys(settingSchemas) as SettingKey[];
 
 export const SETTING_DEFAULTS: Settings = {
+  'app.branding': { ...DEFAULT_BRANDING },
   'association.identity': {
     name: 'Épicafé de Montjavoult',
     street: null,

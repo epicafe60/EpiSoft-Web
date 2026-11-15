@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import { meQuery } from '@/lib/auth';
+import { useBranding } from '@/lib/branding';
 import { Button } from '@/components/ui/button';
 import { Alert, Field, Input, PasswordInput } from '@/components/ui/form';
 import { PublicLayout } from './public-layout';
@@ -35,8 +36,9 @@ export function LoginPage() {
     }
   };
 
+  const { appName } = useBranding();
   return (
-    <PublicLayout title="Connexion" description="Identifiez-vous pour accéder à EpiSoft.">
+    <PublicLayout title="Connexion" description={`Identifiez-vous pour accéder à ${appName}.`}>
       <form onSubmit={submit} className="grid gap-4" noValidate>
         {error ? <Alert>{error}</Alert> : null}
         <Field label="Identifiant ou courriel">

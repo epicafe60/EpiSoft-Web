@@ -12,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import { QueryError } from '../errors';
+import { ImagePicker } from './email/rich-editor';
+import { brandingLogoUrl, DEFAULT_BRANDING } from '@episoft/shared';
 
 const settingsQuery = { queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') };
 
@@ -56,7 +58,11 @@ function SettingCard<K extends SettingKey>({
   useEffect(() => setValue(initial), [initial]);
   const save = useMutation({
     mutationFn: (v: Settings[K]) => api.put<Settings[K]>(`/settings/${settingKey}`, v),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: settingsQuery.queryKey }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: settingsQuery.queryKey });
+      if (settingKey === 'app.branding' || settingKey === 'association.identity')
+        await queryClient.invalidateQueries({ queryKey: ['branding'] });
+    },
   });
   const errors = save.error instanceof ApiError ? save.error.fieldErrors() : {};
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
@@ -94,6 +100,48 @@ function SettingCard<K extends SettingKey>({
 
 const text = (v: string | null) => v ?? '';
 
+/** The logo of the application: an image of the library, or the one shipped with the application. */
+function LogoField({
+  imageId,
+  onChange,
+}: {
+  imageId: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const [pick, setPick] = useState(false);
+  return (
+    <div className="grid gap-2">
+      <Label>Logo</Label>
+      <div className="flex flex-wrap items-center gap-4">
+        <img
+          src={brandingLogoUrl(imageId)}
+          alt="Logo actuel"
+          className="h-16 w-auto max-w-48 rounded border bg-white p-1 object-contain"
+        />
+        <Button type="button" variant="outline" onClick={() => setPick(true)}>
+          Choisir une image
+        </Button>
+        {imageId ? (
+          <Button type="button" variant="ghost" onClick={() => onChange(null)}>
+            Remettre le logo d’origine
+          </Button>
+        ) : null}
+      </div>
+      <ImagePicker
+        open={pick}
+        onClose={() => setPick(false)}
+        title="Choisir le logo"
+        description="Une image de la bibliothèque, ou une nouvelle (PNG, JPEG, WebP ou GIF, 500 Ko au plus). Le menu et la page de connexion l’affichent."
+        pickVerb="Choisir"
+        onPick={(a) => {
+          setPick(false);
+          onChange(a.id);
+        }}
+      />
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { data, error, isPending } = useQuery(settingsQuery);
   if (isPending) return <p className="text-muted-foreground">Chargement…</p>;
@@ -101,6 +149,70 @@ export function SettingsPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <SettingCard
+        settingKey="app.branding"
+        title="Identité de l’application"
+        description="Le nom du logiciel, son logo et sa couleur, pour l’association qui l’utilise : ils apparaissent partout (menu, connexion, courriels, notifications)."
+        initial={data['app.branding']}
+      >
+        {(v, set, errors) => (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Nom du logiciel" error={errors.appName}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    value={v.appName}
+                    onChange={(e) => set({ ...v, appName: e.target.value })}
+                  />
+                )}
+              </Field>
+              <Field
+                label="Nom court de l’association"
+                error={errors.shortName}
+                hint="Début des objets de courriel : « Épicafé : ticket 12 »."
+              >
+                {(p) => (
+                  <Input
+                    {...p}
+                    value={v.shortName}
+                    onChange={(e) => set({ ...v, shortName: e.target.value })}
+                  />
+                )}
+              </Field>
+            </div>
+            <Field
+              label="Couleur principale"
+              error={errors.accentColor}
+              hint="Boutons et liens du thème clair, barre du navigateur. Une couleur trop claire est refusée."
+            >
+              {(p) => (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    aria-label="Choisir la couleur"
+                    className="h-10 w-14 cursor-pointer rounded border bg-transparent"
+                    value={
+                      /^#[0-9a-fA-F]{6}$/.test(v.accentColor)
+                        ? v.accentColor
+                        : DEFAULT_BRANDING.accentColor
+                    }
+                    onChange={(e) => set({ ...v, accentColor: e.target.value })}
+                  />
+                  <Input
+                    {...p}
+                    className="max-w-32 font-mono"
+                    value={v.accentColor}
+                    onChange={(e) => set({ ...v, accentColor: e.target.value })}
+                  />
+                </div>
+              )}
+            </Field>
+            <LogoField imageId={v.logoImageId} onChange={(id) => set({ ...v, logoImageId: id })} />
+          </>
+        )}
+      </SettingCard>
+
       <SettingCard
         settingKey="association.identity"
         title="Identité de l’association"

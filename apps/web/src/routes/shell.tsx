@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { hasAnyRole, visibleModules, type ModuleKey } from '@episoft/shared';
 import { useMe } from '@/lib/auth';
+import { useBranding } from '@/lib/branding';
 import { signOut } from '@/lib/sign-out';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -163,6 +164,7 @@ function TillLocked({ cashierId }: { cashierId: string | null }) {
 
 export function AppShell() {
   const me = useMe();
+  const branding = useBranding();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -178,11 +180,11 @@ export function AppShell() {
   const brand = (
     <Link to="/" className="flex items-center gap-2.5 px-2" onClick={() => setOpen(false)}>
       <img
-        src="/logo.png"
-        alt="Épicafé de Montjavoult"
+        src={branding.logoUrl}
+        alt={branding.associationName}
         className="h-10 w-auto dark:brightness-0 dark:invert"
       />
-      <span className="font-semibold">EpiSoft</span>
+      <span className="font-semibold">{branding.appName}</span>
     </Link>
   );
 

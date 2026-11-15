@@ -12,16 +12,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
-      manifest: {
-        name: 'EpiSoft — Épicafé de Montjavoult',
-        short_name: 'EpiSoft',
-        lang: 'fr',
-        start_url: '/caisse',
-        display: 'standalone',
-        theme_color: '#14532d',
-        background_color: '#fbfaf5',
-        icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
-      },
+      // The manifest is written by the server from the settings (name, colour, icon of the association).
+      manifest: false,
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         importScripts: ['push-sw.js'],

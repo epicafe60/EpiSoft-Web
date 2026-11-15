@@ -185,7 +185,7 @@ const SECTIONS: Section[] = [
         question: 'Je prends la caisse après quelqu’un d’autre',
         answer: [
           'Pas besoin de déconnecter le poste : touchez « Changer de caissier » (ou le nom affiché en haut), puis votre nom. Si l’association le demande, tapez votre code caissier de 4 chiffres (sans réseau, il ne peut pas être vérifié : vos ventes sont alors signalées « non vérifié »).',
-          'La première fois, choisissez votre code : 4 chiffres, puis votre mot de passe EpiSoft pour confirmer. Code oublié : un administrateur l’efface, vous en choisissez un autre.',
+          'La première fois, choisissez votre code : 4 chiffres, puis votre mot de passe pour confirmer. Code oublié : un administrateur l’efface, vous en choisissez un autre.',
           'Tant qu’un autre caissier tient la caisse, le reste de l’application est fermé : la personne connectée retape son mot de passe (« Revenir à mon compte ») pour y accéder.',
           'Après un quart d’heure sans ticket, la caisse redemande qui encaisse.',
         ],

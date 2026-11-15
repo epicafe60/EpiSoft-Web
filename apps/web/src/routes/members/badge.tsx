@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useBranding } from '@/lib/branding';
 import QRCode from 'qrcode';
 import { Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ export function BadgeDialog({
   number: number;
   onClose: () => void;
 }) {
+  const { associationName } = useBranding();
   const [svg, setSvg] = useState('');
   useEffect(() => {
     if (token)
@@ -36,7 +38,7 @@ export function BadgeDialog({
       description="Le code n’est affiché qu’une fois : imprimez le badge maintenant."
     >
       <div className="print-area mx-auto grid w-64 justify-items-center gap-2 rounded-lg border bg-white p-4 text-black">
-        <p className="text-sm font-semibold">Épicafé de Montjavoult</p>
+        <p className="text-sm font-semibold">{associationName}</p>
         <div
           className="size-40"
           aria-label={`QR code du badge de ${name}`}

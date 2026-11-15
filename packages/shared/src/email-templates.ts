@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { DEFAULT_BRANDING } from './branding';
+
+const DEFAULT_IDENTITY_NAME = 'Épicafé de Montjavoult';
 
 // E-mail templates: what each message says, with variables (`{{prenom}}`) filled in when it is sent.
 // The wording below is the default; the administrators change it in the application and can put it
@@ -52,6 +55,20 @@ const html = (name: string, label: string, sample: string): TemplateVariable => 
 
 const FIRST_NAME = text('prenom', 'Prénom', 'Marie');
 
+/** Available in every template: what the association has set as its name (Administration › Paramètres). */
+export const APP_VARIABLES: TemplateVariable[] = [
+  text('association', 'Nom de l’association', DEFAULT_IDENTITY_NAME),
+  text('association_court', 'Nom court de l’association', DEFAULT_BRANDING.shortName),
+  text('application', 'Nom du logiciel', DEFAULT_BRANDING.appName),
+];
+
+/** The values of the variables every template has. */
+export const appValues = (b: { shortName: string; appName: string }, name: string): Values => ({
+  association: name,
+  association_court: b.shortName,
+  application: b.appName,
+});
+
 const SAMPLE_TABLE =
   '<table style="border-collapse:collapse;width:100%;font-size:14px"><tbody>' +
   '<tr><td style="padding:4px 6px;border-bottom:1px solid #e3e8e4">Lentilles vertes</td>' +
@@ -72,7 +89,7 @@ export const EMAIL_TEMPLATES = [
     audience: 'MEMBER',
     description:
       'Envoyé à l’adhérent après un achat en caisse (sauf s’il a refusé les tickets par courriel).',
-    subject: 'Épicafé : ticket {{numero}}',
+    subject: '{{association_court}} : ticket {{numero}}',
     body:
       '<h2>Ticket {{numero}}</h2>' +
       '<p>Bonjour {{prenom}},<br>voici votre ticket du {{date}}.</p>' +
@@ -80,6 +97,7 @@ export const EMAIL_TEMPLATES = [
       '<p style="font-size:16px"><strong>Total : {{total}}</strong></p><p>{{paiements}}</p>' +
       '{{cagnotte_apres}}',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('numero', 'Numéro du ticket', 'T-2026-000123'),
       text('date', 'Date et heure', '14/11/2026 10:30'),
@@ -103,12 +121,13 @@ export const EMAIL_TEMPLATES = [
     label: 'Reçu de versement sur la cagnotte',
     audience: 'MEMBER',
     description: 'Envoyé au foyer quand un versement est enregistré (caisse ou back-office).',
-    subject: 'Épicafé : reçu de versement sur votre cagnotte',
+    subject: '{{association_court}} : reçu de versement sur votre cagnotte',
     body:
       '<h2>Reçu de versement</h2>' +
       '<p>Bonjour {{prenom}},<br>nous avons bien reçu votre versement du {{date}}.</p>' +
       '<p>Ancien solde : {{ancien_solde}}<br>Versement : {{montant}} ({{mode}})<br>Nouveau solde : {{nouveau_solde}}</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('date', 'Date et heure', '14/11/2026 10:30'),
       text('ancien_solde', 'Ancien solde', '5,00 €'),
@@ -123,13 +142,14 @@ export const EMAIL_TEMPLATES = [
     audience: 'MEMBER',
     description:
       'Envoyé pour choisir ou réinitialiser son mot de passe (mot de passe oublié, invitation).',
-    subject: 'Épicafé : définir votre mot de passe',
+    subject: '{{association_court}} : définir votre mot de passe',
     body:
       '<p>Bonjour {{prenom}},</p>' +
-      '<p>Pour définir votre mot de passe EpiSoft, ouvrez ce lien (valable 1&nbsp;heure)&nbsp;:<br>' +
+      '<p>Pour définir votre mot de passe {{application}}, ouvrez ce lien (valable 1&nbsp;heure)&nbsp;:<br>' +
       '<a href="{{lien}}">{{lien}}</a></p>' +
       '<p>Si vous n’êtes pas à l’origine de cette demande, ignorez ce message.</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       {
         name: 'lien',
@@ -146,24 +166,24 @@ export const EMAIL_TEMPLATES = [
     audience: 'MEMBER',
     description:
       'Envoyé à l’ancienne adresse d’un compte de l’équipe dont le courriel vient de changer.',
-    subject: 'Épicafé : l’adresse de votre compte a changé',
+    subject: '{{association_court}} : l’adresse de votre compte a changé',
     body:
       '<p>Bonjour {{prenom}},</p>' +
-      '<p>L’adresse de courriel de votre compte EpiSoft vient d’être modifiée.</p>' +
+      '<p>L’adresse de courriel de votre compte {{application}} vient d’être modifiée.</p>' +
       '<p>Si vous n’êtes pas à l’origine de ce changement, prévenez sans attendre un administrateur de l’association.</p>',
-    variables: [FIRST_NAME],
+    variables: [...APP_VARIABLES, FIRST_NAME],
   },
   {
     key: 'membership_reminder',
     label: 'Rappel d’adhésion',
     audience: 'MEMBER',
     description: 'Envoyé au foyer quelques jours avant la fin de son adhésion.',
-    subject: 'Épicafé : votre adhésion arrive à échéance',
+    subject: '{{association_court}} : votre adhésion arrive à échéance',
     body:
       '<p>Bonjour {{prenom}},</p>' +
-      '<p>L’adhésion de votre foyer à l’Épicafé se termine le <strong>{{date_fin}}</strong>. Vous pouvez la renouveler à la caisse lors de votre prochain passage.</p>' +
+      '<p>L’adhésion de votre foyer à l’{{association_court}} se termine le <strong>{{date_fin}}</strong>. Vous pouvez la renouveler à la caisse lors de votre prochain passage.</p>' +
       '<p>Merci de votre soutien&nbsp;!</p>',
-    variables: [FIRST_NAME, text('date_fin', 'Date de fin', '31/12/2026')],
+    variables: [...APP_VARIABLES, FIRST_NAME, text('date_fin', 'Date de fin', '31/12/2026')],
   },
   {
     key: 'wallet_low',
@@ -171,9 +191,10 @@ export const EMAIL_TEMPLATES = [
     audience: 'MEMBER',
     description:
       'Envoyé au foyer dont la cagnotte passe sous le seuil réglé dans l’administration.',
-    subject: 'Épicafé : votre cagnotte est basse',
+    subject: '{{association_court}} : votre cagnotte est basse',
     body: '<p>Bonjour {{prenom}},</p><p>{{message}}</p><p>Merci&nbsp;!</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text(
         'message',
@@ -187,11 +208,12 @@ export const EMAIL_TEMPLATES = [
     label: 'Historique de la cagnotte',
     audience: 'MEMBER',
     description: 'Envoyé au foyer depuis sa fiche (« envoyer l’historique »).',
-    subject: 'Épicafé : historique de votre cagnotte (solde {{solde}})',
+    subject: '{{association_court}} : historique de votre cagnotte (solde {{solde}})',
     body:
       '<p>Bonjour {{prenom}},</p>' +
       '<p>Solde actuel de la cagnotte de votre foyer : <strong>{{solde}}</strong>.</p>{{historique}}',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('solde', 'Solde actuel', '13,10 €'),
       html('historique', 'Tableau des opérations', SAMPLE_TABLE),
@@ -202,12 +224,13 @@ export const EMAIL_TEMPLATES = [
     label: 'Commande prête',
     audience: 'MEMBER',
     description: 'Envoyé au client quand sa précommande passe à « prête ».',
-    subject: 'Épicafé : votre commande {{numero}} est prête',
+    subject: '{{association_court}} : votre commande {{numero}} est prête',
     body:
       '<p>Bonjour {{prenom}},</p>' +
-      '<p>Votre commande <strong>{{numero}}</strong> est prête. Vous pouvez la retirer à l’Épicafé (retrait prévu le {{date_retrait}}) et la régler à la caisse.</p>' +
+      '<p>Votre commande <strong>{{numero}}</strong> est prête. Vous pouvez la retirer à l’{{association_court}} (retrait prévu le {{date_retrait}}) et la régler à la caisse.</p>' +
       '<p>À bientôt&nbsp;!</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('numero', 'Numéro de la commande', 'P-2026-0042'),
       text('date_retrait', 'Date de retrait', '20/11/2026'),
@@ -220,9 +243,10 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé au trésorier (adresse réglée dans l’administration) à chaque clôture, avec le PDF.',
-    subject: 'Épicafé : clôture de caisse du {{date_cloture}}',
+    subject: '{{association_court}} : clôture de caisse du {{date_cloture}}',
     body: '<h2>Clôture de caisse</h2>{{tableau}}',
     variables: [
+      ...APP_VARIABLES,
       text('date_cloture', 'Date de la clôture', '14/11/2026 18:30'),
       html('tableau', 'Tableau de la clôture', SAMPLE_TABLE),
     ],
@@ -233,12 +257,15 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé aux responsables quand le serveur refuse un ticket envoyé par une caisse (au plus une fois par heure).',
-    subject: 'Épicafé : un ticket de caisse a été refusé',
+    subject: '{{association_court}} : un ticket de caisse a été refusé',
     body:
       '<p>Un poste de caisse a envoyé une opération que le serveur a refusée.</p>' +
       '<p>Motif : {{motif}}</p>' +
       '<p>Ouvrez Surveillance › Tickets à vérifier pour la voir et la faire ressaisir.</p>',
-    variables: [text('motif', 'Motif du refus', 'Total du ticket incohérent avec ses lignes.')],
+    variables: [
+      ...APP_VARIABLES,
+      text('motif', 'Motif du refus', 'Total du ticket incohérent avec ses lignes.'),
+    ],
   },
   {
     key: 'alert_server_error',
@@ -246,12 +273,13 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé aux administrateurs en cas d’erreur inattendue (au plus une fois par heure pour la même erreur).',
-    subject: 'Épicafé : une erreur inattendue est survenue',
+    subject: '{{association_court}} : une erreur inattendue est survenue',
     body:
       '<ul><li>Page : {{page}}</li><li>Référence donnée à l’utilisateur : {{reference}}</li>' +
       '<li>Message : {{message}}</li><li>Nombre de fois (même erreur) : {{nombre}}</li></ul>' +
       '<p>Détails dans Surveillance › Erreurs du serveur.</p>',
     variables: [
+      ...APP_VARIABLES,
       text('page', 'Page', 'POST /api/v1/products'),
       text('reference', 'Référence', '3FA9C2'),
       text('message', 'Message', 'violates foreign key constraint'),
@@ -264,12 +292,13 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé aux administrateurs quand trop de codes faux sont essayés pour un caissier.',
-    subject: 'Épicafé : codes caissier faux répétés ({{caissier}})',
+    subject: '{{association_court}} : codes caissier faux répétés ({{caissier}})',
     body:
       '<p>{{nombre}} codes faux en 15 minutes pour le caissier {{caissier}}.</p>' +
       '<p>Quelqu’un essaie peut-être de deviner son code. Le code est bloqué quelques minutes.</p>' +
       '<p>Détails dans Administration › Connexions.</p>',
     variables: [
+      ...APP_VARIABLES,
       text('caissier', 'Caissier', 'Carl CAISSE'),
       text('nombre', 'Nombre de codes faux', '20'),
     ],
@@ -280,9 +309,10 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé chaque jour à l’équipe approvisionnements quand des lots sont périmés ou proches de leur date.',
-    subject: 'Épicafé : {{nombre}} lot(s) à surveiller (dates limites)',
+    subject: '{{association_court}} : {{nombre}} lot(s) à surveiller (dates limites)',
     body: '<p>Lots périmés ou proches de leur date limite :</p>{{liste}}',
     variables: [
+      ...APP_VARIABLES,
       text('nombre', 'Nombre de lots', '3'),
       html('liste', 'Liste des lots', SAMPLE_LIST),
     ],
@@ -293,9 +323,10 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé chaque jour aux administrateurs et à la comptabilité quand un contrôle de cohérence échoue.',
-    subject: 'Épicafé : {{nombre}} contrôle(s) d’intégrité en échec',
+    subject: '{{association_court}} : {{nombre}} contrôle(s) d’intégrité en échec',
     body: '<p>Contrôles de cohérence en échec :</p>{{liste}}',
     variables: [
+      ...APP_VARIABLES,
       text('nombre', 'Nombre de contrôles', '2'),
       html('liste', 'Liste des contrôles', SAMPLE_LIST),
     ],
@@ -306,9 +337,9 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé chaque matin aux administrateurs et à la comptabilité, s’il y a quelque chose à regarder.',
-    subject: 'Épicafé : points à surveiller',
+    subject: '{{association_court}} : points à surveiller',
     body: '<p>Ce qui mérite un coup d’œil aujourd’hui :</p>{{liste}}',
-    variables: [html('liste', 'Liste des points', SAMPLE_LIST)],
+    variables: [...APP_VARIABLES, html('liste', 'Liste des points', SAMPLE_LIST)],
   },
   {
     key: 'alert_invoices_due',
@@ -316,9 +347,10 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Envoyé à la trésorerie quand des factures arrivent à échéance dans moins de 3 jours.',
-    subject: 'Épicafé : {{nombre}} facture(s) fournisseur à régler sous 3 jours',
+    subject: '{{association_court}} : {{nombre}} facture(s) fournisseur à régler sous 3 jours',
     body: '<p>Factures à régler :</p>{{liste}}',
     variables: [
+      ...APP_VARIABLES,
       text('nombre', 'Nombre de factures', '2'),
       html('liste', 'Liste des factures', SAMPLE_LIST),
     ],
@@ -328,11 +360,12 @@ export const EMAIL_TEMPLATES = [
     label: 'Signalement : nouveau signalement',
     audience: 'STAFF',
     description: 'Envoyé aux administrateurs quand quelqu’un signale un problème ou une idée.',
-    subject: 'Épicafé : nouveau signalement {{numero}}',
+    subject: '{{association_court}} : nouveau signalement {{numero}}',
     body:
       '<p>{{type}} — {{module}}</p><p><strong>{{titre}}</strong></p>' +
       '<p>Signalé par {{auteur}}.</p><p>À traiter dans Signalements › Gestion.</p>',
     variables: [
+      ...APP_VARIABLES,
       text('numero', 'Numéro', 'SIG-0012'),
       text('type', 'Type', 'Problème (bug)'),
       text('module', 'Module', 'Produits'),
@@ -345,12 +378,13 @@ export const EMAIL_TEMPLATES = [
     label: 'Signalement : réponse de l’équipe',
     audience: 'MEMBER',
     description: 'Envoyé à l’auteur d’un signalement quand l’équipe lui répond.',
-    subject: 'Épicafé : L’équipe a répondu à votre signalement ({{numero}})',
+    subject: '{{association_court}} : L’équipe a répondu à votre signalement ({{numero}})',
     body:
       '<p>Bonjour {{prenom}},</p><p>L’équipe a répondu à votre signalement.</p>' +
       '<p><strong>{{numero}} — {{titre}}</strong></p><p>{{message}}</p>' +
-      '<p>Vous retrouvez votre signalement dans EpiSoft, menu « Signalements ».</p>',
+      '<p>Vous retrouvez votre signalement dans {{application}}, menu « Signalements ».</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('numero', 'Numéro', 'SIG-0012'),
       text('titre', 'Titre', 'Le bouton Enregistrer ne répond pas'),
@@ -362,12 +396,13 @@ export const EMAIL_TEMPLATES = [
     label: 'Signalement : changement d’état',
     audience: 'MEMBER',
     description: 'Envoyé à l’auteur d’un signalement quand son état change.',
-    subject: 'Épicafé : Votre signalement est passé à « {{etat}} » ({{numero}})',
+    subject: '{{association_court}} : Votre signalement est passé à « {{etat}} » ({{numero}})',
     body:
       '<p>Bonjour {{prenom}},</p><p>Votre signalement est passé à « {{etat}} ».</p>' +
       '<p><strong>{{numero}} — {{titre}}</strong></p>' +
-      '<p>Vous retrouvez votre signalement dans EpiSoft, menu « Signalements ».</p>',
+      '<p>Vous retrouvez votre signalement dans {{application}}, menu « Signalements ».</p>',
     variables: [
+      ...APP_VARIABLES,
       FIRST_NAME,
       text('numero', 'Numéro', 'SIG-0012'),
       text('titre', 'Titre', 'Le bouton Enregistrer ne répond pas'),
@@ -381,11 +416,12 @@ export const EMAIL_TEMPLATES = [
     audience: 'STAFF',
     description:
       'Texte proposé quand on envoie une commande à un fournisseur (le PDF est joint). Il reste modifiable à chaque envoi, avant de partir.',
-    subject: 'Commande {{numero}} d’Épicafé de Montjavoult',
+    subject: 'Commande {{numero}} d’{{association}}',
     body:
       '<p>Bonjour,</p><p>Veuillez trouver ci-joint notre commande {{numero}} du {{date}}.</p>' +
-      '<p>Bien cordialement !<br>L’équipe Épicafé de Montjavoult</p>',
+      '<p>Bien cordialement !<br>L’équipe {{association}}</p>',
     variables: [
+      ...APP_VARIABLES,
       text('numero', 'Numéro de la commande', 'CMD-2026-0012'),
       text('date', 'Date et heure', '14/11/2026 10:30'),
     ],

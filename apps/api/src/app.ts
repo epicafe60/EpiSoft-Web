@@ -51,6 +51,7 @@ import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
 import { feedbackRoutes } from './modules/feedback/routes';
+import { brandingRoutes } from './modules/branding/routes';
 import { emailTemplateRoutes } from './modules/admin/email-templates';
 import { pdfTemplateRoutes } from './modules/admin/pdf-templates';
 import { tableExportRoutes } from './modules/xlsx/table';
@@ -183,6 +184,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(pushRoutes, { db, config });
       await api.register(revertRoutes, { db, config });
       await api.register(feedbackRoutes, { db, config });
+      await api.register(brandingRoutes, { db, config });
       await api.register(emailTemplateRoutes, { db, config });
       await api.register(pdfTemplateRoutes, { db, config });
       await api.register(tableExportRoutes, { db, config });

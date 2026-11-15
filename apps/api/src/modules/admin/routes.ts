@@ -13,7 +13,16 @@ import {
 } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { auditLog, loginLog, member, session, setting, userRole, type Db } from '@episoft/db';
+import {
+  auditLog,
+  emailAsset,
+  loginLog,
+  member,
+  session,
+  setting,
+  userRole,
+  type Db,
+} from '@episoft/db';
 import {
   auditQuerySchema,
   isSettingKey,
@@ -57,6 +66,13 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         );
       }
       const value = parsed.data;
+      if (key === 'app.branding' && (value as { logoImageId: string | null }).logoImageId) {
+        const [img] = await db
+          .select({ id: emailAsset.id })
+          .from(emailAsset)
+          .where(eq(emailAsset.id, (value as { logoImageId: string }).logoImageId));
+        if (!img) throw badRequest('Ce logo n’existe plus : choisissez-en un autre.');
+      }
       await db.transaction(async (tx) => {
         const [before] = await tx.select().from(setting).where(eq(setting.key, key)).for('update');
         await tx

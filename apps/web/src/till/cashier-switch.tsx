@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { tillPinSchema, type CashierCheck, type Me, type SnapshotMember } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
+import { useBranding } from '@/lib/branding';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -159,6 +160,7 @@ export function CashierSwitchDialog({
   pinRequired: boolean;
   activeId: string;
 }) {
+  const { appName } = useBranding();
   const me = useMe();
   const { engine } = useTill();
   const queryClient = useQueryClient();
@@ -338,7 +340,7 @@ export function CashierSwitchDialog({
         <form onSubmit={submitCreate} className="grid gap-3">
           <p className="text-sm text-muted-foreground">
             Vous n’avez pas encore de code caissier. Choisissez 4 chiffres, puis confirmez avec
-            votre mot de passe EpiSoft : vous n’aurez plus à le taper pour prendre la caisse.
+            votre mot de passe {appName} : vous n’aurez plus à le taper pour prendre la caisse.
           </p>
           <PinPad value={pin} onChange={setPin} />
           <Field label="Le même code, encore une fois">
@@ -354,7 +356,7 @@ export function CashierSwitchDialog({
               />
             )}
           </Field>
-          <Field label="Votre mot de passe EpiSoft">
+          <Field label={`Votre mot de passe ${appName}`}>
             {(p) => (
               <PasswordInput
                 {...p}

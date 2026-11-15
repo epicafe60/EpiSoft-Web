@@ -337,7 +337,6 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         }
         if (to === 'READY')
           void sendPush(db, config, o.memberId, {
-            title: 'Épicafé',
             body: `Votre commande ${o.number} est prête.`,
             url: '/boutique',
           });

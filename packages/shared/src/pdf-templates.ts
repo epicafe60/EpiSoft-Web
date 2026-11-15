@@ -74,10 +74,10 @@ const ASSOCIATION_VARIABLES: TemplateVariable[] = [
   text('association_code_postal', 'Code postal', '60240'),
   text('association_ville', 'Ville', 'Montjavoult'),
   text('association_adresse', 'Adresse complète (code postal et ville)', '60240 - Montjavoult'),
-  text('siren', 'SIREN', '943245233'),
-  text('rna', 'RNA', 'W601009087'),
-  text('association_email', 'Courriel de l’association', 'epicafe60@gmail.com'),
-  text('association_telephone', 'Téléphone de l’association', '0743446391'),
+  text('siren', 'SIREN', '123456789'),
+  text('rna', 'RNA', 'W123456789'),
+  text('association_email', 'Courriel de l’association', 'contact@exemple.fr'),
+  text('association_telephone', 'Téléphone de l’association', '01 02 03 04 05'),
 ];
 
 const LETTERHEAD =

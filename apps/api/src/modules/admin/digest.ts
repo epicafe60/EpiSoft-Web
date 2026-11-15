@@ -129,8 +129,7 @@ export async function sendLowWalletReminders(
           prenom: to.firstName,
           message: body,
         });
-      for (const p of people)
-        await sendPush(db, config, p.id, { title: 'Épicafé', body, url: '/mon-foyer' }, log);
+      for (const p of people) await sendPush(db, config, p.id, { body, url: '/mon-foyer' }, log);
       await db.execute(
         sql`insert into app.wallet_low_notice (household_id, at) values (${d.household_id}, now())
             on conflict (household_id) do update set at = excluded.at`,

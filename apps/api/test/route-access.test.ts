@@ -12,6 +12,11 @@ const PUBLIC = [
   'POST /api/v1/auth/password/forgot',
   'POST /api/v1/auth/password/reset',
   'GET /api/v1/health',
+  // Name, logo and colour of the application: shown on the sign-in page. The logo route serves
+  // only the image chosen as the logo (another id is a 404).
+  'GET /api/v1/branding',
+  'GET /api/v1/branding/logo/:id',
+  'GET /api/v1/branding/manifest.webmanifest',
   'POST /api/v1/internal/backup-report', // shared secret, compared in constant time
 ];
 
