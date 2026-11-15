@@ -293,7 +293,12 @@ describe('catalogue (R-PRD-01, R-PRD-05, R-PRD-06)', () => {
     const b = (await post('/api/v1/products', { ...form(c.id), eans: [] })).json();
     expect([a.code, b.code]).toEqual(['111001', '111002']);
     const [p] = await t.db.select().from(product).where(eq(product.id, a.id));
-    expect(p).toMatchObject({ purchasePriceExcl: '1.2000', purchaseVatAmount: '0.0700', purchasePriceIncl: '1.2700', labelPending: true });
+    expect(p).toMatchObject({
+      purchasePriceExcl: '1.2000',
+      purchaseVatAmount: '0.0700',
+      purchasePriceIncl: '1.2700',
+      labelPending: true,
+    });
 
     const loaded = (await get(`/api/v1/products/${a.id}`)).json();
     await patch(`/api/v1/products/${a.id}`, { salePrice: '2.60', updatedAt: loaded.updatedAt });
