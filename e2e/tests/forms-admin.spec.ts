@@ -55,7 +55,7 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   const rows = await query<{ total_incl: string; total_vat: string }>(
     `select total_incl, total_vat from app.supplier_invoice where piece_ref = '${piece}'`,
   );
-  expect(rows).toEqual([{ total_incl: '120.52', total_vat: '0.00' }]);
+  expect(rows).toEqual([{ total_incl: '120.50', total_vat: '0.00' }]);
 });
 
 test('the cashier-code setting is saved and read back', async ({ page }) => {

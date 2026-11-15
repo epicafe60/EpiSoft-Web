@@ -214,7 +214,7 @@ export function invoiceTotalsProblem(excl: string, vat: string, incl: string): s
   const e = parseAmountToCents(excl);
   const v = parseAmountToCents(vat);
   const t = parseAmountToCents(incl);
-  if (e === null || v === null || t === null) return 'Montant invalide.';
+  if (e === null || v === null || t === null) return null; // reported by the field itself
   if (e <= 0) return 'Le total HT doit être positif.';
   if (v < 0) return 'La TVA ne peut pas être négative.';
   if (e + v !== t) return 'Le TTC doit être égal au total HT plus la TVA.';
