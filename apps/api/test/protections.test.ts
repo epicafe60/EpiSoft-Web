@@ -604,7 +604,15 @@ describe('an operation that arrives before what it depends on is never lost', ()
 describe('what changed lately', () => {
   it('lists the latest changes in plain sentences, with who did them', async () => {
     await push([saleOp([{ productId: randomUUID(), unitPrice: '2.50' }], '2.50')]);
-    // The alert to the team is written in the background: it must be over before the next entry.
+    // The alert to the team is written in the background: wait for its entry in the journal, so that
+    // it cannot land after the next one (a moment of idleness is not proof that it is over).
+    for (let i = 0; i < 160; i++) {
+      const { rows } = await t.db.execute<{ n: number }>(
+        sql`select count(*)::int as n from app.audit_log where action = 'staff.notified'`,
+      );
+      if (rows[0]!.n > 0) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await waitForIdle(t.db);
     const [r] = (await get('/admin/rejections')).json() as { id: string }[];
     await post(`/admin/rejections/${r!.id}/ack`);
