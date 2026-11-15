@@ -27,7 +27,7 @@ const PARIS_DAY = (col: SQL) => sql`(${col} at time zone 'Europe/Paris')::date`;
 /**
  * The operations of a session, or of a day (Paris time, every till): one row per ticket and one per
  * payment made outside a ticket. A cancelled ticket is kept (struck through in the screen, left out
- * of the totals); the cancellation tickets are not listed. The change paid into the cagnotte is
+ * of the totals; the change it paid into the cagnotte becomes a top-up row); the cancellation tickets are not listed. The change paid into the cagnotte is
  * recorded as a payment tied to its ticket: it belongs to the ticket (`walletCash`).
  */
 export async function listOperations(
@@ -126,6 +126,27 @@ export async function listOperations(
     sync: 'SENT',
     error: null,
   }));
+
+  // The change paid into the cagnotte stays there when its ticket is cancelled (the cancellation
+  // gives back the payments of the ticket, not the cagnotte top-up): it becomes a row of its own,
+  // so that the totals still match the closing.
+  for (const r of [...saleRows]) {
+    if (!r.cancelled || Number(r.walletCash) <= 0) continue;
+    saleRows.push({
+      ...r,
+      id: `${r.id}:change`,
+      type: 'TOPUP',
+      number: null,
+      payments: [{ method: 'CASH', amount: r.walletCash }],
+      total: r.walletCash,
+      donation: '0.00',
+      membership: '0.00',
+      wallet: r.walletCash,
+      walletCash: '0.00',
+      cancelled: false,
+    });
+    r.walletCash = '0.00';
+  }
 
   // --- Payments made outside a ticket (the change of a ticket is tied to its sale: left out)
   const paymentScope = bySession

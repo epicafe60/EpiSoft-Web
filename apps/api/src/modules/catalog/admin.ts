@@ -14,6 +14,7 @@ import {
   price4ToDecimal,
   pricePerKgOrLitreCents,
   universeSchema,
+  QUALITY_LABELS,
   type Quality,
   type Unit,
 } from '@episoft/shared';
@@ -288,6 +289,9 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
                 `Prix au ${p.unit === 'G' || p.unit === 'KG' ? 'kg' : 'litre'} : ${eur(centsToDecimal(perUnit))}`,
               );
             if (p.supplierName) legal.push(`Fournisseur : ${p.supplierName}`);
+            // Local and organic have their dot; the other mention (seasonal) is written.
+            if ((p.qualities as Quality[]).includes('SEASONAL'))
+              legal.push(QUALITY_LABELS.SEASONAL);
             legal.forEach((line, n) =>
               doc
                 .font('Helvetica')

@@ -221,6 +221,19 @@ describe('mergeOperations (R-OFF-02)', () => {
     expect(again.find((r) => r.id === idPending)!.origin).toBe('SERVER');
   });
 
+  it('keeps a sent top-up until the server lists the same one, whatever its id', () => {
+    const local = build([entry(topup, { status: 'DONE' })]);
+    const row = local[0]!;
+    const other = server({ id: 's' });
+    // Sent, but the server's list is not refreshed yet: still shown.
+    expect(mergeOperations([other], local, new Set()).map((r) => r.id)).toContain(topup.id);
+    // The server lists it (other id, same amount, same moment): shown once.
+    const listed = server({ id: 'pay-1', type: 'TOPUP', total: row.total, at: row.at });
+    const merged = mergeOperations([other, listed], local, new Set());
+    expect(merged.map((r) => r.id)).not.toContain(topup.id);
+    expect(merged.map((r) => r.id)).toContain('pay-1');
+  });
+
   it('shows a ticket cancelled at this till as cancelled before the server knows', () => {
     const merged = mergeOperations([server({ id: 's' })], [], new Set(['s']));
     expect(merged[0]!.cancelled).toBe(true);

@@ -139,7 +139,7 @@ export function localOperations(i: LocalOperationsInput): LocalOperationRow[] {
 
 /**
  * Online, the server's rows are the base; the till adds what the server does not have yet (tickets
- * and top-ups waiting to be sent, or refused). Offline, only the till's own rows. A ticket this
+ * and top-ups waiting to be sent, refused, or sent but not listed yet). Offline, only the till's own rows. A ticket this
  * till has cancelled shows as cancelled even before the server knows.
  */
 export function mergeOperations(
@@ -154,6 +154,18 @@ export function mergeOperations(
     cancelled: r.cancelled || (r.type === 'SALE' && cancelledIds.has(r.id)),
     acknowledged: false,
   }));
-  const pending = local.filter((r) => r.sync !== 'SENT' && !known.has(r.id));
+  // A top-up has not the same id on the till and on the server: once sent, it is hidden only when
+  // the server's list shows the same amount at about the same time, so it does not vanish in the
+  // seconds before the list is refreshed.
+  const sameTopup = (r: LocalOperationRow) =>
+    server.some(
+      (x) =>
+        x.type === 'TOPUP' &&
+        x.total === r.total &&
+        Math.abs(Date.parse(x.at) - Date.parse(r.at)) < 5 * 60_000,
+    );
+  const pending = local.filter(
+    (r) => !known.has(r.id) && (r.sync !== 'SENT' || (r.type === 'TOPUP' && !sameTopup(r))),
+  );
   return sortOperations([...fromServer, ...pending]) as LocalOperationRow[];
 }

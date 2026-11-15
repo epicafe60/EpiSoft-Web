@@ -199,6 +199,40 @@ describe('GET /pos/operations (R-VTE-12, R-CAG-05, R-SES-02)', () => {
     );
   });
 
+  it('keeps the change paid into the cagnotte as a top-up when its ticket is cancelled', async () => {
+    const goods = await addProduct(t.db, { salePrice: '6.00' });
+    const { memberId } = await addHousehold();
+    const d = sale(
+      [{ productId: goods.id, unitPrice: '6.00' }],
+      [{ method: 'CASH', amount: '6.00', tendered: '10.00', change: '4.00', changeToWallet: true }],
+      memberId,
+    );
+    expect((await till.push([d]))[0]!.status).toBe('OK');
+    expect((await till.push([cancelOp(d.id)]))[0]!.status).toBe('OK');
+
+    const rows = await read(`sessionId=${till.sessionId}`);
+    expect(rows.find((r) => r.id === d.id)).toMatchObject({ cancelled: true, walletCash: '0.00' });
+    expect(rows.find((r) => r.id === `${d.id}:change`)).toMatchObject({
+      type: 'TOPUP',
+      cancelled: false,
+      total: '4.00',
+      wallet: '4.00',
+      payments: [{ method: 'CASH', amount: '4.00' }],
+    });
+    // Only the top-up is left in the totals, and it matches the closing.
+    const totals = operationTotals(rows);
+    expect(totals).toMatchObject({ count: 1, sales: '0.00', payments: '4.00', wallet: '4.00' });
+    const summary = (
+      await t.app.inject({
+        url: `/api/v1/pos/sessions/${till.sessionId}/summary`,
+        headers: till.cashier,
+      })
+    ).json();
+    expect(totals.byMethod.CASH).toBe(
+      (Number(summary.cashSales) + Number(summary.cashOther)).toFixed(2),
+    );
+  });
+
   it('marks a payment cancelled when its cagnotte entry is cancelled, and asks for a scope', async () => {
     const { householdId } = await addHousehold();
     expect((await till.push([topupOp(householdId, '15.00', 'CASH')]))[0]!.status).toBe('OK');
