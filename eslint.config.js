@@ -30,7 +30,13 @@ export default tseslint.config(
     files: ['apps/web/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },
-    rules: reactHooks.configs.recommended.rules,
+    // The two rules the project has always had. Version 7 adds the rules of the React Compiler
+    // (setState in an effect, refs and impure calls during render): they only matter to code written
+    // for the compiler, which this application does not use.
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+    },
   },
   {
     files: ['apps/web/public/**/*.js'],
