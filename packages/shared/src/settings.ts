@@ -90,6 +90,20 @@ export const settingSchemas = {
   }),
   /** R-PRD-06: A4 label sheets. */
   'labels.layout': z.object({ perPage: z.union([z.literal(24), z.literal(40)]) }),
+  /**
+   * The logo of the PDF documents: the image of the header of the e-mails (the default), or another
+   * image of the library of images (a PNG or a JPEG: what a PDF can draw).
+   */
+  'documents.logo': z
+    .object({
+      source: z.enum(['EMAIL', 'IMAGE']),
+      imageId: z.string().uuid().nullable(),
+    })
+    .refine((v) => v.source === 'EMAIL' || v.imageId !== null, {
+      message: 'Choisissez une image.',
+      path: ['imageId'],
+    })
+    .transform((v) => (v.source === 'EMAIL' ? { source: 'EMAIL' as const, imageId: null } : v)),
   /** R-ADM-01: the accounts used by the automatic entries (R-CPT-08..11). */
   'accounting.accounts': z.object({
     sales: account,
@@ -173,6 +187,7 @@ export const SETTING_DEFAULTS: Settings = {
   'accounting.accounts': { ...DEFAULT_ACCOUNTS },
   'catalog.pricing': { targetMarkupPct: 25, rounding: 5 },
   'labels.layout': { perPage: 24 },
+  'documents.logo': { source: 'EMAIL', imageId: null },
   'pos.scaleBarcodes': { enabled: false, valueKind: 'PRICE' },
   'controls.thresholds': { ...DEFAULT_THRESHOLDS },
 };

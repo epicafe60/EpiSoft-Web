@@ -161,7 +161,7 @@ export const PDF_TEMPLATES = [
     label: 'Rapport de clôture de caisse',
     description:
       'Le PDF de fin de session : envoyé au trésorier à chaque clôture et téléchargeable depuis la session.',
-    logo: false,
+    logo: true,
     variables: [
       ...ASSOCIATION_VARIABLES,
       text('date_session', 'Date de la session', '14/11/2026'),
@@ -188,7 +188,7 @@ export const PDF_TEMPLATES = [
     label: 'Rapports (comptabilité, statistiques)',
     description:
       'Les PDF des rapports : journal, grand livre, bilan, ventes, stocks… Le tableau dépend du rapport.',
-    logo: false,
+    logo: true,
     variables: [
       ...ASSOCIATION_VARIABLES,
       text('titre', 'Titre du rapport', 'Journal des écritures'),

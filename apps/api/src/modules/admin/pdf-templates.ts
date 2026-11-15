@@ -15,11 +15,10 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { loadHeaderLogo } from '../../lib/email-render';
 import { badRequest } from '../../lib/problem';
 import { sanitizePdfHtml } from '../../lib/pdf-html';
 import { previewPdf } from '../../lib/pdf-preview';
-import { loadPdfConfig } from '../../lib/pdf-template';
+import { loadPdfConfig, loadPdfLogo } from '../../lib/pdf-template';
 
 const keyParams = z.object({ key: z.enum(PDF_DOC_KEYS) });
 
@@ -162,7 +161,7 @@ export const pdfTemplateRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }
           problems[0]!,
           problems.map((message) => ({ path: 'config', message })),
         );
-      const pdf = await previewPdf(db, def.key, config, await loadHeaderLogo(db));
+      const pdf = await previewPdf(db, def.key, config, await loadPdfLogo(db));
       return reply
         .header('content-disposition', `inline; filename="${def.key}-apercu.pdf"`)
         .header('cache-control', 'no-store')

@@ -9,7 +9,9 @@ import {
 } from '@episoft/shared';
 import type { Doc } from './pdf';
 import { drawPdfHtml, heightOfPdfHtml } from './pdf-html';
-import { associationValues, installFooter } from './pdf-template';
+import { associationValues, imageSize, installFooter } from './pdf-template';
+
+export { imageSize };
 
 // The purchase order sent to a supplier, in the layout of the paper the association has always sent:
 // the letterhead on the left and the logo on the right, the supplier below the logo, then a table
@@ -149,24 +151,6 @@ export function prepareOrderSheet(s: OrderSheet, config: PdfTemplateConfig): Pre
     totals: { total_excl: s.totalExcl, total_incl: s.totalIncl },
     logo: config.logo ? s.logo : null,
   };
-}
-
-/** Width and height of a PNG or a JPEG, read in its header; throws on anything else. */
-export function imageSize(b: Buffer): { width: number; height: number } {
-  if (b.length > 24 && b.subarray(1, 4).toString() === 'PNG')
-    return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
-  if (b[0] === 0xff && b[1] === 0xd8) {
-    let i = 2;
-    while (i + 9 < b.length) {
-      if (b[i] !== 0xff) break;
-      const marker = b[i + 1]!;
-      // Start of frame (not the tables 0xc4, 0xc8, 0xcc): height, then width.
-      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker))
-        return { width: b.readUInt16BE(i + 7), height: b.readUInt16BE(i + 5) };
-      i += 2 + b.readUInt16BE(i + 2);
-    }
-  }
-  throw new Error('image illisible');
 }
 
 function band(doc: Doc, y: number, columns: PreparedColumn[]): number {

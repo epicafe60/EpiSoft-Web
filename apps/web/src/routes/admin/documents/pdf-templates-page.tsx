@@ -2,10 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import {
+  EMAIL_ASSET_PATH,
   PDF_LIMITS,
+  type EmailLayout,
   type PdfTemplateConfig,
   type PdfTemplateDetail,
   type PdfTemplateRow,
+  type Settings,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { cn, formatDateTime } from '@/lib/utils';
@@ -14,7 +17,7 @@ import { Alert, Checkbox, Field, Input } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardContent } from '@/components/ui/card';
 import { QueryError } from '../../errors';
-import { RichEditor } from '../email/rich-editor';
+import { ImagePicker, RichEditor } from '../email/rich-editor';
 
 const problemsOf = (e: unknown): string[] =>
   e instanceof ApiError
@@ -32,6 +35,8 @@ export function PdfTemplatesPage() {
     queryFn: () => api.get<PdfTemplateRow[]>('/pdf-templates'),
   });
   const [key, setKey] = useState<string | null>(null);
+  // Bumped when the logo changes: the open preview is drawn again.
+  const [logoVersion, setLogoVersion] = useState(0);
   if (list.error) return <QueryError error={list.error} />;
   const rows = list.data ?? [];
   return (
@@ -41,6 +46,7 @@ export function PdfTemplatesPage() {
         tableaux. Les mots entre accolades, comme <code>{'{{numero}}'}</code>, sont remplacés au
         moment de faire le PDF. L’aperçu montre le document avec des valeurs d’exemple.
       </p>
+      <PdfLogoCard onChanged={() => setLogoVersion((v) => v + 1)} />
       <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
         <nav aria-label="Liste des documents" className="grid content-start gap-0.5">
           {rows.map((r) => (
@@ -61,7 +67,7 @@ export function PdfTemplatesPage() {
         </nav>
         <div>
           {key ? (
-            <PdfEditor key={key} docKey={key} />
+            <PdfEditor key={key} docKey={key} refreshKey={logoVersion} />
           ) : (
             <Card>
               <CardContent className="pt-5 text-sm text-muted-foreground">
@@ -75,7 +81,121 @@ export function PdfTemplatesPage() {
   );
 }
 
-function PdfEditor({ docKey }: { docKey: string }) {
+type LogoChoice = Settings['documents.logo'];
+
+/** The logo of the PDF documents: the image of the e-mails, or another image of the library. */
+function PdfLogoCard({ onChanged }: { onChanged: () => void }) {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ['pdf-logo-settings'],
+    queryFn: () => api.get<Settings>('/settings'),
+  });
+  const layout = useQuery({
+    queryKey: ['pdf-logo-layout'],
+    queryFn: () => api.get<EmailLayout>('/email-layout'),
+  });
+  const [pick, setPick] = useState(false);
+  // The choice being made, before an image is picked: closing the window leaves what was saved.
+  const [intent, setIntent] = useState<LogoChoice['source'] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (value: LogoChoice) => api.put('/settings/documents.logo', value),
+    onSuccess: async () => {
+      setNotice('Logo des documents enregistré.');
+      await queryClient.invalidateQueries({ queryKey: ['pdf-logo-settings'] });
+      setIntent(null);
+      onChanged();
+    },
+    onError: () => setIntent(null),
+  });
+  const choice: LogoChoice = settings.data?.['documents.logo'] ?? {
+    source: 'EMAIL',
+    imageId: null,
+  };
+  const shown = choice.source === 'IMAGE' ? choice.imageId : (layout.data?.headerImageId ?? null);
+  const source = intent ?? choice.source;
+  return (
+    <Card>
+      <CardContent className="grid gap-3 pt-5">
+        <div>
+          <h2 className="text-lg font-semibold">Logo des documents PDF</h2>
+          <p className="text-sm text-muted-foreground">
+            Imprimé en haut à droite de chaque document. Les courriels ont leur propre image
+            d’en-tête (Courriels › Mise en page commune) : ici, la même ou une autre.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-6">
+          <fieldset className="grid gap-2">
+            <legend className="sr-only">Origine du logo des PDF</legend>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="pdf-logo"
+                checked={source === 'EMAIL'}
+                onChange={() => {
+                  setIntent('EMAIL');
+                  save.mutate({ source: 'EMAIL', imageId: null });
+                }}
+              />
+              La même image que les courriels
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="pdf-logo"
+                checked={source === 'IMAGE'}
+                onChange={() => {
+                  // Nothing is saved until an image is chosen.
+                  setIntent('IMAGE');
+                  setPick(true);
+                }}
+              />
+              Une autre image de la bibliothèque
+            </label>
+          </fieldset>
+          <div className="flex items-center gap-3">
+            {shown ? (
+              <img
+                src={`${EMAIL_ASSET_PATH}${shown}`}
+                alt="Logo des documents PDF"
+                className="h-16 w-28 rounded border bg-white object-contain"
+              />
+            ) : (
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Aucune image : les PDF sont faits sans logo.
+              </p>
+            )}
+            {choice.source === 'IMAGE' ? (
+              <Button variant="outline" onClick={() => setPick(true)}>
+                Changer d’image
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        {save.error ? <Alert>{problemsOf(save.error).join(' ')}</Alert> : null}
+        {notice && !save.error ? <Alert variant="success">{notice}</Alert> : null}
+        <ImagePicker
+          open={pick}
+          onClose={() => {
+            setPick(false);
+            setIntent(null);
+          }}
+          title="Choisir le logo des PDF"
+          description="Un PDF affiche des images PNG ou JPEG. Vous pouvez en ajouter une nouvelle."
+          types={['image/png', 'image/jpeg']}
+          pickVerb="Choisir"
+          onPick={(a) => {
+            setPick(false);
+            setIntent('IMAGE');
+            save.mutate({ source: 'IMAGE', imageId: a.id });
+          }}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PdfEditor({ docKey, refreshKey }: { docKey: string; refreshKey: number }) {
   const queryClient = useQueryClient();
   // Kept here: the form below starts again from the saved template after each save.
   const [notice, setNotice] = useState<string | null>(null);
@@ -89,6 +209,7 @@ function PdfEditor({ docKey }: { docKey: string }) {
     <PdfForm
       key={`${detail.data.key}-${detail.data.updatedAt ?? 'origin'}`}
       detail={detail.data}
+      refreshKey={refreshKey}
       notice={notice}
       onChanged={(message) => {
         setNotice(message);
@@ -116,10 +237,12 @@ function columnRows(detail: PdfTemplateDetail): ColumnRow[] {
 
 function PdfForm({
   detail,
+  refreshKey,
   notice,
   onChanged,
 }: {
   detail: PdfTemplateDetail;
+  refreshKey: number;
   notice: string | null;
   onChanged: (message: string) => void;
 }) {
@@ -155,7 +278,7 @@ function PdfForm({
   useEffect(() => {
     const id = setTimeout(() => previewRef.current(), 700);
     return () => clearTimeout(id);
-  }, [draft]);
+  }, [draft, refreshKey]);
   useEffect(() => () => (pdfUrl ? URL.revokeObjectURL(pdfUrl) : undefined), [pdfUrl]);
 
   const save = useMutation({
