@@ -151,7 +151,9 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
     `select "to", text, attachments from app.email_outbox where subject like 'Commande CF-%' order by created_at desc limit 1`,
   );
   expect(queued!.to).toBe('ferme@example.org');
-  expect(queued!.text).toBe(edited);
+  // The text as edited, then the footer common to every e-mail.
+  expect(queued!.text.startsWith(edited)).toBe(true);
+  expect(queued!.text).toContain('Épicafé de Montjavoult');
   expect(queued!.attachments[0]!.filename).toMatch(/^CF-.*\.pdf$/);
 
   // Cancel, then delete: the order is gone.
