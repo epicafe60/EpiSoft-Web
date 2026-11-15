@@ -37,7 +37,6 @@ export function LabelsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [perPage, setPerPage] = useState<24 | 40>(24);
   const [markDone, setMarkDone] = useState(true);
-  const [barcode, setBarcode] = useState(true);
   useEffect(() => setSelected((data ?? []).map((p) => p.id)), [data]);
   const print = useMutation({
     mutationFn: async () => {
@@ -45,7 +44,7 @@ export function LabelsPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json', [CSRF_HEADER]: '1' },
-        body: JSON.stringify({ productIds: selected, perPage, markDone, barcode }),
+        body: JSON.stringify({ productIds: selected, perPage, markDone }),
       });
       if (!res.ok) throw new Error('Génération impossible.');
       window.open(URL.createObjectURL(await res.blob()), '_blank');
@@ -73,13 +72,6 @@ export function LabelsPage() {
           <Checkbox id="done" checked={markDone} onChange={(e) => setMarkDone(e.target.checked)} />
           <Label htmlFor="done" className="font-normal">
             Retirer de la file après impression
-          </Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id="barcode" checked={barcode} onChange={(e) => setBarcode(e.target.checked)} />
-          <Label htmlFor="barcode" className="font-normal">
-            Avec code-barres (les pastilles rouge « local » et verte « bio » sont toujours
-            imprimées)
           </Label>
         </div>
         <Button onClick={() => print.mutate()} disabled={!selected.length || print.isPending}>

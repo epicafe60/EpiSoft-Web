@@ -742,7 +742,7 @@ L'écran de caisse est composé de quatre zones :
 - **R-PRD-04 [reprise]** `PA_TTC = PA_HT × (1 + TVA)` et inversement. Le prix au kg/L est calculé automatiquement selon l'unité et affiché sur l'étiquette.
 - **R-PRD-05 [nouveau]** **Historique des prix :** chaque changement de PA ou de PV est horodaté, avec son auteur et son origine (fiche, réception, import, mise à jour en masse).
 - **R-PRD-06 [reprise + corrigé]** **Étiquettes à imprimer :** un changement de PV, une création ou une demande manuelle ajoute le produit à la file des étiquettes. Cette file ne se vide que lorsque l'étiquette a été imprimée ou marquée comme faite.
-  - **[nouveau]** Impression d'une planche d'étiquettes PDF (format A4, 24 ou 40 par page, paramétrable) avec nom, prix, prix au kg/L, origine et code-barres.
+  - **[nouveau]** Impression d'une planche d'étiquettes PDF (format A4, 24 ou 40 par page, paramétrable) avec nom, prix, pastilles local/bio, et, à la place de l'ancien code-barres (supprimé : les étiquettes sont destinées aux étagères), les mentions légales : prix au kg ou au litre (si le produit a un poids ou un volume) et fournisseur.
 - **R-PRD-07 [corrigé]** Activer ou désactiver un produit est enregistré et journalisé. Un produit inactif disparaît de la caisse et des commandes, mais reste dans l'historique.
 - **R-PRD-08 [reprise]** Mise à jour des prix en masse pour un fournisseur : grille modifiable (PA HT, TVA, PA TTC, marge, PV, actif), aperçu des écarts, validation globale.
 - **R-PRD-09** Les univers et les rayons sont administrables dans l'application (CRUD, ordre d'affichage).
