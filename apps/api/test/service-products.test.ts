@@ -93,30 +93,36 @@ describe('creating a service', () => {
 });
 
 describe('purchase prices typed by hand (R-PRD-04)', () => {
-  it('keeps HT, VAT amount and TTC as given, even when they do not add up', async () => {
+  it('keeps HT, VAT amount and TTC as given, and refuses amounts that do not add up', async () => {
     const { id } = await create({
       purchasePriceExcl: '4.10',
-      purchaseVatAmount: '7',
-      purchasePriceIncl: '1.5',
+      purchaseVatAmount: '0.2255',
+      purchasePriceIncl: '4.3255',
     });
     expect(await row(id)).toMatchObject({
       purchasePriceExcl: '4.1000',
-      purchaseVatAmount: '7.0000',
-      purchasePriceIncl: '1.5000',
+      purchaseVatAmount: '0.2255',
+      purchasePriceIncl: '4.3255',
     });
+    const before = await detail(id);
+    expect((await patch(id, before.updatedAt, { purchasePriceIncl: '1.5' })).statusCode).toBe(400);
+    expect((await patch(id, before.updatedAt, { purchaseVatAmount: '7' })).statusCode).toBe(400);
   });
 
-  it('changing the VAT rate or the HT never recomputes the others', async () => {
+  it('changing the VAT rate never recomputes the amounts, and a lone HT change is refused', async () => {
     const { id } = await create({
       purchasePriceExcl: '4.10',
       purchaseVatAmount: '0.2255',
       purchasePriceIncl: '4.3255',
     });
     const before = await detail(id);
-    const res = await patch(id, before.updatedAt, { vatRate: '20.00', purchasePriceExcl: '5' });
+    expect(
+      (await patch(id, before.updatedAt, { vatRate: '20.00', purchasePriceExcl: '5' })).statusCode,
+    ).toBe(400);
+    const res = await patch(id, before.updatedAt, { vatRate: '20.00' });
     expect(res.statusCode).toBe(200);
     expect(await row(id)).toMatchObject({
-      purchasePriceExcl: '5.0000',
+      purchasePriceExcl: '4.1000',
       purchaseVatAmount: '0.2255',
       purchasePriceIncl: '4.3255',
     });

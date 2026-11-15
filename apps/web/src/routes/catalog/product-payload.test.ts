@@ -51,14 +51,25 @@ describe('the new-product form produces a payload the schema accepts', () => {
       name: 'Miel',
       salePrice: '6',
       purchasePriceExcl: '4,10',
-      purchaseVatAmount: '7',
-      purchasePriceIncl: '1,5',
+      purchaseVatAmount: '0,2255',
+      purchasePriceIncl: '4,3255',
     });
     expect(issues(f)).toEqual([]);
+    expect(
+      issues(
+        form({
+          name: 'Miel',
+          salePrice: '6',
+          purchasePriceExcl: '4,10',
+          purchaseVatAmount: '7',
+          purchasePriceIncl: '1,5',
+        }),
+      ),
+    ).not.toEqual([]);
     expect(productToPayload(f)).toMatchObject({
       purchasePriceExcl: '4,10',
-      purchaseVatAmount: '7',
-      purchasePriceIncl: '1,5',
+      purchaseVatAmount: '0,2255',
+      purchasePriceIncl: '4,3255',
     });
     expect(productToPayload(form({ name: 'Don', salePrice: '5' }))).toMatchObject({
       purchasePriceExcl: null,

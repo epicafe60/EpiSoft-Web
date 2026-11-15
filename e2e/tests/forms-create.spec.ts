@@ -60,10 +60,10 @@ test('a product is created with a name, a code and a selling price', async ({ pa
   await page.goto('/catalogue/nouveau');
   await page.getByLabel('Nom', { exact: true }).fill(name);
   await page.getByLabel('Code', { exact: true }).fill(code);
-  // R-PRD-04: the three purchase amounts are free, even when they do not add up.
+  // R-PRD-04: the three purchase amounts are free, typed by hand, and consistent.
   await page.getByLabel('PA HT (€)').fill('1,20');
-  await page.getByLabel('Montant de TVA (€)').fill('0,50');
-  await page.getByLabel('PA TTC (€)').fill('1,35');
+  await page.getByLabel('Montant de TVA (€)').fill('0,07');
+  await page.getByLabel('PA TTC (€)').fill('1,27');
   await page.getByLabel('Prix de vente TTC (€)').fill('2,50');
   await page.getByLabel('Codes-barres').fill('4006381333931');
   await page.getByRole('button', { name: 'Créer le produit' }).click();
@@ -71,7 +71,7 @@ test('a product is created with a name, a code and a selling price', async ({ pa
   const rows = await query<{ sale_price: string; vat: string; incl: string }>(
     `select sale_price, purchase_vat_amount::numeric(12,2)::text as vat, purchase_price_incl::numeric(12,2)::text as incl from app.product where code = '${code}'`,
   );
-  expect(rows).toEqual([{ sale_price: '2.50', vat: '0.50', incl: '1.35' }]);
+  expect(rows).toEqual([{ sale_price: '2.50', vat: '0.07', incl: '1.27' }]);
 });
 
 test('a service has no quantity or unit to choose: one at a time, in euros', async ({ page }) => {
