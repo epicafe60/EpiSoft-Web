@@ -138,6 +138,29 @@ const purchaseAmountInput = z
   }, 'Montant invalide (4 décimales au plus).')
   .transform((s) => price4ToDecimal(parsePrice4(s)!));
 
+/**
+ * Consistency of the three purchase amounts typed on a product sheet (R-PRD-04). They stay free
+ * fields, but an impossible combination is refused: PA TTC below PA HT, a VAT above the highest
+ * French rate (20 % of the PA HT), or, when the three are given, a PA TTC that is not PA HT plus
+ * the VAT amount. Empty fields are not checked.
+ */
+export function purchasePricesProblem(prices: {
+  purchasePriceExcl?: string | null;
+  purchaseVatAmount?: string | null;
+  purchasePriceIncl?: string | null;
+}): string | null {
+  const excl = prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null;
+  const vat = prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null;
+  const incl = prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null;
+  if (excl !== null && incl !== null && incl < excl)
+    return 'Le PA TTC ne peut pas être inférieur au PA HT.';
+  if (excl !== null && vat !== null && vat * 5 > excl + 5)
+    return 'Le montant de TVA dépasse 20 % du PA HT : vérifiez les montants.';
+  if (excl !== null && vat !== null && incl !== null && excl + vat !== incl)
+    return 'Le PA TTC doit être égal au PA HT plus le montant de TVA.';
+  return null;
+}
+
 export const productFields = {
   name: z.string().trim().min(1, 'Nom requis.').max(200),
   description: text(1000),
@@ -154,7 +177,7 @@ export const productFields = {
   vatRate: z.enum(VAT_RATES),
   status: z.enum(PRODUCT_STATUSES),
   // R-PRD-04: PA HT, VAT amount and PA TTC are three free fields. Nothing is computed from
-  // another and no coherence is checked: the team enters them by hand.
+  // another; their consistency is checked by purchasePricesProblem.
   purchasePriceExcl: purchaseAmountInput.nullable(),
   purchaseVatAmount: purchaseAmountInput.nullable().optional(),
   purchasePriceIncl: purchaseAmountInput.nullable().optional(),
@@ -170,15 +193,20 @@ export const productFields = {
   posSort: z.number().int().min(0).max(9999),
 };
 
-export const productCreateSchema = z.object({
-  ...productFields,
-  /** Proposed by the server from the shelf (R-PRD-01) when omitted. */
-  code: z
-    .string()
-    .trim()
-    .regex(/^\d{5,6}$/, 'Code à 5 ou 6 chiffres.')
-    .optional(),
-});
+export const productCreateSchema = z
+  .object({
+    ...productFields,
+    /** Proposed by the server from the shelf (R-PRD-01) when omitted. */
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{5,6}$/, 'Code à 5 ou 6 chiffres.')
+      .optional(),
+  })
+  .superRefine((v, ctx) => {
+    const problem = purchasePricesProblem(v);
+    if (problem) ctx.addIssue({ code: 'custom', path: ['purchasePriceIncl'], message: problem });
+  });
 export type ProductCreate = z.input<typeof productCreateSchema>;
 
 export const productPatchSchema = patchOf({

@@ -301,6 +301,12 @@ describe('catalogue (R-PRD-01, R-PRD-05, R-PRD-06)', () => {
     });
 
     const loaded = (await get(`/api/v1/products/${a.id}`)).json();
+    // R-PRD-04: a TTC that is not HT + VAT is refused, whatever the other fields say.
+    const bad = await patch(`/api/v1/products/${a.id}`, {
+      purchasePriceIncl: '2.00',
+      updatedAt: loaded.updatedAt,
+    });
+    expect(bad.statusCode).toBe(400);
     await patch(`/api/v1/products/${a.id}`, { salePrice: '2.60', updatedAt: loaded.updatedAt });
     const history = await t.db.select().from(priceHistory).where(eq(priceHistory.productId, a.id));
     expect(history.map((h) => h.salePrice).sort()).toEqual(['2.50', '2.60']);

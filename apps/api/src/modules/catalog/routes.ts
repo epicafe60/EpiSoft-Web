@@ -20,6 +20,7 @@ import {
   PRODUCT_STATUSES,
   productCreateSchema,
   productPatchSchema,
+  purchasePricesProblem,
   contentMatchesType,
   SERVICE_SALE,
   withServiceSale,
@@ -252,6 +253,28 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           if (sold!.n > 0) throw conflict('Le code d’un produit déjà vendu ne peut plus changer.');
           if (await tx.query.product.findFirst({ where: eq(product.code, fields.code) }))
             throw conflict(`Le code ${fields.code} est déjà utilisé.`);
+        }
+        // R-PRD-04: the three purchase amounts stay consistent once the change is applied.
+        if (
+          fields.purchasePriceExcl !== undefined ||
+          fields.purchaseVatAmount !== undefined ||
+          fields.purchasePriceIncl !== undefined
+        ) {
+          const problem = purchasePricesProblem({
+            purchasePriceExcl:
+              fields.purchasePriceExcl !== undefined
+                ? fields.purchasePriceExcl
+                : before.purchasePriceExcl,
+            purchaseVatAmount:
+              fields.purchaseVatAmount !== undefined
+                ? fields.purchaseVatAmount
+                : before.purchaseVatAmount,
+            purchasePriceIncl:
+              fields.purchasePriceIncl !== undefined
+                ? fields.purchasePriceIncl
+                : before.purchasePriceIncl,
+          });
+          if (problem) throw badRequest(problem);
         }
         const set: Partial<typeof product.$inferInsert> = { ...fields };
         // Still, or just made, a service: its sale terms are fixed.

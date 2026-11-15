@@ -91,18 +91,39 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     expect(productCreateSchema.safeParse({ ...p, eans: ['3168930167984'] }).success).toBe(false);
   });
 
-  it('R-PRD-04: HT, VAT amount and TTC are kept as typed, even when they disagree', () => {
+  it('R-PRD-04: HT, VAT amount and TTC are kept as typed when they are consistent', () => {
     const r = productCreateSchema.parse({
       ...p,
       purchasePriceExcl: '1,20',
-      purchaseVatAmount: '9,5',
-      purchasePriceIncl: '0,3333',
+      purchaseVatAmount: '0,066',
+      purchasePriceIncl: '1,266',
     });
     expect(r).toMatchObject({
       purchasePriceExcl: '1.2000',
-      purchaseVatAmount: '9.5000',
-      purchasePriceIncl: '0.3333',
+      purchaseVatAmount: '0.0660',
+      purchasePriceIncl: '1.2660',
     });
+  });
+
+  it('R-PRD-04: inconsistent purchase amounts are refused', () => {
+    const bad = (o: object) => productCreateSchema.safeParse({ ...p, ...o }).success;
+    // TTC that is not HT + VAT.
+    expect(
+      bad({ purchasePriceExcl: '1,20', purchaseVatAmount: '9,5', purchasePriceIncl: '0,3333' }),
+    ).toBe(false);
+    expect(
+      bad({ purchasePriceExcl: '1,20', purchaseVatAmount: '0,066', purchasePriceIncl: '1,27' }),
+    ).toBe(false);
+    // TTC below HT, VAT above 20 %.
+    expect(bad({ purchasePriceExcl: '1,20', purchasePriceIncl: '1' })).toBe(false);
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,5', purchasePriceIncl: '1,5' }),
+    ).toBe(false);
+    // 20 % exactly is fine; HT alone is fine.
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(true);
+    expect(bad({ purchasePriceExcl: '1' })).toBe(true);
   });
 
   it('R-PRD-04: the three purchase amounts are optional (a service has none)', () => {
