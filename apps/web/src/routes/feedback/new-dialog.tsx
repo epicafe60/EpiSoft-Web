@@ -40,9 +40,8 @@ function FeedbackForm({ onClose }: { onClose: () => void }) {
   const [openedAt] = useState(() => new Date().toISOString());
   const [kind, setKind] = useState<FeedbackKind>('BUG');
   const [module, setModule] = useState<string>(() => moduleOfPath(pathname));
-  const [screen, setScreen] = useState(() =>
-    typeof document === 'undefined' ? '' : document.title,
-  );
+  // The page as it is in the address bar (« /surveillance/courriels »), not the title of the tab.
+  const [screen, setScreen] = useState(() => pathname.slice(0, 120));
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [steps, setSteps] = useState('');
