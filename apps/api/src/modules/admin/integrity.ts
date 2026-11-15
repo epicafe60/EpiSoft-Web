@@ -10,6 +10,7 @@ import { badRequest, notFound } from '../../lib/problem';
 import { FALLBACK_HELP, INTEGRITY_HELP, type IntegrityHelp } from './integrity-help';
 import { ANALYSIS_OF, integrityAnalysis } from './integrity-analysis';
 import { reportXlsx } from '../../lib/report-output';
+import { tzSql } from '../../lib/dates';
 
 type Row = Record<string, unknown>;
 
@@ -269,7 +270,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     label: 'Aucun ticket refusé par le serveur n’attend d’être traité',
     severity: 'error',
     query: sql`
-      select 'refus du ' || to_char(r.at at time zone 'Europe/Paris', 'DD/MM HH24:MI') as ref,
+      select 'refus du ' || to_char(r.at at time zone ${tzSql()}, 'DD/MM HH24:MI') as ref,
              r.reason as detail, '/surveillance' as link
       from app.sync_rejection r where r.acknowledged_at is null`,
   },
@@ -278,7 +279,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     label: 'Aucune session de caisse n’est restée ouverte trop longtemps',
     severity: 'warning',
     query: sql`
-      select d.name || ' du ' || to_char(s.opened_at at time zone 'Europe/Paris', 'DD/MM HH24:MI') as ref,
+      select d.name || ' du ' || to_char(s.opened_at at time zone ${tzSql()}, 'DD/MM HH24:MI') as ref,
              'ouverte depuis plus longtemps que le seuil réglé' as detail, '/admin/caisse' as link
       from app.cash_session s join app.pos_device d on d.id = s.device_id
       where s.status = 'OPEN'
@@ -289,7 +290,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     label: 'Les espèces attendues à la clôture correspondent aux ventes de la session',
     severity: 'warning',
     query: sql`
-      select d.name || ' du ' || to_char(s.opened_at at time zone 'Europe/Paris', 'DD/MM') as ref,
+      select d.name || ' du ' || to_char(s.opened_at at time zone ${tzSql()}, 'DD/MM') as ref,
              'attendu à la clôture ' || c.expected_cash || ' / recalculé ' || x.recomputed as detail,
              '/admin/caisse' as link
       from app.cash_session s
@@ -356,7 +357,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
         left join lateral (
           select sum(w.amount) as s from app.wallet_entry w
           where w.household_id = l.household_id
-            and w.created_at >= (l.day::timestamp at time zone 'Europe/Paris')) mv on true
+            and w.created_at >= (l.day::timestamp at time zone ${tzSql()})) mv on true
       where l.balance + coalesce(mv.s, 0) <> coalesce(b.balance, 0)`,
   },
   {
@@ -375,7 +376,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     label: 'Toutes les modifications de la semaine sont expliquées dans le journal',
     severity: 'warning',
     query: sql`
-      select to_char(min(d.at) at time zone 'Europe/Paris', 'DD/MM/YYYY HH24:MI') as ref,
+      select to_char(min(d.at) at time zone ${tzSql()}, 'DD/MM/YYYY HH24:MI') as ref,
              string_agg(distinct d.table_name, ', ') || ' : ' || count(*) || ' ligne(s), ' ||
                case when min(d.source) is null then 'faite(s) directement dans la base'
                     else 'sans action enregistrée' end as detail,
@@ -418,7 +419,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
     query: sql`
       select 'sauvegarde' as ref,
              case when last.at is null then 'aucune sauvegarde signalée à l’application'
-                  else 'la dernière date du ' || to_char(last.at at time zone 'Europe/Paris', 'DD/MM HH24:MI') end as detail,
+                  else 'la dernière date du ' || to_char(last.at at time zone ${tzSql()}, 'DD/MM HH24:MI') end as detail,
              '/surveillance/sauvegardes' as link
       from (select max(at) as at from app.backup_run where kind = 'BACKUP' and ok) last
       where last.at is null

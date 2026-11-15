@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@episoft/db';
 import type { ReportColumn, ReportTable } from '../../lib/report-output';
+import { tzSql } from '../../lib/dates';
 
 // Detailed analysis behind the integrity checks: one table per family of checks, listing the
 // items with the figures needed to understand the gap (what the two sides say, and by how much
@@ -52,7 +53,7 @@ const ANALYSES: Record<string, Analysis> = {
              coalesce(sum(m.qty) filter (where m.kind in ('SALE', 'SALE_CANCEL')), 0)::text as sales,
              coalesce(sum(m.qty) filter (where m.kind = 'INVENTORY'), 0)::text as inventories,
              coalesce(sum(m.qty) filter (where m.kind in ('LOSS', 'CORRECTION')), 0)::text as other,
-             coalesce(to_char(max(m.at) at time zone 'Europe/Paris', 'DD/MM/YYYY'), '—') as last,
+             coalesce(to_char(max(m.at) at time zone ${tzSql()}, 'DD/MM/YYYY'), '—') as last,
              '/catalogue/' || p.id as link
         from app.product p left join app.stock_movement m on m.product_id = p.id
        where p.kind = 'GOODS'
@@ -131,7 +132,7 @@ const ANALYSES: Record<string, Analysis> = {
     ],
     query: sql`
       select s.number,
-             to_char(s.sold_at at time zone 'Europe/Paris', 'DD/MM/YYYY') as day,
+             to_char(s.sold_at at time zone ${tzSql()}, 'DD/MM/YYYY') as day,
              case when s.legacy_ref is null then 'Caisse' else 'Ancienne appli' end as origin,
              coalesce('Foyer ' || h.number, '—') as foyer,
              s.total::text as total,
@@ -226,7 +227,7 @@ const ANALYSES: Record<string, Analysis> = {
           join app.entry e on e.id = l.entry_id
          group by 1),
       w as (
-        select to_char(w.at at time zone 'Europe/Paris', 'YYYY-MM') as m, sum(w.amount) as v
+        select to_char(w.at at time zone ${tzSql()}, 'YYYY-MM') as m, sum(w.amount) as v
           from app.wallet_entry w group by 1),
       j as (
         select coalesce(acc.m, w.m) as m, coalesce(w.v, 0) as wallet,

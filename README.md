@@ -6,14 +6,14 @@ Decisions taken while building are recorded in [docs/adr/](docs/adr/).
 
 ## Layout
 
-| Folder | Content |
-|---|---|
-| `apps/web` | React 19 + Vite single-page app (TanStack Router/Query, Tailwind, shadcn-style components) |
-| `apps/api` | Node + Fastify API; also serves the built web app in production |
-| `packages/shared` | Zod schemas and pure business rules, used by both sides |
-| `packages/db` | Drizzle schema, SQL migrations (`drizzle/`), legacy migration script |
-| `deploy/db` | PostgreSQL 17 container (local and server) |
-| `docker` | Application image, full-stack compose file, Caddy |
+| Folder            | Content                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `apps/web`        | React 19 + Vite single-page app (TanStack Router/Query, Tailwind, shadcn-style components) |
+| `apps/api`        | Node + Fastify API; also serves the built web app in production                            |
+| `packages/shared` | Zod schemas and pure business rules, used by both sides                                    |
+| `packages/db`     | Drizzle schema, SQL migrations (`drizzle/`), legacy migration script                       |
+| `deploy/db`       | PostgreSQL 17 container (local and server)                                                 |
+| `docker`          | Application image, full-stack compose file, Caddy                                          |
 
 ## Getting started (local)
 
@@ -45,19 +45,20 @@ from 7:00 (Paris) by the API itself, once per day; they are enabled under Admini
 The name of the software, the short name of the association, the logo and the main colour are settings
 (Administration › Paramètres › Identité de l’application); the full name, address, SIREN and RNA are in
 « Identité de l’association »; the wording of e-mails and PDF documents is edited in Administration. The
-values shipped are those of the Épicafé de Montjavoult. See ADR 0015 for what is still assumed French
-(time zone, currency, chart of accounts, VAT rates).
+values shipped are those of the Épicafé de Montjavoult. The time zone of the shop is a setting too
+(Europe/Paris by default). See ADR 0015 for what is still assumed French (currency, chart of accounts,
+VAT rates).
 
 ## Everyday commands
 
-| Command | Does |
-|---|---|
-| `pnpm dev` | API (watch mode) and web app with hot reload |
-| `pnpm test` | Unit tests, and API integration tests on a throwaway PostgreSQL (Docker needed) |
-| `pnpm lint` / `pnpm typecheck` / `pnpm format` | Code quality |
-| `pnpm db:generate` | Generate a migration after editing `packages/db/src/schema.ts` |
-| `pnpm db:migrate` | Apply migrations |
-| `pnpm legacy:migrate [--dry-run] [--local\|--remote]` | Re-run the legacy import (idempotent); report in `exports/` |
+| Command                                               | Does                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `pnpm dev`                                            | API (watch mode) and web app with hot reload                                    |
+| `pnpm test`                                           | Unit tests, and API integration tests on a throwaway PostgreSQL (Docker needed) |
+| `pnpm lint` / `pnpm typecheck` / `pnpm format`        | Code quality                                                                    |
+| `pnpm db:generate`                                    | Generate a migration after editing `packages/db/src/schema.ts`                  |
+| `pnpm db:migrate`                                     | Apply migrations                                                                |
+| `pnpm legacy:migrate [--dry-run] [--local\|--remote]` | Re-run the legacy import (idempotent); report in `exports/`                     |
 
 ## Legacy migration (Lot 0 scope)
 

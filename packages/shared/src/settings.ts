@@ -3,6 +3,7 @@ import { parseAmountToCents, centsToDecimal } from './money';
 import { DEFAULT_ACCOUNTS } from './accounting';
 import { DEFAULT_THRESHOLDS } from './controls';
 import { brandingSchema, DEFAULT_BRANDING } from './branding';
+import { DEFAULT_TIME_ZONE, isValidTimeZone } from './timezone';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
 // Lot 0 covers the general settings; later lots add their keys here.
@@ -29,6 +30,13 @@ const optionalText = (max: number) =>
 export const settingSchemas = {
   /** The name, the logo and the colour of the application (shown to everyone, signed in or not). */
   'app.branding': brandingSchema,
+  /** The time zone of the shop: the day of a ticket, of a closing, of a statistic (IANA name). */
+  'app.timezone': z.object({
+    timeZone: z
+      .string()
+      .trim()
+      .refine(isValidTimeZone, 'Fuseau horaire inconnu (exemple : Europe/Paris).'),
+  }),
   'association.identity': z.object({
     name: z.string().trim().min(1, 'Nom requis.').max(200),
     street: optionalText(200),
@@ -162,6 +170,7 @@ export const SETTING_KEYS = Object.keys(settingSchemas) as SettingKey[];
 
 export const SETTING_DEFAULTS: Settings = {
   'app.branding': { ...DEFAULT_BRANDING },
+  'app.timezone': { timeZone: DEFAULT_TIME_ZONE },
   'association.identity': {
     name: 'Épicafé de Montjavoult',
     street: null,

@@ -34,6 +34,7 @@ import {
   type RoleCode,
   type Settings,
   type UserSummary,
+  setAppTimeZone,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -73,6 +74,8 @@ export const adminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           .where(eq(emailAsset.id, (value as { logoImageId: string }).logoImageId));
         if (!img) throw badRequest('Ce logo n’existe plus : choisissez-en un autre.');
       }
+      // Applied as soon as saved (the day of a ticket, of a closing, of a statistic).
+      if (key === 'app.timezone') setAppTimeZone((value as { timeZone: string }).timeZone);
       await db.transaction(async (tx) => {
         const [before] = await tx.select().from(setting).where(eq(setting.key, key)).for('update');
         await tx

@@ -60,7 +60,11 @@ function SettingCard<K extends SettingKey>({
     mutationFn: (v: Settings[K]) => api.put<Settings[K]>(`/settings/${settingKey}`, v),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: settingsQuery.queryKey });
-      if (settingKey === 'app.branding' || settingKey === 'association.identity')
+      if (
+        settingKey === 'app.branding' ||
+        settingKey === 'association.identity' ||
+        settingKey === 'app.timezone'
+      )
         await queryClient.invalidateQueries({ queryKey: ['branding'] });
     },
   });
@@ -210,6 +214,40 @@ export function SettingsPage() {
             </Field>
             <LogoField imageId={v.logoImageId} onChange={(id) => set({ ...v, logoImageId: id })} />
           </>
+        )}
+      </SettingCard>
+
+      <SettingCard
+        settingKey="app.timezone"
+        title="Fuseau horaire"
+        description="Celui de l’épicerie : il décide du jour d’un ticket, d’une clôture, d’une statistique. Un changement s’applique tout de suite ; il ne déplace aucune opération passée."
+        initial={data['app.timezone']}
+      >
+        {(v, set, errors) => (
+          <Field
+            label="Fuseau (nom IANA)"
+            error={errors.timeZone}
+            hint="Exemples : Europe/Paris, America/Martinique, Indian/Reunion."
+          >
+            {(p) => (
+              <>
+                <Input
+                  {...p}
+                  list="time-zones"
+                  className="max-w-72"
+                  value={v.timeZone}
+                  onChange={(e) => set({ timeZone: e.target.value })}
+                />
+                <datalist id="time-zones">
+                  {(Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+                    .supportedValuesOf?.('timeZone')
+                    .map((z) => (
+                      <option key={z} value={z} />
+                    ))}
+                </datalist>
+              </>
+            )}
+          </Field>
         )}
       </SettingCard>
 

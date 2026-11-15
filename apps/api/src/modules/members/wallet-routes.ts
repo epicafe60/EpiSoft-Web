@@ -11,7 +11,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { formatParis, toParisDate } from '../../lib/dates';
+import { formatShop, toShopDate } from '../../lib/dates';
 import { queueTemplatedEmail } from '../../lib/email-render';
 import { escapeHtml } from '../../lib/mail';
 import { badRequest, conflict, notFound } from '../../lib/problem';
@@ -44,7 +44,7 @@ export const walletRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     ws.views = [{ state: 'frozen', ySplit: 1 }];
     for (const w of [...h.wallet].reverse()) {
       ws.addRow({
-        at: formatParis(new Date(w.at)),
+        at: formatShop(new Date(w.at)),
         kind: WALLET_ENTRY_KIND_LABELS[w.kind],
         method: w.paymentMethod ? PAYMENT_METHOD_LABELS[w.paymentMethod as PaymentMethod] : '',
         sale: w.saleNumber ?? '',
@@ -74,7 +74,7 @@ export const walletRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         const rows = h.wallet
           .map(
             (w) =>
-              `<tr><td style="padding:2px 8px 2px 0">${formatParis(new Date(w.at))}</td><td style="padding:2px 8px">${escapeHtml(WALLET_ENTRY_KIND_LABELS[w.kind])}${w.saleNumber ? ` (${escapeHtml(w.saleNumber)})` : ''}</td><td style="padding:2px 0;text-align:right">${formatEuro(w.amount)}</td></tr>`,
+              `<tr><td style="padding:2px 8px 2px 0">${formatShop(new Date(w.at))}</td><td style="padding:2px 8px">${escapeHtml(WALLET_ENTRY_KIND_LABELS[w.kind])}${w.saleNumber ? ` (${escapeHtml(w.saleNumber)})` : ''}</td><td style="padding:2px 0;text-align:right">${formatEuro(w.amount)}</td></tr>`,
           )
           .join('');
         await queueTemplatedEmail(tx, 'wallet_history', to.email, {
@@ -107,7 +107,7 @@ export const walletRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         .where(eq(walletEntry.id, req.params.id))
         .for('update');
       if (!e) throw notFound('Opération introuvable.');
-      if (toParisDate(e.createdAt) !== toParisDate(new Date())) {
+      if (toShopDate(e.createdAt) !== toShopDate(new Date())) {
         throw conflict(
           'Un versement ne peut être annulé que le jour même. Utilisez une correction.',
         );

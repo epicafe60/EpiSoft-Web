@@ -5,6 +5,7 @@ import type { Db } from '@episoft/db';
 import { PAYMENT_METHOD_LABELS, suggestOrderQtyMilli, type PaymentMethod } from '@episoft/shared';
 import type { Config } from '../../config';
 import { reportXlsx, type ReportTable } from '../../lib/report-output';
+import { tzSql } from '../../lib/dates';
 
 type Row = Record<string, unknown>;
 
@@ -13,7 +14,7 @@ type Granularity = (typeof GRANULARITIES)[number];
 
 /** Period label of a timestamp column, in Paris time. */
 const bucket = (g: Granularity, col: string): SQL => {
-  const local = sql.raw(`(${col} at time zone 'Europe/Paris')`);
+  const local = sql`(${sql.raw(col)} at time zone ${tzSql()})`;
   return g === 'day'
     ? sql`to_char(${local}, 'YYYY-MM-DD')`
     : g === 'week'
@@ -66,7 +67,7 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
 ) => {
   const stats = { preHandler: app.requireRoles('STATS') };
   const inRange = (col: string, from: string, to: string) =>
-    sql`(${sql.raw(col)} at time zone 'Europe/Paris')::date between ${from}::date and ${to}::date`;
+    sql`(${sql.raw(col)} at time zone ${tzSql()})::date between ${from}::date and ${to}::date`;
 
   async function salesSeries(from: string, to: string, g: Granularity) {
     const res = await db.execute(sql`
@@ -184,7 +185,7 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       const res = await db.execute(sql`
         select p.code, p.name, p.stock_qty::text as qty,
                round(p.stock_qty * coalesce(p.purchase_price_excl, 0) * 100)::bigint as cents,
-               (select to_char(max(s.sold_at at time zone 'Europe/Paris'), 'YYYY-MM-DD')
+               (select to_char(max(s.sold_at at time zone ${tzSql()}), 'YYYY-MM-DD')
                   from app.sale_line l join app.sale s on s.id = l.sale_id where l.product_id = p.id) as last_sale
         from app.product p
         where p.status in ('ACTIVE', 'ON_ORDER') and p.stock_qty > 0
@@ -228,8 +229,8 @@ export const seriesRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     }
     if (kind === 'hours') {
       const res = await db.execute(sql`
-        select extract(isodow from s.sold_at at time zone 'Europe/Paris')::int as dow,
-               extract(hour from s.sold_at at time zone 'Europe/Paris')::int as hour,
+        select extract(isodow from s.sold_at at time zone ${tzSql()})::int as dow,
+               extract(hour from s.sold_at at time zone ${tzSql()})::int as hour,
                count(*)::int as tickets, round(sum(s.total) * 100)::bigint as cents
         from app.sale s
         where s.cancels_sale_id is null and s.status = 'COMPLETED' and ${inRange('s.sold_at', from, to)}

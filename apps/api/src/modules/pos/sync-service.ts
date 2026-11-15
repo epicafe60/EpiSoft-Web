@@ -48,7 +48,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { proofIsValid } from '../../lib/till-cashier';
 import { queueSaleReceipt, queueTopupReceipt } from '../../lib/receipts';
 import { alertNow } from '../../lib/alerts';
@@ -707,7 +707,7 @@ async function recordSale(
         .insert(memberPayment)
         .values({
           householdId,
-          date: toParisDate(soldAt),
+          date: toShopDate(soldAt),
           amount: centsToDecimal(changeCents),
           purpose: 'TOPUP',
           method: 'CASH',
@@ -746,7 +746,7 @@ async function recordSale(
       continue;
     }
     const period = membershipPeriod(
-      toParisDate(soldAt),
+      toShopDate(soldAt),
       type.durationMonths,
       await currentMembershipEnd(tx, householdId),
     );
@@ -1086,7 +1086,7 @@ async function topup(ctx: Ctx, p: Extract<SyncOp, { kind: 'WALLET_TOPUP' }>['pay
     .insert(memberPayment)
     .values({
       householdId: h.id,
-      date: toParisDate(at),
+      date: toShopDate(at),
       amount: p.amount,
       purpose: 'TOPUP',
       method: p.method,

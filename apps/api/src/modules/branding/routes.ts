@@ -28,6 +28,7 @@ export const brandingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
       accentColor: b.accentColor,
       logoUrl: brandingLogoUrl(b.logoImageId),
       customLogo: !!b.logoImageId,
+      timeZone: settings['app.timezone'].timeZone,
     };
   };
 

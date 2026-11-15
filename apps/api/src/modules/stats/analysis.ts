@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Db } from '@episoft/db';
 import type { Config } from '../../config';
 import { reportXlsx, type ReportTable } from '../../lib/report-output';
+import { tzSql } from '../../lib/dates';
 
 type Row = Record<string, unknown>;
 
@@ -33,12 +34,12 @@ const GROUP_SQL: Record<(typeof ANALYSIS_GROUPS)[number], { key: SQL; label: SQL
   universe: { key: sql`u.id::text`, label: sql`coalesce(u.name, 'Sans univers')` },
   supplier: { key: sql`sp.id::text`, label: sql`coalesce(sp.name, 'Sans fournisseur')` },
   day: {
-    key: sql`to_char(s.sold_at at time zone 'Europe/Paris', 'YYYY-MM-DD')`,
-    label: sql`to_char(s.sold_at at time zone 'Europe/Paris', 'YYYY-MM-DD')`,
+    key: sql`to_char(s.sold_at at time zone ${tzSql()}, 'YYYY-MM-DD')`,
+    label: sql`to_char(s.sold_at at time zone ${tzSql()}, 'YYYY-MM-DD')`,
   },
   month: {
-    key: sql`to_char(s.sold_at at time zone 'Europe/Paris', 'YYYY-MM')`,
-    label: sql`to_char(s.sold_at at time zone 'Europe/Paris', 'YYYY-MM')`,
+    key: sql`to_char(s.sold_at at time zone ${tzSql()}, 'YYYY-MM')`,
+    label: sql`to_char(s.sold_at at time zone ${tzSql()}, 'YYYY-MM')`,
   },
 };
 
@@ -67,7 +68,7 @@ export const analysisRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
 
   async function analyse(q: z.infer<typeof query>) {
     const where: SQL[] = [
-      sql`(s.sold_at at time zone 'Europe/Paris')::date between ${q.from}::date and ${q.to}::date`,
+      sql`(s.sold_at at time zone ${tzSql()})::date between ${q.from}::date and ${q.to}::date`,
     ];
     if (q.supplierId) where.push(sql`p.supplier_id = ${q.supplierId}::uuid`);
     if (q.universeId) where.push(sql`c.universe_id = ${q.universeId}::uuid`);

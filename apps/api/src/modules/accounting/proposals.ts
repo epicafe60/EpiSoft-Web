@@ -18,7 +18,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate, tzSql } from '../../lib/dates';
 import { badRequest } from '../../lib/problem';
 import {
   accountMap,
@@ -67,11 +67,11 @@ export interface Proposal {
 /** Closed sessions not covered by their own entry, by Paris closing day, within [from, to]. */
 async function eligibleSessions(db: DbOrTx, from: string, to: string): Promise<SessionRef[]> {
   const res = await db.execute<{ id: string; day: string }>(sql`
-    select s.id, to_char(s.closed_at at time zone 'Europe/Paris', 'YYYY-MM-DD') as day
+    select s.id, to_char(s.closed_at at time zone ${tzSql()}, 'YYYY-MM-DD') as day
       from app.cash_session s
      where s.status = 'CLOSED' and s.closed_at is not null and s.entry_id is null
        and not exists (select 1 from app.entry e where e.source_type = 'session' and e.source_id = s.id::text)
-       and (s.closed_at at time zone 'Europe/Paris')::date between ${from}::date and ${to}::date
+       and (s.closed_at at time zone ${tzSql()})::date between ${from}::date and ${to}::date
      order by s.closed_at`);
   return res.rows;
 }
@@ -217,7 +217,7 @@ export const proposalRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
   const compta = { preHandler: app.requireRoles('COMPTA') };
 
   app.get('/accounting/proposals', { ...compta, schema: { querystring: query } }, async (req) => {
-    const today = toParisDate(new Date());
+    const today = toShopDate(new Date());
     // Default start: the day after the last entry not produced by this tool (old accounting…).
     const [last] = (
       await db.execute<{ d: string | null }>(sql`
@@ -226,7 +226,7 @@ export const proposalRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
     ).rows;
     const [first] = (
       await db.execute<{ d: string | null }>(sql`
-        select min((s.closed_at at time zone 'Europe/Paris')::date)::text as d
+        select min((s.closed_at at time zone ${tzSql()})::date)::text as d
           from app.cash_session s where s.status = 'CLOSED' and s.entry_id is null`)
     ).rows;
     const defaultFrom = defaultProposalStart(last?.d ?? null, first?.d ?? null) ?? today;

@@ -13,7 +13,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { badRequest, notFound } from '../../lib/problem';
 import { accountBalances } from './service';
 
@@ -44,7 +44,7 @@ export const budgetRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, req.params.id));
     if (!fy) throw notFound('Exercice introuvable.');
     const c = await budgetFor(db, fy.id);
-    const elapsed = elapsedPercent(fy.startDate, fy.endDate, toParisDate(new Date()));
+    const elapsed = elapsedPercent(fy.startDate, fy.endDate, toShopDate(new Date()));
     const fmt = (r: (typeof c.expenses)[number]) => ({
       number: r.number,
       label: r.label,

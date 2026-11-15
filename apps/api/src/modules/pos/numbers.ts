@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { numberCounter, type DbOrTx } from '@episoft/db';
 import { formatSaleNumber } from '@episoft/shared';
-import { parisYear } from '../../lib/dates';
+import { shopYear } from '../../lib/dates';
 
 /**
  * Next value of a gapless counter. The row lock serializes concurrent sales, and a
@@ -21,6 +21,6 @@ export async function nextNumber(tx: DbOrTx, key: string): Promise<number> {
 
 /** R-VTE-10: T-AAAA-NNNNNN, numbered per calendar year (Paris time). */
 export async function nextSaleNumber(tx: DbOrTx, soldAt: Date): Promise<string> {
-  const year = parisYear(soldAt);
+  const year = shopYear(soldAt);
   return formatSaleNumber(year, await nextNumber(tx, `sale:${year}`));
 }

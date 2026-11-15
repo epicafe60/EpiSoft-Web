@@ -27,7 +27,7 @@ import {
   type PaymentMethod,
   type SupplierPaymentMethod,
 } from '@episoft/shared';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { conflict, notFound } from '../../lib/problem';
 import {
   accountMap,
@@ -62,7 +62,7 @@ export async function generateSessionEntry(
   if (existing) return existing.id;
   const lines = await sessionEntryPlan(tx, sessionId);
   if (!lines.length) return null;
-  const date = toParisDate(s.closedAt ?? new Date());
+  const date = toShopDate(s.closedAt ?? new Date());
   const id = await createEntry(tx, {
     journalCode: 'VTE',
     date,
@@ -179,8 +179,8 @@ export async function regularizeSessionEntry(
       sql`(${entry.sourceType} = 'session' and ${entry.sourceId} = ${sessionId})
         or (${entry.sourceType} = 'session_regularization' and ${entry.sourceId} like ${sessionId + ':%'})`,
     );
-  const date = toParisDate(new Date());
-  const label = `Régularisation caisse du ${toParisDate(s.closedAt ?? new Date())
+  const date = toShopDate(new Date());
+  const label = `Régularisation caisse du ${toShopDate(s.closedAt ?? new Date())
     .split('-')
     .reverse()
     .join('/')}`;

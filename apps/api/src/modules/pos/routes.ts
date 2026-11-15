@@ -36,7 +36,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { alertNow } from '../../lib/alerts';
 import { queueTemplatedEmail } from '../../lib/email-render';
-import { formatParis } from '../../lib/dates';
+import { formatShop, tzSql } from '../../lib/dates';
 import { escapeHtml } from '../../lib/mail';
 import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
 import { euros, queueSaleReceipt } from '../../lib/receipts';
@@ -784,7 +784,7 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
       if (q.sessionId) f.push(eq(sale.sessionId, await resolveSession(q.sessionId)));
       if (q.memberId) f.push(eq(sale.memberId, q.memberId));
       if (q.householdId) f.push(eq(sale.householdId, q.householdId));
-      if (q.day) f.push(sql`(${sale.soldAt} at time zone 'Europe/Paris')::date = ${q.day}::date`);
+      if (q.day) f.push(sql`(${sale.soldAt} at time zone ${tzSql()})::date = ${q.day}::date`);
       if (q.before) f.push(lt(sale.soldAt, new Date(q.before)));
       const rows = await db
         .select({
@@ -962,8 +962,8 @@ function closingReportValues(
 ): Values {
   const rows: [string, string][] = [
     ['Caissiers', summary.byCashier?.map((c) => c.name).join(', ') || '—'],
-    ['Ouverture', formatParis(openedAt)],
-    ['Clôture', formatParis(closedAt)],
+    ['Ouverture', formatShop(openedAt)],
+    ['Clôture', formatShop(closedAt)],
     ['Tickets', `${summary.salesCount} (annulations : ${summary.cancellationsCount})`],
     ['Total des ventes', euros(decimalToCents(summary.salesTotal))],
     ['Espèces', euros(decimalToCents(summary.byMethod.CASH))],
@@ -1002,5 +1002,5 @@ function closingReportValues(
       )
       .join('') +
     `</table>`;
-  return { date_cloture: formatParis(closedAt), tableau: table };
+  return { date_cloture: formatShop(closedAt), tableau: table };
 }

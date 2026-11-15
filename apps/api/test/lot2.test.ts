@@ -13,7 +13,7 @@ import {
   type Db,
 } from '@episoft/db';
 import { addDays } from '@episoft/shared';
-import { toParisDate } from '../src/lib/dates';
+import { toShopDate } from '../src/lib/dates';
 import { recordMovement } from '../src/modules/stock/ledger';
 import { sendDueInvoiceAlerts } from '../src/modules/supplies/invoices';
 import { createUser, login, setupTestApp } from './helpers';
@@ -251,7 +251,7 @@ describe('stock (R-STK-01..06)', () => {
       .where(eq(stockMovement.productId, p2.id))) as [{ sum: string }];
     expect(sum).toBe('4.000');
     const v = (
-      await get(`/api/v1/stock/valuation?date=${toParisDate(new Date())}&basis=excl`)
+      await get(`/api/v1/stock/valuation?date=${toShopDate(new Date())}&basis=excl`)
     ).json();
     expect(v.rows.find((r: { code: string }) => r.code === '211002')).toMatchObject({
       qty: '4.000',
@@ -330,7 +330,7 @@ describe('invoices (R-FAC-01, R-FAC-02, R-FAC-05)', () => {
         lines: [{ orderLineId: null, productId: p1.id, qty: '10', unitPriceExcl: '5' }],
       })
     ).json();
-    const date = toParisDate(new Date());
+    const date = toShopDate(new Date());
     const form = {
       supplierId: s.id,
       pieceRef: 'F-001',
@@ -466,7 +466,7 @@ describe('a supplier paid « à réception fin de mois » (R-FAC-01)', () => {
     const sheet = (await get(`/api/v1/suppliers/${created.id}`)).json();
     expect(sheet.payAtMonthEnd).toBe(true);
 
-    const today = toParisDate(new Date());
+    const today = toShopDate(new Date());
     // Dated two months ago, entered today: due at the end of the current month.
     const old = addDays(today, -60);
     const inv = (await post('/api/v1/supplier-invoices', invoice(created.id, old, 'FM-1'))).json();

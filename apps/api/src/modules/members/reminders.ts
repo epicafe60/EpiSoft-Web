@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { household, member, membershipReminder, type Db } from '@episoft/db';
 import { addDays } from '@episoft/shared';
 import type { Config } from '../../config';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { sendPush } from '../../lib/push';
 import { queueTemplatedEmail } from '../../lib/email-render';
 import { loadSettings } from '../admin/settings-store';
@@ -21,7 +21,7 @@ export async function sendMembershipReminders(
   const settings = await loadSettings(db);
   const cfg = settings['membership.reminder'];
   if (!cfg.enabled) return 0;
-  const today = toParisDate(now);
+  const today = toShopDate(now);
   const limit = addDays(today, cfg.daysBefore);
 
   const pushes: { memberId: string; end: string }[] = [];

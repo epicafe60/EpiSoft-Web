@@ -37,10 +37,11 @@ import {
   suggestedOrderQtyMilli,
   formatQty,
   type Settings,
+  shopFormat,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { parisYear, toParisDate } from '../../lib/dates';
+import { shopYear, toShopDate } from '../../lib/dates';
 import { pdfAttachment, queueEmail } from '../../lib/mail';
 import { renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
 import { drawOrderSheet, prepareOrderSheet, type OrderSheet } from '../../lib/order-sheet';
@@ -375,7 +376,7 @@ export async function recordReceipt(
 ): Promise<{ id: string; number: string; warnings: string[] }> {
   const thresholds = (await loadSettings(tx))['controls.thresholds'];
   const warnings: string[] = [];
-  const year = parisYear(new Date(`${input.date}T12:00:00Z`));
+  const year = shopYear(new Date(`${input.date}T12:00:00Z`));
   const number = formatDocNumber('RC', year, await nextNumber(tx, `receipt:${year}`));
   const [r] = await tx
     .insert(goodsReceipt)
@@ -579,7 +580,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     return db.transaction(async (tx) => {
       const s = await tx.query.supplier.findFirst({ where: eq(supplier.id, b.supplierId) });
       if (!s) throw notFound('Fournisseur introuvable.');
-      const date = b.date ?? toParisDate(new Date());
+      const date = b.date ?? toShopDate(new Date());
       const year = Number(date.slice(0, 4));
       const number = formatDocNumber('CF', year, await nextNumber(tx, `po:${year}`));
       const [o] = await tx
@@ -755,7 +756,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     if (!o) throw notFound('Commande introuvable.');
     return renderPlainDraft(db, 'purchase_order', {
       numero: o.number,
-      date: new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }),
+      date: shopFormat('fr-FR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date()),
     });
   });
 
@@ -821,7 +822,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           {
             supplierId: o.supplierId,
             orderId: o.id,
-            date: req.body.date ?? toParisDate(new Date()),
+            date: req.body.date ?? toShopDate(new Date()),
             comment: req.body.comment ?? null,
             lines: req.body.lines,
             closeOrder: req.body.closeOrder,
@@ -874,7 +875,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           {
             supplierId: req.body.supplierId,
             orderId: null,
-            date: req.body.date ?? toParisDate(new Date()),
+            date: req.body.date ?? toShopDate(new Date()),
             comment: req.body.comment ?? null,
             lines: req.body.lines,
             closeOrder: false,

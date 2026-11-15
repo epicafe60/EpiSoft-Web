@@ -10,7 +10,7 @@ import {
   type DateRange,
 } from '@episoft/shared';
 import type { Config } from '../../config';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate, tzSql } from '../../lib/dates';
 
 type Row = Record<string, unknown>;
 const num = (v: unknown) => Number(v ?? 0);
@@ -21,7 +21,7 @@ async function salesFigures(db: Db, r: DateRange) {
     select coalesce(sum(total) * 100, 0)::bigint as cents,
            count(*) filter (where cancels_sale_id is null and status = 'COMPLETED')::int as tickets
     from app.sale
-    where (sold_at at time zone 'Europe/Paris')::date between ${r.from}::date and ${r.to}::date`);
+    where (sold_at at time zone ${tzSql()})::date between ${r.from}::date and ${r.to}::date`);
   const row = res.rows[0] as Row;
   return { cents: num(row.cents), tickets: num(row.tickets) };
 }
@@ -33,7 +33,7 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
 ) => {
   app.get('/stats/dashboard', async (req) => {
     const roles = req.user!.roles;
-    const today = toParisDate(new Date());
+    const today = toShopDate(new Date());
     const can = (...r: Parameters<typeof hasAnyRole>[1]) => hasAnyRole(roles, r);
     const out: Record<string, unknown> = { today };
 
@@ -60,7 +60,7 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
       const pay = await db.execute(sql`
         select p.method, (sum(p.amount) * 100)::bigint as cents
         from app.sale_payment p join app.sale s on s.id = p.sale_id
-        where (s.sold_at at time zone 'Europe/Paris')::date between ${month.from}::date and ${month.to}::date
+        where (s.sold_at at time zone ${tzSql()})::date between ${month.from}::date and ${month.to}::date
         group by p.method order by 2 desc`);
       out.payments = pay.rows.map((r) => ({
         method: String((r as Row).method),
@@ -69,7 +69,7 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
       const top = await db.execute(sql`
         select l.product_id, max(l.label) as label, sum(l.qty)::text as qty, (sum(l.line_total) * 100)::bigint as cents
         from app.sale_line l join app.sale s on s.id = l.sale_id
-        where (s.sold_at at time zone 'Europe/Paris')::date between ${month.from}::date and ${month.to}::date
+        where (s.sold_at at time zone ${tzSql()})::date between ${month.from}::date and ${month.to}::date
         group by l.product_id order by 4 desc limit 10`);
       out.topProducts = top.rows.map((r) => ({
         productId: String((r as Row).product_id),

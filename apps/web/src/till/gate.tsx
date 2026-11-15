@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { centsToDecimal, parseAmountToCents, parisDay } from '@episoft/shared';
+import { centsToDecimal, parseAmountToCents, shopDay } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { useMe } from '@/lib/auth';
 import { euro } from '@/lib/format';
@@ -137,7 +137,7 @@ function OpenSession() {
     : state.isError
       ? (settings?.openSessions?.[0] ?? null)
       : undefined;
-  const stale = !!serverOpen && parisDay(new Date(serverOpen.openedAt)) < parisDay(new Date());
+  const stale = !!serverOpen && shopDay(new Date(serverOpen.openedAt)) < shopDay(new Date());
   useEffect(() => {
     if (serverOpen && !stale)
       void setMeta('session', {
@@ -245,7 +245,7 @@ export function TillGate({
     needSession &&
     sync.online &&
     meta.session &&
-    parisDay(new Date(meta.session.openedAt)) < parisDay(new Date())
+    shopDay(new Date(meta.session.openedAt)) < shopDay(new Date())
   )
     return <StaleSession session={meta.session} />;
   return <>{children}</>;

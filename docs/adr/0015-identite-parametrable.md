@@ -31,9 +31,19 @@ d'origine ; une autre structure les change dans Administration › Paramètres.
 
 ## Hors périmètre (à décider plus tard)
 
-- Fuseau horaire `Europe/Paris`, devise, plan comptable et taux de TVA : encore supposés français.
+- Devise, plan comptable et taux de TVA : encore supposés français.
 - Les migrations depuis l'ancien logiciel (`packages/db/src/legacy`) restent : la reprise de l'Épicafé est
   la première fonction du produit.
 - Le mode associatif (adhérents, foyers, cagnotte) reste sans option.
 - La mise en page commune des courriels (image d'en-tête, pied de page) est déjà modifiable ; sa valeur
   d'origine, créée par la migration 0035, porte le nom de l'Épicafé.
+
+## Complément : fuseau horaire
+
+Le fuseau de l'épicerie est le réglage `app.timezone` (nom IANA, validé ; valeur d'origine
+`Europe/Paris`). Il décide du jour d'un ticket, d'une clôture, d'une statistique, d'un numéro annuel et des
+heures affichées dans les courriels et les PDF. Une seule valeur par processus (`packages/shared/src/timezone.ts`) :
+le serveur la lit au démarrage et à l'enregistrement du réglage, le navigateur la reçoit avec l'identité
+(`/branding`) et la garde pour la caisse hors ligne. Dans le SQL, `at time zone` reçoit le nom par `tzSql()`,
+lu au moment de la requête (un nom contrôlé, jamais une valeur saisie). Un changement ne déplace aucune
+opération passée : seul le calcul du jour change.

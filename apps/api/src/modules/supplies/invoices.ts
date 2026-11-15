@@ -28,7 +28,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { payInvoice, syncInvoiceEntry } from '../accounting/auto';
 import { eur } from '../../lib/pdf';
@@ -238,7 +238,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       b.dueDate ??
       invoiceDueDateFor({
         invoiceDate: b.date,
-        entryDate: toParisDate(new Date()),
+        entryDate: toShopDate(new Date()),
         termsDays: s.paymentTermsDays,
         payAtMonthEnd: s.payAtMonthEnd,
       });
@@ -406,7 +406,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 export async function sendDueInvoiceAlerts(db: Db, now = new Date()): Promise<number> {
   const to = (await loadSettings(db))['pos.treasurerEmail'].email;
   if (!to) return 0;
-  const limit = addDays(toParisDate(now), 3);
+  const limit = addDays(toShopDate(now), 3);
   return db.transaction(async (tx) => {
     const due = await tx
       .select({

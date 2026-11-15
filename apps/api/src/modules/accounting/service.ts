@@ -21,7 +21,7 @@ import {
   type AccountMap,
   type PlannedLine,
 } from '@episoft/shared';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
 
@@ -64,7 +64,7 @@ export async function fiscalYearFor(tx: Tx, date: string, autoCreate: boolean) {
   const existing = await fiscalYearAt(tx, date);
   if (existing) return existing;
   const year = Number(date.slice(0, 4));
-  const thisYear = Number(toParisDate(new Date()).slice(0, 4));
+  const thisYear = Number(toShopDate(new Date()).slice(0, 4));
   if (!autoCreate || Math.abs(year - thisYear) > 1) {
     throw badRequest(
       `Aucun exercice ne couvre le ${date.split('-').reverse().join('/')}. Créez l’exercice dans Comptabilité › Exercices.`,
@@ -315,7 +315,7 @@ export async function reverseEntry(
     .from(entryLine)
     .where(eq(entryLine.entryId, entryId))
     .orderBy(entryLine.lineNo);
-  const date = opts.date ?? toParisDate(new Date());
+  const date = opts.date ?? toShopDate(new Date());
   const fy = await fiscalYearFor(tx, date, false);
   if (fy.status !== 'OPEN') throw conflict(`L’exercice ${fy.label} est clôturé.`);
   const swapped = reverseLines(

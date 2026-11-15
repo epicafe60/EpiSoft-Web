@@ -10,7 +10,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { forbidden } from '../../lib/problem';
 
 /** Excel's own limits on a sheet name. */
@@ -92,7 +92,7 @@ export const tableExportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }
         throw forbidden(
           `L’export de cet écran est réservé à : ${exportRolesOf(b.scope).join(', ') || 'tout le monde'}.`,
         );
-      const file = exportFileName(b.title, toParisDate(new Date()));
+      const file = exportFileName(b.title, toShopDate(new Date()));
       const buf = await tableXlsx(b);
       await audit(db, req, {
         action: 'export.file',
