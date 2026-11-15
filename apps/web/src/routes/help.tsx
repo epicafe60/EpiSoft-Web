@@ -51,6 +51,32 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: 'Modifier les documents PDF de l’application',
+    roles: ['ADMIN'],
+    topics: [
+      {
+        question: 'Où changer le texte et les colonnes du bon de commande ?',
+        answer: [
+          'Administration › Documents PDF. Choisissez un document : le bon de commande fournisseur, le rapport de clôture de caisse ou les rapports comptables et statistiques.',
+          'Chaque bloc de texte (en-tête, fournisseur, bas de page…) se modifie comme un courriel, avec des variables comme {{numero}} ou {{fournisseur_nom}}. L’aperçu en dessous montre le PDF avec des valeurs d’exemple, avant d’enregistrer.',
+        ],
+      },
+      {
+        question: 'Comment choisir les colonnes du tableau ?',
+        answer: [
+          'Pour le bon de commande, cochez les colonnes à imprimer (référence fournisseur, prix HT, TVA, prix TTC, quantité, totaux), changez leur en-tête et leur ordre avec les flèches. La désignation du produit ne peut pas être retirée.',
+          'Les colonnes des rapports (journal, bilan…) dépendent de chaque rapport et ne se choisissent pas encore.',
+        ],
+      },
+      {
+        question: 'Que devient une ligne dont la variable est vide ?',
+        answer: [
+          'Elle disparaît : si l’association n’a pas de SIREN dans les paramètres, la ligne « SIREN : » n’est pas imprimée. « Rétablir la version d’origine » remet le texte et les colonnes de l’application.',
+        ],
+      },
+    ],
+  },
+  {
     title: 'Exporter une liste en Excel',
     roles: [],
     topics: [

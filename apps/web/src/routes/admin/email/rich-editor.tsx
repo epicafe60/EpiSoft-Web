@@ -8,6 +8,7 @@ import { Color, TextStyle } from '@tiptap/extension-text-style';
 import {
   AlignCenter,
   AlignLeft,
+  AlignRight,
   Bold,
   Code2,
   Heading2,
@@ -201,20 +202,24 @@ export function RichEditor({
   onChange,
   variables = [],
   minHeight = '14rem',
+  variant = 'email',
 }: {
   label: string;
   value: string;
   onChange: (html: string) => void;
   variables?: readonly TemplateVariable[];
   minHeight?: string;
+  /** « pdf »: text only (formatting, lists, alignment, colour): a PDF has no link and no image. */
+  variant?: 'email' | 'pdf';
 }) {
+  const pdf = variant === 'pdf';
   const [mode, setMode] = useState<'visual' | 'html'>('visual');
   const [pickImage, setPickImage] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ link: { openOnClick: false, autolink: false } }),
-      Image,
+      StarterKit.configure({ link: pdf ? false : { openOnClick: false, autolink: false } }),
+      ...(pdf ? [] : [Image]),
       TextStyle,
       Color,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -248,8 +253,8 @@ export function RichEditor({
         {editor && mode === 'visual' ? (
           <Toolbar
             editor={editor}
-            onLink={() => setLink(editor.getAttributes('link').href ?? '')}
-            onImage={() => setPickImage(true)}
+            onLink={pdf ? undefined : () => setLink(editor.getAttributes('link').href ?? '')}
+            onImage={pdf ? undefined : () => setPickImage(true)}
           />
         ) : null}
         <div className="ml-auto flex items-center gap-1">
@@ -271,13 +276,15 @@ export function RichEditor({
               ))}
             </Select>
           ) : null}
-          <ToolButton
-            label={mode === 'html' ? 'Revenir à l’éditeur' : 'Voir le code HTML'}
-            active={mode === 'html'}
-            onClick={mode === 'html' ? toVisual : toSource}
-          >
-            <Code2 className="size-4" />
-          </ToolButton>
+          {pdf ? null : (
+            <ToolButton
+              label={mode === 'html' ? 'Revenir à l’éditeur' : 'Voir le code HTML'}
+              active={mode === 'html'}
+              onClick={mode === 'html' ? toVisual : toSource}
+            >
+              <Code2 className="size-4" />
+            </ToolButton>
+          )}
         </div>
       </div>
       {mode === 'visual' ? (
@@ -329,8 +336,8 @@ function Toolbar({
   onImage,
 }: {
   editor: Editor;
-  onLink: () => void;
-  onImage: () => void;
+  onLink?: () => void;
+  onImage?: () => void;
 }) {
   const colorRef = useRef<HTMLInputElement>(null);
   const chain = () => editor.chain().focus();
@@ -402,6 +409,13 @@ function Toolbar({
         <AlignLeft className="size-4" />
       </ToolButton>
       <ToolButton
+        label="Aligner à droite"
+        active={editor.isActive({ textAlign: 'right' })}
+        onClick={() => chain().setTextAlign('right').run()}
+      >
+        <AlignRight className="size-4" />
+      </ToolButton>
+      <ToolButton
         label="Centrer"
         active={editor.isActive({ textAlign: 'center' })}
         onClick={() => chain().setTextAlign('center').run()}
@@ -409,12 +423,16 @@ function Toolbar({
         <AlignCenter className="size-4" />
       </ToolButton>
       <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-      <ToolButton label="Lien" active={editor.isActive('link')} onClick={onLink}>
-        <Link2 className="size-4" />
-      </ToolButton>
-      <ToolButton label="Insérer une image" onClick={onImage}>
-        <ImagePlus className="size-4" />
-      </ToolButton>
+      {onLink ? (
+        <ToolButton label="Lien" active={editor.isActive('link')} onClick={onLink}>
+          <Link2 className="size-4" />
+        </ToolButton>
+      ) : null}
+      {onImage ? (
+        <ToolButton label="Insérer une image" onClick={onImage}>
+          <ImagePlus className="size-4" />
+        </ToolButton>
+      ) : null}
       <label className="ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
         <span className="sr-only">Couleur du texte</span>
         <input

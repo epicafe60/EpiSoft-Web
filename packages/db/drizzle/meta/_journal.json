@@ -253,6 +253,13 @@
       "when": 1794751583002,
       "tag": "0035_email_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794752957877,
+      "tag": "0036_pdf_templates",
+      "breakpoints": true
     }
   ]
 }

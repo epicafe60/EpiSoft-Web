@@ -8,6 +8,7 @@ export * from './auth';
 export * from './catalog';
 export * from './crypto';
 export * from './email-templates';
+export * from './pdf-templates';
 export * from './feedback';
 export * from './files';
 export * from './forms';

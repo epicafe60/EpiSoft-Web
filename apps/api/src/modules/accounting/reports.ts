@@ -29,6 +29,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
+import { loadPdfConfig } from '../../lib/pdf-template';
 import { reportPdf, reportXlsx, type ReportLine, type ReportTable } from '../../lib/report-output';
 import { badRequest, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -536,7 +537,7 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       return reply
         .header('content-disposition', `attachment; filename="${file}.pdf"`)
         .type('application/pdf')
-        .send(await reportPdf(table, identity));
+        .send(await reportPdf(table, identity, (await loadPdfConfig(db, 'report')).config));
     },
   );
 

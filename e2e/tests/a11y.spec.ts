@@ -42,6 +42,7 @@ test('staff screens are accessible', async ({ page }) => {
     ['/catalogue', /Catalogue|Produits/],
     ['/aide', /Aide/],
     ['/admin/courriels', /Administration/],
+    ['/admin/documents', /Administration/],
     ['/surveillance', /Surveillance/],
     ['/surveillance/sauvegardes', /Surveillance/],
     ['/surveillance/activite', /Surveillance/],
