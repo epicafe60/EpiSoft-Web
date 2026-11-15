@@ -277,6 +277,8 @@ export const emailTemplateRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config
     const pdfLogo = (await loadSettings(db))['documents.logo'];
     if (pdfLogo.source === 'IMAGE' && pdfLogo.imageId)
       add(pdfLogo.imageId, 'Logo des documents PDF');
+    const logo = (await loadSettings(db))['app.branding'].logoImageId;
+    if (logo) add(logo, 'Logo de l’application');
     for (const id of assetIdsIn(layout.footerHtml)) add(id, 'Pied de page commun');
     for (const row of await db.select().from(emailTemplate))
       for (const id of assetIdsIn(row.bodyHtml)) add(id, templateDef(row.key)?.label ?? row.key);

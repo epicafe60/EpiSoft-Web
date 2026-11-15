@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { hasAnyRole, MODULES, type RoleCode } from '@episoft/shared';
 import { ApiError } from './lib/api';
 import { meQuery } from './lib/auth';
+import { BrandingEffects } from './lib/branding';
 import { LoginPage } from './routes/login';
 import { ForgotPasswordPage, SetPasswordPage } from './routes/password';
 import { AppShell } from './routes/shell';
@@ -77,8 +78,17 @@ export const queryClient = new QueryClient({
   },
 });
 
+function RootLayout() {
+  return (
+    <>
+      <BrandingEffects />
+      <Outlet />
+    </>
+  );
+}
+
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  component: Outlet,
+  component: RootLayout,
   notFoundComponent: NotFound,
   errorComponent: RouteError,
 });

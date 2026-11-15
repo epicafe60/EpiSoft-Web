@@ -5,11 +5,13 @@ import { auditSystem } from './audit';
 import { pushSubscription, type Db } from '@episoft/db';
 import { pushEndpointAllowed } from '@episoft/shared';
 import type { Config } from '../config';
+import { loadSettings } from '../modules/admin/settings-store';
 
 // Web Push (§4.16): a best-effort notification next to the e-mail. Without VAPID keys it does nothing.
 
 export interface PushMessage {
-  title: string;
+  /** The short name of the association when not given (Administration › Paramètres). */
+  title?: string;
   body: string;
   /** Page opened when the notification is clicked. */
   url?: string;
@@ -28,6 +30,10 @@ export async function sendPush(
 ): Promise<number> {
   if (!pushEnabled(config)) return 0;
   try {
+    const payload = JSON.stringify({
+      ...message,
+      title: message.title ?? (await loadSettings(db))['app.branding'].shortName,
+    });
     const subs = await db
       .select()
       .from(pushSubscription)
@@ -44,7 +50,7 @@ export async function sendPush(
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            JSON.stringify(message),
+            payload,
             {
               vapidDetails: {
                 subject: config.VAPID_SUBJECT,

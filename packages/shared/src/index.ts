@@ -21,6 +21,7 @@ export * from './preorders';
 export * from './push';
 export * from './roles';
 export * from './scale';
+export * from './branding';
 export * from './settings';
 export * from './sort';
 export * from './imports';

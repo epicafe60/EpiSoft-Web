@@ -6,6 +6,7 @@ import { DEFAULT_THRESHOLDS, tillHealth } from '@episoft/shared';
 import { ArrowLeft, CloudOff, LogIn, RefreshCw, Wifi } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useMe } from '@/lib/auth';
+import { useBranding } from '@/lib/branding';
 import { formatDateTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -173,6 +174,7 @@ function HealthBanners() {
 
 function TillHeader() {
   const { sync } = useTill();
+  const { appName } = useBranding();
   const tab =
     'rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent [&.active]:bg-primary/10 [&.active]:text-primary';
   return (
@@ -183,7 +185,7 @@ function TillHeader() {
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           aria-label="Retour au back-office"
         >
-          <ArrowLeft className="size-4" /> EpiSoft
+          <ArrowLeft className="size-4" /> {appName}
         </Link>
         <span className="font-semibold">Caisse</span>
         <nav aria-label="Caisse" className="flex gap-1">

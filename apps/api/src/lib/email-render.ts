@@ -1,7 +1,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { emailAsset, emailLayout, emailTemplate, type DbOrTx } from '@episoft/db';
 import {
+  appValues,
   assetIdsIn,
+  DEFAULT_BRANDING,
   DEFAULT_EMAIL_LAYOUT,
   EMAIL_ASSET_PATH,
   escapeHtmlText,
@@ -55,6 +57,15 @@ export async function loadHeaderLogo(db: DbOrTx): Promise<Buffer | null> {
     .from(emailAsset)
     .where(eq(emailAsset.id, headerImageId));
   return img && ['image/png', 'image/jpeg'].includes(img.mime) ? img.bytes : null;
+}
+
+/** The values every template has: the names the association has set (they win over a given value). */
+async function withApp(db: DbOrTx, values: Values): Promise<Values> {
+  const settings = await loadSettings(db);
+  return {
+    ...values,
+    ...appValues(settings['app.branding'], settings['association.identity'].name),
+  };
 }
 
 /** The wording an administrator saved, or the one of the application. */
@@ -142,6 +153,12 @@ async function embedImages(
   return { html: out, attachments };
 }
 
+/** The names of the application as shipped: when the settings cannot be read. */
+const defaultValues = (values: Values): Values => ({
+  ...values,
+  ...appValues(DEFAULT_BRANDING, DEFAULT_EMAIL_LAYOUT.headerAlt),
+});
+
 /** A list of lines as the HTML fragment a variable holds (each line is escaped). */
 export const htmlList = (lines: readonly string[]) =>
   `<ul>${lines.map((l) => `<li>${escapeHtmlText(l)}</li>`).join('')}</ul>`;
@@ -155,10 +172,10 @@ export async function renderSubject(
   const def = templateDef(key)!;
   try {
     const tpl = await db.transaction((sp) => loadTemplate(sp, key));
-    return oneLine(fillText(tpl.subject, values, def.variables));
+    return oneLine(fillText(tpl.subject, await withApp(db, values), def.variables));
   } catch {
     // Same fallback as the e-mail itself: an alert is never lost because the wording is unreadable.
-    return oneLine(fillText(def.subject, values, def.variables));
+    return oneLine(fillText(def.subject, defaultValues(values), def.variables));
   }
 }
 
@@ -171,7 +188,9 @@ export async function renderEmail(
   const def = templateDef(key)!;
   const tpl = opts.draft ?? (await loadTemplate(db, key));
   const layout = opts.draft?.layout ?? (await loadLayout(db));
-  const name = (await loadSettings(db))['association.identity'].name;
+  const settings = await loadSettings(db);
+  const name = settings['association.identity'].name;
+  values = { ...values, ...appValues(settings['app.branding'], name) };
   const subject = oneLine(fillText(tpl.subject, values, def.variables));
   const body = fillHtml(tpl.body, values, def.variables);
   const text =
@@ -190,6 +209,7 @@ export async function renderPlainDraft(
 ): Promise<{ subject: string; message: string }> {
   const def = templateDef(key)!;
   const tpl = await loadTemplate(db, key);
+  values = await withApp(db, values);
   return {
     subject: oneLine(fillText(tpl.subject, values, def.variables)),
     message: fillText(htmlToText(tpl.body), values, def.variables),
@@ -217,8 +237,9 @@ export async function renderPlainEmail(
  * The e-mail written from the wording and the layout of the application only: no database read, so
  * it cannot fail the way a read of the edited wording can. The last resort when that read fails.
  */
-export function renderDefaultEmail(key: EmailTemplateKey, values: Values): RenderedEmail {
+export function renderDefaultEmail(key: EmailTemplateKey, given: Values): RenderedEmail {
   const def = templateDef(key)!;
+  const values = defaultValues(given);
   const subject = oneLine(fillText(def.subject, values, def.variables));
   const html = layoutHtml(
     DEFAULT_EMAIL_LAYOUT,

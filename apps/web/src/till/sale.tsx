@@ -42,6 +42,7 @@ import {
 } from '@episoft/shared';
 import { todayIso, formatDate } from '@/lib/format';
 import { useMe } from '@/lib/auth';
+import { DEFAULT_BRANDING_INFO } from '@/lib/branding';
 import { confirmNow } from '@/components/confirm';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -927,7 +928,7 @@ export function SalePage() {
       ) : null}
       <Receipt
         sale={lastSale}
-        associationName={settings?.associationName ?? 'Épicafé'}
+        associationName={settings?.associationName ?? DEFAULT_BRANDING_INFO.associationName}
         memberName={lastMemberName}
       />
     </div>

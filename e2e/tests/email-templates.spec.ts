@@ -102,7 +102,7 @@ test('the original wording comes back, after a confirmation', async ({ page }) =
     .getByRole('button', { name: 'Rétablir' })
     .click();
   await expect(page.getByLabel('Objet', { exact: true })).toHaveValue(
-    'Épicafé : votre cagnotte est basse',
+    '{{association_court}} : votre cagnotte est basse',
   );
   expect(await query(`select 1 from app.email_template where key = 'wallet_low'`)).toHaveLength(0);
 });

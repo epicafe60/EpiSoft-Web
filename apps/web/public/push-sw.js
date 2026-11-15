@@ -7,7 +7,7 @@ self.addEventListener('push', (event) => {
     data = { body: event.data ? event.data.text() : '' };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Épicafé', {
+    self.registration.showNotification(data.title || 'Notification', {
       body: data.body || '',
       icon: '/favicon.svg',
       data: { url: data.url || '/' },

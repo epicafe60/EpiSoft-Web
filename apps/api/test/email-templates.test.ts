@@ -95,7 +95,13 @@ describe('the list and the detail', () => {
     const d = (await call('GET', '/email-templates/password_link', admin)).json();
     expect(d).toMatchObject({ key: 'password_link', customized: false });
     expect(d.subject).toBe(d.defaultSubject);
-    expect(d.variables.map((v: { name: string }) => v.name)).toEqual(['prenom', 'lien']);
+    expect(d.variables.map((v: { name: string }) => v.name)).toEqual([
+      'association',
+      'association_court',
+      'application',
+      'prenom',
+      'lien',
+    ]);
     expect((await call('GET', '/email-templates/inconnu', admin)).statusCode).toBe(400);
   });
 });

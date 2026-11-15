@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  APP_VARIABLES,
   assetIdsIn,
   DEFAULT_EMAIL_LAYOUT,
   EMAIL_TEMPLATES,
@@ -40,7 +41,8 @@ describe('the wording the application ships with', () => {
       expect(templateProblems(def, def.subject, def.body)).toEqual([]);
       // Each declared variable is used somewhere, and the preview leaves no token behind.
       const used = new Set([...usedVariables(def.subject), ...usedVariables(def.body)]);
-      for (const v of def.variables)
+      // (the names of the association are available everywhere, used or not)
+      for (const v of def.variables.filter((x) => !APP_VARIABLES.some((a) => a.name === x.name)))
         expect(used.has(v.name), `${def.key}: {{${v.name}}}`).toBe(true);
       const values = sampleValues(def);
       expect(fillHtml(def.body, values, def.variables)).not.toMatch(/\{\{/);

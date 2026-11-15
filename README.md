@@ -40,6 +40,14 @@ generate the pair with `npx web-push generate-vapid-keys`. Without them push is 
 Daily alerts (best-before dates, low cagnotte, failing integrity checks) are sent each morning
 from 7:00 (Paris) by the API itself, once per day; they are enabled under Administration › Paramètres.
 
+## Using it for another association
+
+The name of the software, the short name of the association, the logo and the main colour are settings
+(Administration › Paramètres › Identité de l’application); the full name, address, SIREN and RNA are in
+« Identité de l’association »; the wording of e-mails and PDF documents is edited in Administration. The
+values shipped are those of the Épicafé de Montjavoult. See ADR 0015 for what is still assumed French
+(time zone, currency, chart of accounts, VAT rates).
+
 ## Everyday commands
 
 | Command | Does |

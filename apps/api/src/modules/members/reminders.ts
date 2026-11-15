@@ -78,7 +78,6 @@ export async function sendMembershipReminders(
   if (config)
     for (const p of pushes)
       await sendPush(db, config, p.memberId, {
-        title: 'Épicafé',
         body: `Votre adhésion se termine le ${p.end.split('-').reverse().join('/')}.`,
         url: '/mon-foyer',
       });
