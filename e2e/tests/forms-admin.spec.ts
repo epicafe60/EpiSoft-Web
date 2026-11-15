@@ -58,6 +58,44 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   expect(rows).toEqual([{ total_incl: '120.50', total_vat: '0.00' }]);
 });
 
+test('a supplier invoice whose HT, VAT and TTC do not add up is refused', async ({ page }) => {
+  const piece = `F-${unique()}`;
+  await login(page, USERS.admin);
+  await page.goto('/appros/factures/nouvelle');
+  await page.getByLabel('Fournisseur').fill(SEED.honey.supplier);
+  await page.getByLabel('Date', { exact: true }).fill('2026-11-02');
+  await page.getByLabel('N° de pièce').fill(piece);
+  const create = page.getByRole('button', { name: 'Créer la facture' });
+  const count = async () =>
+    (
+      await query<{ n: string }>(
+        `select count(*)::text as n from app.supplier_invoice where piece_ref = '${piece}'`,
+      )
+    )[0]!.n;
+
+  // 100 + 5,50 is not 105,49: refused under the TTC field, nothing is saved.
+  await page.getByLabel('Total HT (€)').fill('100');
+  await page.getByLabel('TVA (€)').fill('5,50');
+  await page.getByLabel('Total TTC (€)').fill('105,49');
+  await create.click();
+  await expect(page.getByText('Le TTC doit être égal au total HT plus la TVA.')).toBeVisible();
+  expect(await count()).toBe('0');
+
+  // A VAT above 20 % of the HT is refused as well.
+  await page.getByLabel('TVA (€)').fill('30');
+  await page.getByLabel('Total TTC (€)').fill('130');
+  await create.click();
+  await expect(page.getByText('La TVA dépasse 20 % du total HT')).toBeVisible();
+  expect(await count()).toBe('0');
+
+  // Corrected, the invoice is saved.
+  await page.getByLabel('TVA (€)').fill('5,50');
+  await page.getByLabel('Total TTC (€)').fill('105,50');
+  await create.click();
+  await expect(page.getByRole('button', { name: 'Enregistrer le règlement' })).toBeVisible();
+  expect(await count()).toBe('1');
+});
+
 test('the cashier-code setting is saved and read back', async ({ page }) => {
   await login(page, USERS.admin);
   await page.goto('/admin/parametres');
