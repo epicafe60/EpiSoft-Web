@@ -25,8 +25,6 @@ import {
   type MailSender,
 } from '@episoft/shared';
 import { audit } from '../../lib/audit';
-import { BUNDLED_LOGO_CID } from '../../lib/email-render';
-import { LOGO_PNG } from '../../lib/logo';
 import { EMAIL_DISABLED_NOTE, type EmailAttachment } from '../../lib/mail';
 import { notFound, unauthorized } from '../../lib/problem';
 import { computeAttention } from './attention';
@@ -330,10 +328,6 @@ export const monitoringRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
       let html = m.html;
       for (const f of files.filter((x) => x.cid))
         html = html.split(`cid:${f.cid}`).join(`data:${f.contentType};base64,${f.contentBase64}`);
-      // The logo of the application is not kept either: it comes from the code.
-      html = html
-        .split(`cid:${BUNDLED_LOGO_CID}`)
-        .join(`data:image/png;base64,${LOGO_PNG.toString('base64')}`);
       // A sent message no longer holds its images (mail.ts): they are read again from the library,
       // and an image that was deleted since is left out.
       for (const [, cid, id] of m.html.matchAll(/cid:(asset-([0-9a-f-]{36})@episoft)/gi)) {

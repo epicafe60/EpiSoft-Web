@@ -41,7 +41,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { parisYear, toParisDate } from '../../lib/dates';
 import { pdfAttachment, queueEmail } from '../../lib/mail';
-import { renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
+import { loadHeaderLogo, renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
 import { drawOrderSheet } from '../../lib/order-sheet';
 import { render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
@@ -194,6 +194,7 @@ export async function orderPdf(db: Db | Tx, id: string): Promise<Buffer> {
   const o = await orderDetail(db, id);
   if (!o) throw notFound('Commande introuvable.');
   const settings = await loadSettings(db);
+  const logo = await loadHeaderLogo(db);
   // Prices and totals are shown with VAT included (the price the association pays), as on the paper
   // order it has always sent; a number such as 5,60 has no currency sign, the column says what it is.
   const price = (cents: number) => centsToDecimal(cents).replace('.', ',');
@@ -224,6 +225,7 @@ export async function orderPdf(db: Db | Tx, id: string): Promise<Buffer> {
       }),
       total: price(Math.round(Number(o.totalIncl) * 100)),
       comment: o.comment,
+      logo,
     }),
   );
 }

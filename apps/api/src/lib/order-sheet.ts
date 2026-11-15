@@ -1,5 +1,4 @@
 import type { Settings } from '@episoft/shared';
-import { LOGO_ASPECT, LOGO_PNG } from './logo';
 import { pdfText, type Doc } from './pdf';
 
 // The purchase order sent to a supplier, in the layout of the paper the association has always sent:
@@ -16,6 +15,8 @@ export interface OrderSheet {
   rows: [string, string, string, string][];
   total: string;
   comment: string | null;
+  /** The logo (PNG or JPEG), from the library of images; none, none is drawn. */
+  logo: Buffer | null;
 }
 
 const PAGE_WIDTH = 595.28;
@@ -64,6 +65,24 @@ function band(doc: Doc, y: number): number {
   return y + BAND_HEIGHT + 2;
 }
 
+/** Width and height of a PNG or a JPEG, read in its header; throws on anything else. */
+export function imageSize(b: Buffer): { width: number; height: number } {
+  if (b.length > 24 && b.subarray(1, 4).toString() === 'PNG')
+    return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) break;
+      const marker = b[i + 1]!;
+      // Start of frame (not the tables 0xc4, 0xc8, 0xcc): height, then width.
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker))
+        return { width: b.readUInt16BE(i + 7), height: b.readUInt16BE(i + 5) };
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+  }
+  throw new Error('image illisible');
+}
+
 export function drawOrderSheet(doc: Doc, s: OrderSheet): void {
   const top = 40;
   doc.fillColor('#000000');
@@ -90,8 +109,17 @@ export function drawOrderSheet(doc: Doc, s: OrderSheet): void {
 
   // The logo, on the right, and the supplier under it.
   const logoWidth = 175;
-  doc.image(LOGO_PNG, RIGHT - logoWidth, top - 4, { width: logoWidth });
-  let sy = top - 4 + logoWidth / LOGO_ASPECT + 26;
+  let logoHeight = 95;
+  if (s.logo) {
+    try {
+      const size = imageSize(s.logo);
+      doc.image(s.logo, RIGHT - logoWidth, top - 4, { width: logoWidth });
+      logoHeight = (logoWidth * size.height) / size.width;
+    } catch {
+      // An image the PDF cannot read: the order is made without it.
+    }
+  }
+  let sy = top - 4 + logoHeight + 26;
   if (s.supplier) {
     doc.font('Helvetica').fontSize(10.5);
     doc.text(pdfText(s.supplier.name), 290, sy, { width: RIGHT - 290 });

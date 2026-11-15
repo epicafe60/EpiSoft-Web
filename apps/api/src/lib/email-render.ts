@@ -15,7 +15,6 @@ import {
   type Values,
 } from '@episoft/shared';
 import { loadSettings } from '../modules/admin/settings-store';
-import { LOGO_PNG } from './logo';
 import { queueEmail, type EmailAttachment, type OutgoingEmail } from './mail';
 
 // Writes an e-mail from its template: the wording (edited by the administrators, or the one of the
@@ -44,6 +43,20 @@ export async function loadLayout(db: DbOrTx): Promise<EmailLayout> {
   };
 }
 
+/**
+ * The header image of the layout (the logo of the association until another is chosen), for the
+ * documents that carry it too: a PDF takes PNG and JPEG, any other type is left out.
+ */
+export async function loadHeaderLogo(db: DbOrTx): Promise<Buffer | null> {
+  const { headerImageId } = await loadLayout(db);
+  if (!headerImageId) return null;
+  const [img] = await db
+    .select({ mime: emailAsset.mime, bytes: emailAsset.bytes })
+    .from(emailAsset)
+    .where(eq(emailAsset.id, headerImageId));
+  return img && ['image/png', 'image/jpeg'].includes(img.mime) ? img.bytes : null;
+}
+
 /** The wording an administrator saved, or the one of the application. */
 export async function loadTemplate(
   db: DbOrTx,
@@ -58,8 +71,8 @@ export async function loadTemplate(
 }
 
 /**
- * The page of the e-mail: a header (the image of the library, or the logo of the association), the
- * message, a footer. Tables and inline styles: what mail readers understand.
+ * The page of the e-mail: a header (the image of the library, which is the logo of the association
+ * until another is chosen, or the name of the association on the accent colour), the message, a footer. Tables and inline styles: what mail readers understand.
  */
 export function layoutHtml(
   layout: EmailLayout,
@@ -68,14 +81,9 @@ export function layoutHtml(
   associationName: string,
 ): string {
   const accent = layout.accentColor;
-  // The image of the library fills the header; without one, the logo of the association on white,
-  // under a line of the accent colour.
-  const headerCell = layout.headerImageId
-    ? `background:${accent};padding:0;text-align:center`
-    : `background:#ffffff;padding:18px 24px;text-align:center;border-bottom:4px solid ${accent}`;
   const header = layout.headerImageId
     ? `<img src="${EMAIL_ASSET_PATH}${layout.headerImageId}" alt="${escapeHtmlText(layout.headerAlt)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0">`
-    : `<img src="${BUNDLED_LOGO_PATH}" alt="${escapeHtmlText(layout.headerAlt || associationName)}" width="200" style="display:block;margin:0 auto;width:200px;max-width:100%;height:auto;border:0">`;
+    : `<div style="padding:18px 24px;font-size:20px;font-weight:600;color:#ffffff">${escapeHtmlText(associationName)}</div>`;
   const styledBody = body
     .replace(/<h2>/g, `<h2 style="font-size:18px;margin:0 0 12px;color:${accent}">`)
     .replace(/<h1>/g, `<h1 style="font-size:22px;margin:0 0 12px;color:${accent}">`)
@@ -88,40 +96,11 @@ export function layoutHtml(
     `<body style="margin:0;padding:0;background:#f3f5f3">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5f3"><tr><td align="center" style="padding:24px 12px">` +
     `<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden;font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;color:#1c2b22">` +
-    `<tr><td style="${headerCell}">${header}</td></tr>` +
+    `<tr><td style="background:${accent};padding:0;text-align:center">${header}</td></tr>` +
     `<tr><td style="padding:24px;font-size:15px;line-height:1.5">${styledBody}</td></tr>` +
     `<tr><td style="padding:16px 24px;background:#f7f8f7;border-top:1px solid #e3e8e4;font-size:12px;line-height:1.4;color:#5b6b61">${layout.footerHtml}</td></tr>` +
     `</table></td></tr></table></body></html>`
   );
-}
-
-/** Where the layout writes the logo of the association; replaced when the e-mail is made. */
-const BUNDLED_LOGO_PATH = `${EMAIL_ASSET_PATH}default-logo`;
-export const BUNDLED_LOGO_CID = 'logo@episoft';
-
-/** The logo of the application, in place of its address: embedded when sent, as data in a preview. */
-export function embedBundledLogo(
-  html: string,
-  mode: 'send' | 'preview',
-): { html: string; attachments: EmailAttachment[] } {
-  if (!html.includes(BUNDLED_LOGO_PATH)) return { html, attachments: [] };
-  const base64 = LOGO_PNG.toString('base64');
-  if (mode === 'preview')
-    return {
-      html: html.split(BUNDLED_LOGO_PATH).join(`data:image/png;base64,${base64}`),
-      attachments: [],
-    };
-  return {
-    html: html.split(BUNDLED_LOGO_PATH).join(`cid:${BUNDLED_LOGO_CID}`),
-    attachments: [
-      {
-        filename: 'logo.png',
-        contentType: 'image/png',
-        contentBase64: base64,
-        cid: BUNDLED_LOGO_CID,
-      },
-    ],
-  };
 }
 
 /**
@@ -130,15 +109,13 @@ export function embedBundledLogo(
  */
 async function embedImages(
   db: DbOrTx,
-  page: string,
+  html: string,
   mode: 'send' | 'preview',
 ): Promise<{ html: string; attachments: EmailAttachment[] }> {
-  const logo = embedBundledLogo(page, mode);
-  const html = logo.html;
   const ids = assetIdsIn(html);
-  if (!ids.length) return logo;
+  if (!ids.length) return { html, attachments: [] };
   const rows = await db.select().from(emailAsset).where(inArray(emailAsset.id, ids));
-  const attachments: EmailAttachment[] = [...logo.attachments];
+  const attachments: EmailAttachment[] = [];
   let out = html;
   for (const id of ids) {
     const row = rows.find((r) => r.id === id);
@@ -243,19 +220,16 @@ export async function renderPlainEmail(
 export function renderDefaultEmail(key: EmailTemplateKey, values: Values): RenderedEmail {
   const def = templateDef(key)!;
   const subject = oneLine(fillText(def.subject, values, def.variables));
-  const page = embedBundledLogo(
-    layoutHtml(
-      DEFAULT_EMAIL_LAYOUT,
-      fillHtml(def.body, values, def.variables),
-      subject,
-      DEFAULT_EMAIL_LAYOUT.headerAlt,
-    ),
-    'send',
+  const html = layoutHtml(
+    DEFAULT_EMAIL_LAYOUT,
+    fillHtml(def.body, values, def.variables),
+    subject,
+    DEFAULT_EMAIL_LAYOUT.headerAlt,
   );
   const text =
     fillText(htmlToText(def.body), values, def.variables) +
     `\n\n--\n${htmlToText(DEFAULT_EMAIL_LAYOUT.footerHtml)}`;
-  return { subject, html: page.html, text, attachments: page.attachments };
+  return { subject, html, text, attachments: [] };
 }
 
 /**

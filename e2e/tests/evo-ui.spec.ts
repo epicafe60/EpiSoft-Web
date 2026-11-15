@@ -154,9 +154,8 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
   // The text as edited, then the footer common to every e-mail.
   expect(queued!.text.startsWith(edited)).toBe(true);
   expect(queued!.text).toContain('Épicafé de Montjavoult');
-  // The PDF of the order is attached; the logo travels inside the message.
   expect(queued!.attachments.map((a) => a.filename)).toEqual(
-    expect.arrayContaining([expect.stringMatching(/^CF-.*\.pdf$/), 'logo.png']),
+    expect.arrayContaining([expect.stringMatching(/^CF-.*\.pdf$/)]),
   );
 
   // Cancel, then delete: the order is gone.

@@ -4,6 +4,12 @@ import { render } from '../src/lib/pdf';
 
 // The purchase order sent to a supplier (R-CMD-03): the layout of the paper order, on one or more pages.
 
+// A 1×1 PNG.
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 const identity = {
   name: 'Épicafé de Montjavoult',
   street: '9 bis rue de la Mairie',
@@ -23,13 +29,14 @@ const sheet = (rows: OrderSheet['rows'], extra: Partial<OrderSheet> = {}): Order
   rows,
   total: '172,00',
   comment: null,
+  logo: null,
   ...extra,
 });
 
 const pages = (pdf: Buffer) => (pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length;
 
 describe('the purchase order PDF', () => {
-  it('is a PDF of one page for a short order, with the logo inside', async () => {
+  it('is a PDF of one page for a short order', async () => {
     const pdf = await render((d) =>
       drawOrderSheet(
         d,
@@ -41,7 +48,19 @@ describe('the purchase order PDF', () => {
     );
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pages(pdf)).toBe(1);
-    expect(pdf.toString('latin1')).toContain('/Subtype /Image');
+    // No logo given: none is drawn.
+    expect(pdf.toString('latin1')).not.toContain('/Subtype /Image');
+  });
+
+  it('carries the logo when there is one, and is still made when the image cannot be read', async () => {
+    const rows: OrderSheet['rows'] = [['Un produit', '1,00', '1', '1,00']];
+    const withLogo = await render((d) => drawOrderSheet(d, sheet(rows, { logo: PNG })));
+    expect(withLogo.toString('latin1')).toContain('/Subtype /Image');
+    const broken = await render((d) =>
+      drawOrderSheet(d, sheet(rows, { logo: Buffer.from('not an image') })),
+    );
+    expect(broken.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(broken.toString('latin1')).not.toContain('/Subtype /Image');
   });
 
   it('goes on on a second page for a long order, with the comment and the total', async () => {

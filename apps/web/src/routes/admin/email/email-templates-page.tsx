@@ -412,7 +412,7 @@ function LayoutForm({ initial, onSaved }: { initial: EmailLayout; onSaved: () =>
               />
             ) : (
               <p className="text-sm text-muted-foreground">
-                Aucune image : le logo de l’Épicafé s’affiche, sous un trait de la couleur choisie.
+                Aucune image : le nom de l’association s’affiche sur la couleur choisie.
               </p>
             )}
             <div className="flex gap-2">
@@ -447,10 +447,7 @@ function LayoutForm({ initial, onSaved }: { initial: EmailLayout; onSaved: () =>
               />
             )}
           </Field>
-          <Field
-            label="Couleur principale"
-            hint="Trait sous le logo (sans image d’en-tête), titres et liens."
-          >
+          <Field label="Couleur principale" hint="Fond de l’en-tête sans image, titres et liens.">
             {(p) => (
               <div className="flex items-center gap-2">
                 <input
