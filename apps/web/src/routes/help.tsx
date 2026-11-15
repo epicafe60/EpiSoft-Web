@@ -181,6 +181,13 @@ const SECTIONS: Section[] = [
     roles: ['APPROS', 'PRODUITS'],
     topics: [
       {
+        question: 'Je prépare une commande fournisseur',
+        answer: [
+          'La commande démarre à zéro sur toutes les références du fournisseur : tapez la quantité voulue dans « Qté Commande ». « Stock », « Mini » et « Quantité dernière commande » (celle de la commande précédente à ce fournisseur) sont là pour vous guider. Une ligne laissée à zéro n’est pas commandée.',
+          '« PA HT unitaire en € » se modifie dans la commande : à l’enregistrement, si le prix a changé, il est aussi mis à jour dans la fiche du produit. La TVA et le prix TTC de la fiche ne bougent pas : ajustez-les dans la fiche si besoin.',
+        ],
+      },
+      {
         question: 'À la réception, l’application signale un prix d’achat qui change',
         answer: [
           'Le prix d’achat reçu remplace l’ancien (et sert au calcul de la marge). Une ligne en rouge indique « ancien prix → nouveau prix ».',

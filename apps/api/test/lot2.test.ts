@@ -121,18 +121,17 @@ describe('suppliers (R-FNR-01, R-FNR-02)', () => {
 });
 
 describe('order → receipt cycle (R-CMD-01..06)', () => {
-  it('prefills, prints, sends, receives partially then the rest; stock is incremented', async () => {
+  it('starts empty, prints, sends, receives partially then the rest; stock is incremented', async () => {
     const { s, p1, p2 } = await setup();
     const o = (await post('/api/v1/purchase-orders', { supplierId: s.id })).json();
     expect(o.number).toMatch(/^CF-\d{4}-0001$/);
     let detail = (await get(`/api/v1/purchase-orders/${o.id}`)).json();
-    // Suggested: Miel 6 − 0 = 6; Confiture 2 − 5 < 0 → not ordered.
-    expect(
-      detail.lines.map((l: { productId: string; qtyOrdered: string }) => [
-        l.productId,
-        l.qtyOrdered,
-      ]),
-    ).toEqual([[p1.id, '6.000']]);
+    // The order starts at 0: no line until a quantity is typed.
+    expect(detail.lines).toEqual([]);
+    await put(`/api/v1/purchase-orders/${o.id}`, {
+      lines: [{ productId: p1.id, qty: '6', unitPriceExcl: '5' }],
+    });
+    detail = (await get(`/api/v1/purchase-orders/${o.id}`)).json();
     expect(detail).toMatchObject({ totalExcl: '30.00', totalVat: '1.65', totalIncl: '31.65' });
 
     // R-CMD-02: quantity 0 removes a line.
@@ -218,6 +217,9 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
   it('a partially received order can be closed without its remainder (R-CMD-06)', async () => {
     const { s, p1 } = await setup();
     const o = (await post('/api/v1/purchase-orders', { supplierId: s.id })).json();
+    await put(`/api/v1/purchase-orders/${o.id}`, {
+      lines: [{ productId: p1.id, qty: '6', unitPriceExcl: '5' }],
+    });
     const line = (await get(`/api/v1/purchase-orders/${o.id}`)).json().lines[0];
     await post(`/api/v1/purchase-orders/${o.id}/receipts`, {
       lines: [{ orderLineId: line.id, productId: p1.id, qty: '2', unitPriceExcl: '5' }],

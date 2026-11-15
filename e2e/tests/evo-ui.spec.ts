@@ -119,8 +119,16 @@ test('R-EVO-10 / R-EVO-12 / R-EVO-14: order from every reference, send by e-mail
 
   // Stock and minimum are shown next to the quantity to order.
   await expect(page.getByRole('columnheader', { name: 'Stock' })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: 'Qté commandée' })).toBeVisible();
-  await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('6');
+  await expect(
+    page.getByRole('columnheader', { name: 'Quantité dernière commande' }),
+  ).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Qté Commande' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'PA HT unitaire en €' })).toBeVisible();
+  // The order starts at 0; the quantity is typed and saved.
+  await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('0');
+  await page.getByLabel(`Quantité ${SEED.honey.name}`).fill('6');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Enregistré.')).toBeVisible();
 
   // No mail client is opened: the order leaves from the application's own e-mail account, in a
   // window where the recipient, the subject and the text can be changed (as in the previous app).

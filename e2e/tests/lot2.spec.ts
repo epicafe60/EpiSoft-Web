@@ -20,12 +20,15 @@ test('lot 2 end criterion: order → receipt → sale → inventory, consistent 
   test.setTimeout(90_000);
   await login(page, USERS.admin);
 
-  // Order: prefilled with the product under its minimum stock (R-CMD-01).
+  // Order: starts at 0 on every reference; 6 are typed for the product under its minimum stock.
   await page.goto('/appros/commandes');
   await page.getByLabel('Nouvelle commande pour').selectOption({ label: SEED.honey.supplier });
   await page.getByRole('button', { name: 'Préparer la commande' }).click();
   await expect(page.getByRole('heading', { name: /Commande CF-/ })).toBeVisible();
-  await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('6');
+  await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('0');
+  await page.getByLabel(`Quantité ${SEED.honey.name}`).fill('6');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Enregistré.')).toBeVisible();
 
   // Receipt of the 6 expected (R-CMD-05).
   await page.getByRole('button', { name: 'Réceptionner' }).click();

@@ -176,6 +176,10 @@ test('receiving goods flags a purchase price that jumped and asks to check the d
   await page.getByLabel('Nouvelle commande pour').selectOption({ label: SEED.honey.supplier });
   await page.getByRole('button', { name: 'Préparer la commande' }).click();
   await expect(page.getByRole('heading', { name: /Commande CF-/ })).toBeVisible();
+  await expect(page.getByLabel(`Quantité ${SEED.honey.name}`)).toHaveValue('0');
+  await page.getByLabel(`Quantité ${SEED.honey.name}`).fill('6');
+  await page.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(page.getByText('Enregistré.')).toBeVisible();
   await page.getByRole('button', { name: 'Réceptionner' }).click();
   const receive = page.getByRole('dialog', { name: /Réception/ });
   // 5 € → 9 € HT: +80 %.

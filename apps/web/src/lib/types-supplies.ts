@@ -110,6 +110,8 @@ export interface OrderDetail {
     name: string;
     supplierRef: string | null;
     qtyOrdered: string;
+    /** Quantity of the supplier's previous order that held this product (information only). */
+    lastOrderedQty: string | null;
     qtyReceived: string;
     unitPriceExcl: string;
     vatRate: string;
