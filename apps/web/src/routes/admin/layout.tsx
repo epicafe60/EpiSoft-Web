@@ -12,6 +12,7 @@ const TABS = [
   { to: '/admin/journal', label: 'Journal d’audit' },
   { to: '/admin/connexions', label: 'Connexions' },
   { to: '/admin/courriels', label: 'Courriels' },
+  { to: '/admin/documents', label: 'Documents PDF' },
   { to: '/admin/controles', label: 'Contrôles' },
 ] as const;
 

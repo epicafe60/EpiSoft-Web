@@ -256,6 +256,8 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'email_layout.update': restore,
   'email_asset.upload': restore,
   'email_asset.delete': none('L’image supprimée n’est pas conservée : ajoutez-la de nouveau.'),
+  'pdf_template.update': restore,
+  'pdf_template.reset': restore,
   'favorite.add': restore,
   'favorite.remove': restore,
   'review.write': restore,

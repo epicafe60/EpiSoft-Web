@@ -1,6 +1,14 @@
 import ExcelJS from 'exceljs';
-import type { Settings } from '@episoft/shared';
-import { eur, letterhead, pdfText, render, table, type Column } from './pdf';
+import {
+  fillZone,
+  pdfTemplateDef,
+  type PdfTemplateConfig,
+  type Settings,
+  type Values,
+} from '@episoft/shared';
+import { eur, render, table, type Column } from './pdf';
+import { drawPdfHtml } from './pdf-html';
+import { associationValues, installFooter } from './pdf-template';
 
 // A report is a plain table: the same structure feeds the screen, the Excel export and the PDF.
 
@@ -52,12 +60,31 @@ export async function reportXlsx(r: ReportTable): Promise<Buffer> {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-export function reportPdf(r: ReportTable, identity: Settings['association.identity']) {
+export function reportPdf(
+  r: ReportTable,
+  identity: Settings['association.identity'],
+  config: PdfTemplateConfig,
+) {
+  const def = pdfTemplateDef('report')!;
+  const values: Values = {
+    ...associationValues(identity),
+    titre: r.title,
+    sous_titre: r.subtitle ?? '',
+  };
   return render(
     (doc) => {
-      letterhead(doc, identity);
-      doc.font('Helvetica-Bold').fontSize(13).text(pdfText(r.title));
-      if (r.subtitle) doc.font('Helvetica').fontSize(9).text(pdfText(r.subtitle));
+      const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const left = doc.page.margins.left;
+      // The header and the footer are the template's; the table is the report.
+      installFooter(doc, fillZone(config.zones.footer ?? '', values, def.variables), left, width);
+      doc.y = drawPdfHtml(
+        doc,
+        fillZone(config.zones.header ?? '', values, def.variables),
+        left,
+        doc.page.margins.top,
+        width,
+      );
+      doc.x = left;
       doc.moveDown(0.5);
       const total = r.columns.reduce((s, c) => s + (c.width ?? 1), 0);
       const available = doc.page.width - doc.page.margins.left - doc.page.margins.right;

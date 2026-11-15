@@ -1800,3 +1800,18 @@ export const emailLayout = app.table(
   },
   (t) => [check('email_layout_single_row', sql`${t.id} = 1`)],
 );
+
+// --- PDF templates ---------------------------------------------------------------------------------
+
+/**
+ * What an administrator changed in a PDF document (header and footer texts, the columns of its
+ * table): one row per document. No row: the wording of the application
+ * (packages/shared/src/pdf-templates.ts). Deleting the row puts the original back.
+ */
+export const pdfTemplate = app.table('pdf_template', {
+  key: text('key').primaryKey(),
+  /** zones (cleaned HTML), columns, labels, logo: validated by pdfTemplateSaveSchema. */
+  config: jsonb('config').notNull(),
+  updatedBy: uuid('updated_by').references(() => member.id, { onDelete: 'set null' }),
+  updatedAt: tz('updated_at').notNull().defaultNow(),
+});

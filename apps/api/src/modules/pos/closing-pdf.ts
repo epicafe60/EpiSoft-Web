@@ -1,8 +1,17 @@
 import { eq } from 'drizzle-orm';
 import { cashCount, cashSession, type DbOrTx } from '@episoft/db';
-import { DENOMINATIONS, PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from '@episoft/shared';
+import {
+  DENOMINATIONS,
+  fillZone,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHODS,
+  pdfTemplateDef,
+  type Values,
+} from '@episoft/shared';
 import { formatParis } from '../../lib/dates';
-import { eur, keyValues, letterhead, render, table, pdfText } from '../../lib/pdf';
+import { eur, keyValues, render, table, pdfText } from '../../lib/pdf';
+import { drawPdfHtml } from '../../lib/pdf-html';
+import { associationValues, installFooter, loadPdfConfig } from '../../lib/pdf-template';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
 
@@ -13,18 +22,25 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
   const count = await db.query.cashCount.findFirst({ where: eq(cashCount.sessionId, s.id) });
   const summary = count ? (count.summary as SessionSummary) : await sessionSummary(db, s.id);
   const settings = await loadSettings(db);
+  const def = pdfTemplateDef('cash_closing')!;
+  const { config } = await loadPdfConfig(db, 'cash_closing');
+  const values: Values = {
+    ...associationValues(settings['association.identity']),
+    date_session: formatParis(s.openedAt).slice(0, 10),
+    ouverture: formatParis(s.openedAt),
+    cloture: s.closedAt ? formatParis(s.closedAt) : 'session ouverte',
+  };
   return render((doc) => {
-    letterhead(doc, settings['association.identity']);
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(16)
-      .text(`Rapport de clôture — session du ${formatParis(s.openedAt).slice(0, 10)}`);
-    doc
-      .font('Helvetica')
-      .fontSize(10)
-      .text(
-        `Ouverture : ${formatParis(s.openedAt)}${s.closedAt ? ` · clôture : ${formatParis(s.closedAt)}` : ' · session ouverte'}`,
-      );
+    // The header and the footer are the template's; the figures of the session are the report.
+    installFooter(doc, fillZone(config.zones.footer ?? '', values, def.variables), 40, 515);
+    doc.y = drawPdfHtml(
+      doc,
+      fillZone(config.zones.header ?? '', values, def.variables),
+      40,
+      40,
+      515,
+    );
+    doc.x = 40;
     doc.moveDown();
     keyValues(
       doc,

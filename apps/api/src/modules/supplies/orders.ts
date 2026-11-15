@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-or
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  commune,
   goodsReceipt,
   goodsReceiptLine,
   invoiceReceipt,
@@ -42,7 +43,8 @@ import { audit } from '../../lib/audit';
 import { parisYear, toParisDate } from '../../lib/dates';
 import { pdfAttachment, queueEmail } from '../../lib/mail';
 import { loadHeaderLogo, renderPlainDraft, renderPlainEmail } from '../../lib/email-render';
-import { drawOrderSheet } from '../../lib/order-sheet';
+import { drawOrderSheet, prepareOrderSheet, type OrderSheet } from '../../lib/order-sheet';
+import { loadPdfConfig } from '../../lib/pdf-template';
 import { render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -122,6 +124,10 @@ export async function orderDetail(db: Db | Tx, id: string) {
   const o = await db.query.purchaseOrder.findFirst({ where: eq(purchaseOrder.id, id) });
   if (!o) return null;
   const s = await db.query.supplier.findFirst({ where: eq(supplier.id, o.supplierId) });
+  // The city of the supplier is the commune it is linked to; its postcode is the 5 digits.
+  const city = s?.communeId
+    ? (await db.query.commune.findFirst({ where: eq(commune.id, s.communeId) }))?.name
+    : null;
   const lines = await db
     .select({
       id: purchaseOrderLine.id,
@@ -165,6 +171,7 @@ export async function orderDetail(db: Db | Tx, id: string) {
           minOrderAmount: s.minOrderAmount,
           street: s.street,
           postcode: s.postcode,
+          city: city ?? null,
           phone: s.phone,
         }
       : null,
@@ -195,39 +202,45 @@ export async function orderPdf(db: Db | Tx, id: string): Promise<Buffer> {
   if (!o) throw notFound('Commande introuvable.');
   const settings = await loadSettings(db);
   const logo = await loadHeaderLogo(db);
-  // Prices and totals are shown with VAT included (the price the association pays), as on the paper
-  // order it has always sent; a number such as 5,60 has no currency sign, the column says what it is.
-  const price = (cents: number) => centsToDecimal(cents).replace('.', ',');
-  return render((doc) =>
-    drawOrderSheet(doc, {
-      identity: settings['association.identity'],
-      number: o.number,
-      date: o.date.split('-').reverse().join('/'),
-      supplier: o.supplier
-        ? {
-            name: o.supplier.name,
-            lines: [o.supplier.street, o.supplier.postcode].filter((x): x is string => !!x),
-          }
-        : null,
-      rows: o.lines.map((l) => {
-        const unitIncl4 = inclFromExcl4(parsePrice4(l.unitPriceExcl)!, l.vatRate);
-        const t = orderLineTotals({
-          qtyMilli: parseQtyToMilli(l.qtyOrdered)!,
-          unitPriceExcl4: parsePrice4(l.unitPriceExcl)!,
-          vatRate: l.vatRate,
-        });
-        return [
-          l.name,
-          price(Math.round(unitIncl4 / 100)),
-          formatQty(parseQtyToMilli(l.qtyOrdered)!),
-          price(t.inclCents),
-        ];
-      }),
-      total: price(Math.round(Number(o.totalIncl) * 100)),
-      comment: o.comment,
-      logo,
+  const { config } = await loadPdfConfig(db, 'purchase_order');
+  // Amounts have a comma and no currency sign: the header of the column says what it is.
+  const money = (cents: number) => centsToDecimal(cents).replace('.', ',');
+  const sheet: OrderSheet = {
+    identity: settings['association.identity'],
+    number: o.number,
+    date: o.date.split('-').reverse().join('/'),
+    supplier: o.supplier
+      ? {
+          name: o.supplier.name,
+          street: o.supplier.street ?? '',
+          postcodeCity: [o.supplier.postcode, o.supplier.city].filter(Boolean).join(' '),
+          phone: o.supplier.phone ?? '',
+          email: o.supplier.email ?? '',
+        }
+      : null,
+    lines: o.lines.map((l) => {
+      const excl4 = parsePrice4(l.unitPriceExcl)!;
+      const qtyMilli = parseQtyToMilli(l.qtyOrdered)!;
+      const t = orderLineTotals({ qtyMilli, unitPriceExcl4: excl4, vatRate: l.vatRate });
+      return {
+        ref: l.supplierRef ?? '',
+        code: l.code ?? '',
+        name: l.name,
+        unitExcl: money(Math.round(excl4 / 100)),
+        vat: `${Number(l.vatRate)} %`.replace('.', ','),
+        unitIncl: money(Math.round(inclFromExcl4(excl4, l.vatRate) / 100)),
+        qty: formatQty(qtyMilli),
+        totalExcl: money(t.exclCents),
+        totalIncl: money(t.inclCents),
+      };
     }),
-  );
+    totalExcl: money(Math.round(Number(o.totalExcl) * 100)),
+    totalVat: money(Math.round(Number(o.totalVat) * 100)),
+    totalIncl: money(Math.round(Number(o.totalIncl) * 100)),
+    comment: o.comment,
+    logo,
+  };
+  return render((doc) => drawOrderSheet(doc, prepareOrderSheet(sheet, config)));
 }
 
 export interface ReceiptInput {
