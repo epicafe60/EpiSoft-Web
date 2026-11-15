@@ -12,6 +12,7 @@ import {
   pdfTemplateProblems,
   pdfTemplateSaveSchema,
   type PdfTemplateConfig,
+  type PdfTemplateDef,
 } from './pdf-templates';
 
 // PDF templates: the wording and the columns of the documents the application makes (R-CMD-03).
@@ -46,9 +47,19 @@ describe('the documents the application ships with', () => {
   it('keeps a document without choice of columns free of them', () => {
     const closing = pdfTemplateDef('cash_closing')!;
     expect(defaultPdfConfig(closing).columns).toEqual([]);
-    expect(pdfTemplateProblems(closing, { ...defaultPdfConfig(closing), logo: true })).toEqual([
-      'Ce document n’a pas de logo.',
-    ]);
+    expect(
+      pdfTemplateProblems(closing, {
+        ...defaultPdfConfig(closing),
+        columns: [{ key: 'name', label: 'P' }],
+      }),
+    ).toContain('Ce document n’a pas de colonnes à choisir.');
+  });
+
+  it('every document carries the logo of the association by default', () => {
+    for (const def of PDF_TEMPLATES) {
+      expect(def.logo, def.key).toBe(true);
+      expect(defaultPdfConfig(def).logo, def.key).toBe(true);
+    }
   });
 });
 
@@ -142,9 +153,12 @@ describe('a saved template, completed by the default', () => {
     expect(e.columns.map((c) => c.key)).toEqual(['name', 'qty']);
   });
 
-  it('never gives a logo to a document that has none', () => {
-    const closing = pdfTemplateDef('cash_closing')!;
-    expect(effectivePdfConfig(closing, { logo: true }).logo).toBe(false);
+  it('never gives a logo to a document that has none, and refuses to save one', () => {
+    const noLogo = { ...pdfTemplateDef('cash_closing')!, logo: false } as PdfTemplateDef;
+    expect(effectivePdfConfig(noLogo, { logo: true }).logo).toBe(false);
+    expect(pdfTemplateProblems(noLogo, { ...defaultPdfConfig(noLogo), logo: true })).toEqual([
+      'Ce document n’a pas de logo.',
+    ]);
   });
 });
 

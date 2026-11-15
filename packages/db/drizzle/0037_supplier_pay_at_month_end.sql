@@ -1,0 +1,1 @@
+ALTER TABLE "app"."supplier" ADD COLUMN "pay_at_month_end" boolean DEFAULT false NOT NULL;

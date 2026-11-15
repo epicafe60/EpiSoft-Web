@@ -27,6 +27,7 @@ import { sanitizeEmailHtml } from '../../lib/email-sanitize';
 import { headerFileName } from '../../lib/files';
 import { queueEmail } from '../../lib/mail';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { loadSettings } from './settings-store';
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const keyParams = z.object({ key: z.enum(EMAIL_TEMPLATE_KEYS) });
@@ -273,6 +274,9 @@ export const emailTemplateRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config
     const add = (id: string, where: string) => map.set(id, [...(map.get(id) ?? []), where]);
     const layout = await loadLayout(db);
     if (layout.headerImageId) add(layout.headerImageId, 'En-tête commun');
+    const pdfLogo = (await loadSettings(db))['documents.logo'];
+    if (pdfLogo.source === 'IMAGE' && pdfLogo.imageId)
+      add(pdfLogo.imageId, 'Logo des documents PDF');
     for (const id of assetIdsIn(layout.footerHtml)) add(id, 'Pied de page commun');
     for (const row of await db.select().from(emailTemplate))
       for (const id of assetIdsIn(row.bodyHtml)) add(id, templateDef(row.key)?.label ?? row.key);
