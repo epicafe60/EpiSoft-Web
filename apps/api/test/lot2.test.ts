@@ -438,3 +438,49 @@ describe('catalogue administration (R-PRD-06, R-PRD-08)', () => {
     expect(bare.rawPayload.length).toBeLessThan(full.rawPayload.length);
   });
 });
+
+describe('a supplier paid « à réception fin de mois » (R-FAC-01)', () => {
+  const invoice = (supplierId: string, date: string, pieceRef: string) => ({
+    supplierId,
+    pieceRef,
+    date,
+    totalExcl: '50',
+    totalVat: '2,75',
+    paymentMethod: 'TRANSFER',
+    comment: '',
+    receiptIds: [],
+  });
+
+  it('keeps the choice on the file, and the invoices are due at the end of the month they are entered', async () => {
+    const created = (
+      await post('/api/v1/suppliers', {
+        ...supplierForm,
+        name: 'Ferme fin de mois',
+        email: null,
+        payAtMonthEnd: true,
+      })
+    ).json();
+    const sheet = (await get(`/api/v1/suppliers/${created.id}`)).json();
+    expect(sheet.payAtMonthEnd).toBe(true);
+
+    const today = toParisDate(new Date());
+    // Dated two months ago, entered today: due at the end of the current month.
+    const old = addDays(today, -60);
+    const inv = (await post('/api/v1/supplier-invoices', invoice(created.id, old, 'FM-1'))).json();
+    const [y, m] = today.split('-').map(Number) as [number, number];
+    const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    expect((await get(`/api/v1/supplier-invoices/${inv.id}`)).json().dueDate).toBe(lastDay);
+
+    // The other suppliers keep their payment terms.
+    const normal = (
+      await post('/api/v1/suppliers', { ...supplierForm, name: 'Ferme à 30 jours', email: null })
+    ).json();
+    expect((await get(`/api/v1/suppliers/${normal.id}`)).json().payAtMonthEnd).toBe(false);
+    const inv2 = (
+      await post('/api/v1/supplier-invoices', invoice(normal.id, today, 'FM-2'))
+    ).json();
+    expect((await get(`/api/v1/supplier-invoices/${inv2.id}`)).json().dueDate).toBe(
+      addDays(today, 30),
+    );
+  });
+});

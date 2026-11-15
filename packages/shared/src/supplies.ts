@@ -138,6 +138,29 @@ export function invoiceDueDate(date: string, termsDays: number): string {
   return addDays(date, Math.max(0, termsDays));
 }
 
+/** The last day of the month of an ISO date: 2026-11-15 → 2026-11-30. */
+export function endOfMonth(date: string): string {
+  const [y, m] = date.split('-').map(Number) as [number, number];
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
+/**
+ * R-FAC-01: the due date of an invoice. From the payment terms of the supplier, or, for a supplier
+ * paid « à réception fin de mois », the last day of the month in which the invoice is entered (not
+ * the month of its date): that is when the reminder « à payer » shows. Never before the invoice.
+ */
+export function invoiceDueDateFor(a: {
+  invoiceDate: string;
+  /** The day the invoice is entered. */
+  entryDate: string;
+  termsDays: number;
+  payAtMonthEnd: boolean;
+}): string {
+  if (!a.payAtMonthEnd) return invoiceDueDate(a.invoiceDate, a.termsDays);
+  const end = endOfMonth(a.entryDate);
+  return end < a.invoiceDate ? a.invoiceDate : end;
+}
+
 export interface InvoiceLike {
   id?: string;
   supplierId: string;

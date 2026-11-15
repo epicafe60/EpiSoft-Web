@@ -73,6 +73,8 @@ export const supplierSchema = z.object({
   accountNumber: text(10),
   minOrderAmount: amountInput.nullable(),
   paymentTermsDays: z.number().int().min(0).max(180),
+  /** « À réception fin de mois »: the invoices are due at the end of the month they are entered. */
+  payAtMonthEnd: z.boolean().default(false),
   deliveryDay: text(30),
 });
 export type SupplierInput = z.input<typeof supplierSchema>;
