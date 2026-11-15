@@ -497,7 +497,7 @@ describe('the images of the e-mails', () => {
     await t.db.delete(emailAsset).where(eq(emailAsset.id, id));
     await call('POST', '/email-templates/wallet_low/test', admin);
     const [mail] = await outbox();
-    expect(mail!.html).not.toContain('<img src="cid:');
+    expect(mail!.html).not.toContain('cid:asset-');
     expect(mail!.html).not.toContain('/api/v1/email-assets/');
     expect(mail!.html).toContain('Pensez à la recharger');
   });
@@ -529,5 +529,51 @@ describe('the images inside a sent message', () => {
     expect(withoutInlineImages([img, pdf])).toEqual([pdf]);
     expect(withoutInlineImages([img])).toBeNull();
     expect(withoutInlineImages(null)).toBeNull();
+  });
+});
+
+describe('the logo of the association', () => {
+  const sample = sampleValues(EMAIL_TEMPLATES.find((d) => d.key === 'wallet_low')!);
+
+  it('heads an e-mail that has no header image, embedded in the message', async () => {
+    const mail = await renderEmail(t.db, 'wallet_low', sample);
+    expect(mail.html).toContain('src="cid:logo@episoft"');
+    expect(mail.html).not.toContain('/api/v1/email-assets/default-logo');
+    const [logo] = mail.attachments;
+    expect(logo).toMatchObject({ cid: 'logo@episoft', contentType: 'image/png' });
+    expect(Buffer.from(logo!.contentBase64, 'base64').subarray(1, 4).toString()).toBe('PNG');
+  });
+
+  it('is shown as data in a preview, so that a sandboxed frame displays it', async () => {
+    const preview = await renderEmail(t.db, 'wallet_low', sample, { preview: true });
+    expect(preview.html).toContain('src="data:image/png;base64,');
+    expect(preview.attachments).toEqual([]);
+  });
+
+  it('gives way to the image an administrator chooses for the header', async () => {
+    const { id } = (await upload(admin, PNG)).json();
+    await call('PUT', '/email-layout', admin, {
+      headerImageId: id,
+      headerAlt: 'Bandeau',
+      footerHtml: '<p>Pied</p>',
+      accentColor: '#14532d',
+    });
+    const mail = await renderEmail(t.db, 'wallet_low', sample);
+    expect(mail.html).not.toContain('cid:logo@episoft');
+    expect(mail.html).toContain(`cid:asset-${id}@episoft`);
+  });
+
+  it('is still shown in the viewer of an e-mail once it was sent', async () => {
+    await call('POST', '/email-templates/wallet_low/test', admin);
+    const [mail] = await outbox();
+    // What the mailer keeps once the message has gone: no image content.
+    await t.db
+      .update(emailOutbox)
+      .set({ status: 'SENT', sentAt: new Date(), attachments: null })
+      .where(eq(emailOutbox.id, mail!.id));
+    const viewer = await call('GET', `/admin/emails/${mail!.id}`, admin);
+    expect(viewer.statusCode).toBe(200);
+    expect(viewer.json().html).toContain('src="data:image/png;base64,');
+    expect(viewer.json().html).not.toContain('cid:');
   });
 });

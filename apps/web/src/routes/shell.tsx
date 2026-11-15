@@ -177,11 +177,12 @@ export function AppShell() {
 
   const brand = (
     <Link to="/" className="flex items-center gap-2.5 px-2" onClick={() => setOpen(false)}>
-      <img src="/favicon.svg" alt="" className="size-8" />
-      <span className="leading-tight">
-        <span className="block font-semibold">EpiSoft</span>
-        <span className="block text-xs text-muted-foreground">Épicafé de Montjavoult</span>
-      </span>
+      <img
+        src="/logo.png"
+        alt="Épicafé de Montjavoult"
+        className="h-10 w-auto dark:brightness-0 dark:invert"
+      />
+      <span className="font-semibold">EpiSoft</span>
     </Link>
   );
 
