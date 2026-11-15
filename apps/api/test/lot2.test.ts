@@ -446,6 +446,7 @@ describe('a supplier paid « à réception fin de mois » (R-FAC-01)', () => {
     date,
     totalExcl: '50',
     totalVat: '2,75',
+    totalIncl: '52,75',
     paymentMethod: 'TRANSFER',
     comment: '',
     receiptIds: [],
