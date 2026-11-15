@@ -20,7 +20,6 @@ import {
   PRODUCT_STATUSES,
   productCreateSchema,
   productPatchSchema,
-  purchasePriceIncl,
   contentMatchesType,
   SERVICE_SALE,
   withServiceSale,
@@ -204,9 +203,6 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         .values({
           ...fields,
           code: finalCode,
-          purchasePriceIncl: fields.purchasePriceExcl
-            ? purchasePriceIncl(fields.purchasePriceExcl, fields.vatRate)
-            : null,
           // R-PRD-06: a new product goes to the label queue.
           labelPending: fields.kind === 'GOODS',
           createdOn: sql`current_date`,
@@ -260,19 +256,13 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         const set: Partial<typeof product.$inferInsert> = { ...fields };
         // Still, or just made, a service: its sale terms are fixed.
         if ((fields.kind ?? before.kind) === 'SERVICE') Object.assign(set, SERVICE_SALE);
-        const excl =
-          fields.purchasePriceExcl !== undefined
-            ? fields.purchasePriceExcl
-            : before.purchasePriceExcl;
-        const vat = fields.vatRate ?? before.vatRate;
-        if (fields.purchasePriceExcl !== undefined || fields.vatRate !== undefined) {
-          set.purchasePriceIncl = excl ? purchasePriceIncl(excl, vat) : null;
-        }
         const priceChanged =
           (fields.salePrice !== undefined &&
             Number(fields.salePrice) !== Number(before.salePrice)) ||
           (fields.purchasePriceExcl !== undefined &&
-            Number(fields.purchasePriceExcl ?? 0) !== Number(before.purchasePriceExcl ?? 0));
+            Number(fields.purchasePriceExcl ?? 0) !== Number(before.purchasePriceExcl ?? 0)) ||
+          (fields.purchasePriceIncl !== undefined &&
+            Number(fields.purchasePriceIncl ?? 0) !== Number(before.purchasePriceIncl ?? 0));
         if (fields.salePrice !== undefined && Number(fields.salePrice) !== Number(before.salePrice))
           set.labelPending = true;
         const [after] = await tx

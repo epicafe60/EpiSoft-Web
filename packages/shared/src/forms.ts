@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MEMBER_STATUSES } from './api';
+import { parsePrice4, price4ToDecimal } from './supplies';
 import {
   MEMBER_PAYMENT_METHODS,
   PRODUCT_KINDS,
@@ -127,6 +128,16 @@ export const membershipTypePatchSchema = z.object({
 
 // --- Products (R-PRD-01, simple form of lot 1) ----------------------------------------
 
+/** A purchase amount typed by hand, up to 4 decimals, kept as typed (no calculation). */
+const purchaseAmountInput = z
+  .string()
+  .trim()
+  .refine((s) => {
+    const p = parsePrice4(s);
+    return p !== null && p >= 0;
+  }, 'Montant invalide (4 décimales au plus).')
+  .transform((s) => price4ToDecimal(parsePrice4(s)!));
+
 export const productFields = {
   name: z.string().trim().min(1, 'Nom requis.').max(200),
   description: text(1000),
@@ -142,7 +153,11 @@ export const productFields = {
   qualities: z.array(z.enum(QUALITIES)).max(QUALITIES.length),
   vatRate: z.enum(VAT_RATES),
   status: z.enum(PRODUCT_STATUSES),
-  purchasePriceExcl: amountInput.nullable(),
+  // R-PRD-04: PA HT, VAT amount and PA TTC are three free fields. Nothing is computed from
+  // another and no coherence is checked: the team enters them by hand.
+  purchasePriceExcl: purchaseAmountInput.nullable(),
+  purchaseVatAmount: purchaseAmountInput.nullable().optional(),
+  purchasePriceIncl: purchaseAmountInput.nullable().optional(),
   salePrice: amountInput.refine((s) => !s.startsWith('-'), 'Prix négatif.'),
   minStock: qtyInput.nullable(),
   eans: z
@@ -175,7 +190,10 @@ export const productPatchSchema = patchOf({
 }).extend({ updatedAt: z.string().datetime({ offset: true }) });
 export type ProductPatch = z.input<typeof productPatchSchema>;
 
-/** R-PRD-04: PA TTC = PA HT × (1 + TVA), to 4 decimals. */
+/**
+ * Suggestion only (back-fill of old rows, bulk grid): PA TTC = PA HT × (1 + TVA), to 4
+ * decimals. The product form never calls it (R-PRD-04).
+ */
 export function purchasePriceIncl(excl: string, vatRate: string): string {
   const exclMilliCents = Math.round(Number(excl) * 10_000);
   const rateBp = Math.round(Number(vatRate) * 100);

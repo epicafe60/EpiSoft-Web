@@ -75,6 +75,7 @@ test('a new product is checked against an almost identical name and a price belo
   await page.getByLabel('Nom', { exact: true }).fill('chips nature');
   await expect(page.getByText('Un produit au nom très proche existe déjà')).toBeVisible();
   await page.getByLabel('PA HT (€)').fill('10');
+  await page.getByLabel('PA TTC (€)').fill('10');
   await page.getByLabel('Prix de vente TTC (€)').fill('4');
   await expect(page.getByText('Le prix de vente est inférieur au prix d’achat')).toBeVisible();
   await page.getByLabel('Prix de vente TTC (€)').fill('20');

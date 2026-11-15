@@ -290,7 +290,12 @@ export const revertRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   );
 };
 
-const PRICE_COLUMNS = ['sale_price', 'purchase_price_excl', 'purchase_price_incl'];
+const PRICE_COLUMNS = [
+  'sale_price',
+  'purchase_price_excl',
+  'purchase_price_incl',
+  'purchase_vat_amount',
+];
 
 /** R-PRD-05: a price put back is a price change too, dated in the price history. */
 async function notePriceChanges(tx: Tx, userId: string, steps: RestoreStep[]) {

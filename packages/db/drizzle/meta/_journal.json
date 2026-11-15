@@ -267,6 +267,13 @@
       "when": 1794756588805,
       "tag": "0037_supplier_pay_at_month_end",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794757817081,
+      "tag": "0038_purchase_vat_amount",
+      "breakpoints": true
     }
   ]
 }

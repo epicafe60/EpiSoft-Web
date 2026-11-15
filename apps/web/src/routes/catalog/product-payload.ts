@@ -30,6 +30,8 @@ export interface ProductFormState {
   vatRate: string;
   status: ProductStatus;
   purchasePriceExcl: string;
+  purchaseVatAmount: string;
+  purchasePriceIncl: string;
   salePrice: string;
   minStock: string;
   eans: string;
@@ -55,6 +57,8 @@ export const EMPTY_PRODUCT_FORM: ProductFormState = {
   vatRate: '5.50',
   status: 'ACTIVE',
   purchasePriceExcl: '',
+  purchaseVatAmount: '',
+  purchasePriceIncl: '',
   salePrice: '',
   minStock: '',
   eans: '',
@@ -65,6 +69,14 @@ export const EMPTY_PRODUCT_FORM: ProductFormState = {
 
 const dec = (v: string | null) =>
   v === null ? '' : v.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+
+/** A stored 4-decimal amount, shown with at least 2 decimals and without trailing zeros. */
+const price = (v: string | null) => {
+  if (v === null) return '';
+  const t = v.replace(/0+$/, '');
+  const d = t.split('.')[1]?.length ?? 0;
+  return Number(v).toFixed(Math.max(2, d));
+};
 
 export function productToForm(p: ProductDetail): ProductFormState {
   return {
@@ -83,7 +95,9 @@ export function productToForm(p: ProductDetail): ProductFormState {
     qualities: p.qualities,
     vatRate: p.vatRate,
     status: p.status,
-    purchasePriceExcl: p.purchasePriceExcl ? Number(p.purchasePriceExcl).toFixed(2) : '',
+    purchasePriceExcl: price(p.purchasePriceExcl),
+    purchaseVatAmount: price(p.purchaseVatAmount),
+    purchasePriceIncl: price(p.purchasePriceIncl),
     salePrice: p.salePrice,
     minStock: dec(p.minStock),
     eans: p.eans.join(' '),
@@ -110,6 +124,8 @@ export function productToPayload(f: ProductFormState): ProductCreate {
     vatRate: f.vatRate as ProductCreate['vatRate'],
     status: f.status,
     purchasePriceExcl: f.purchasePriceExcl || null,
+    purchaseVatAmount: f.purchaseVatAmount || null,
+    purchasePriceIncl: f.purchasePriceIncl || null,
     salePrice: f.salePrice,
     minStock: f.minStock || null,
     eans: f.eans.split(/[\s,;]+/).filter(Boolean),
@@ -136,6 +152,8 @@ const FIELD_LABELS: Record<string, string> = {
   vatRate: 'TVA',
   status: 'Statut',
   purchasePriceExcl: 'PA HT',
+  purchaseVatAmount: 'Montant de TVA',
+  purchasePriceIncl: 'PA TTC',
   salePrice: 'Prix de vente TTC',
   minStock: 'Stock minimum',
   eans: 'Codes-barres',

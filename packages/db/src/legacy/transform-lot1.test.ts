@@ -50,6 +50,8 @@ describe('products (spec §6.3)', () => {
       qualities: ['LOCAL'],
       vatRate: '5.50',
       purchasePriceExcl: '1.2000',
+      purchasePriceIncl: '1.2660',
+      purchaseVatAmount: '0.0660',
       salePrice: '2.50',
       stock: '-2.000',
       labelPending: true,

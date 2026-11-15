@@ -155,9 +155,21 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
         for (const r of rows) {
           const p = byId.get(r.productId);
           if (!p) throw notFound('Produit introuvable.');
-          const incl = r.purchasePriceExcl
-            ? price4ToDecimal(inclFromExcl4(parsePrice4(r.purchasePriceExcl)!, r.vatRate))
-            : null;
+          // The grid suggests PA TTC only when PA HT or the rate moved; otherwise the PA TTC
+          // and VAT amount typed on the product sheet are kept as they are (R-PRD-04).
+          const costMoved =
+            (parsePrice4(r.purchasePriceExcl) ?? 0) !== (parsePrice4(p.purchasePriceExcl) ?? 0) ||
+            r.vatRate !== p.vatRate;
+          const incl = !costMoved
+            ? p.purchasePriceIncl
+            : r.purchasePriceExcl
+              ? price4ToDecimal(inclFromExcl4(parsePrice4(r.purchasePriceExcl)!, r.vatRate))
+              : null;
+          const vatAmount = !costMoved
+            ? p.purchaseVatAmount
+            : incl && r.purchasePriceExcl
+              ? price4ToDecimal(parsePrice4(incl)! - parsePrice4(r.purchasePriceExcl)!)
+              : null;
           const status = r.active ? (p.status === 'INACTIVE' ? 'ACTIVE' : p.status) : 'INACTIVE';
           const priceChanged =
             decimalToCents(r.salePrice) !== decimalToCents(p.salePrice) ||
@@ -169,6 +181,7 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             .set({
               purchasePriceExcl: r.purchasePriceExcl,
               purchasePriceIncl: incl,
+              purchaseVatAmount: vatAmount,
               vatRate: r.vatRate,
               salePrice: r.salePrice,
               status,

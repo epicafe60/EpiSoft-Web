@@ -487,6 +487,8 @@ export const product = app.table(
     status: productStatus('status').notNull().default('ACTIVE'),
     purchasePriceExcl: price4('purchase_price_excl'),
     purchasePriceIncl: price4('purchase_price_incl'),
+    /** Typed by hand like the two prices around it: never derived from them (spec R-PRD-04). */
+    purchaseVatAmount: price4('purchase_vat_amount'),
     salePrice: money('sale_price').notNull().default('0'),
     minStock: qty('min_stock'),
     /** Cache of the sum of stock_movement.qty, updated in the same transaction (principle 6). */
