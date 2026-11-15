@@ -159,6 +159,20 @@ export async function lastOrderedQty(
  * the sheet follows (price history, audit with before/after). Only the price excluding VAT is
  * carried over; VAT and TTC amounts are keyed in on the product sheet.
  */
+/**
+ * A new PA HT typed on an order or a receipt: the VAT amount and the PA TTC of the sheet follow,
+ * at the rate of the product, so that the three amounts stay consistent (R-PRD-04).
+ */
+function purchaseAmountsFor(unitPriceExcl: string, vatRate: string) {
+  const excl4 = parsePrice4(unitPriceExcl)!;
+  const incl4 = inclFromExcl4(excl4, vatRate);
+  return {
+    purchasePriceExcl: unitPriceExcl,
+    purchaseVatAmount: price4ToDecimal(incl4 - excl4),
+    purchasePriceIncl: price4ToDecimal(incl4),
+  };
+}
+
 async function propagatePurchasePrices(
   tx: Tx,
   req: Parameters<typeof audit>[1],
@@ -171,7 +185,7 @@ async function propagatePurchasePrices(
     if (parsePrice4(l.unitPriceExcl) === parsePrice4(p.purchasePriceExcl ?? '0')) continue;
     const [after] = await tx
       .update(product)
-      .set({ purchasePriceExcl: l.unitPriceExcl })
+      .set(purchaseAmountsFor(l.unitPriceExcl, p.vatRate))
       .where(eq(product.id, p.id))
       .returning();
     await tx.insert(priceHistory).values({
@@ -186,8 +200,17 @@ async function propagatePurchasePrices(
       action: 'product.update',
       entity: 'product',
       entityId: p.id,
-      before: { purchasePriceExcl: p.purchasePriceExcl },
-      after: { purchasePriceExcl: after!.purchasePriceExcl, name: p.name },
+      before: {
+        purchasePriceExcl: p.purchasePriceExcl,
+        purchaseVatAmount: p.purchaseVatAmount,
+        purchasePriceIncl: p.purchasePriceIncl,
+      },
+      after: {
+        purchasePriceExcl: after!.purchasePriceExcl,
+        purchaseVatAmount: after!.purchaseVatAmount,
+        purchasePriceIncl: after!.purchasePriceIncl,
+        name: p.name,
+      },
     });
   }
 }
@@ -441,12 +464,10 @@ export async function recordReceipt(
     const paChanged = excl !== parsePrice4(p.purchasePriceExcl ?? '0');
     const pvChanged = newSale !== undefined && newSale !== p.salePrice;
     if (paChanged || pvChanged) {
-      const incl = price4ToDecimal(inclFromExcl4(excl, p.vatRate));
       const [after] = await tx
         .update(product)
         .set({
-          purchasePriceExcl: l.unitPriceExcl,
-          purchasePriceIncl: incl,
+          ...purchaseAmountsFor(l.unitPriceExcl, p.vatRate),
           ...(pvChanged ? { salePrice: newSale, labelPending: true } : {}),
         })
         .where(eq(product.id, p.id))

@@ -31,6 +31,7 @@ async function setup() {
     stockQty: '0',
     minStock: '6',
     purchasePriceExcl: '5.0000',
+    purchaseVatAmount: '0.2750',
     purchasePriceIncl: '5.2750',
     vatRate: '5.50',
   });
@@ -87,7 +88,7 @@ describe('quantité dernière commande', () => {
 });
 
 describe('PA HT unitaire typed in the order follows the product sheet', () => {
-  it('updates the product price (only the excl. price), history and audit; unchanged price touches nothing', async () => {
+  it('updates the product price (HT, with VAT amount and TTC kept consistent), history and audit; unchanged price touches nothing', async () => {
     const { s, p } = await setup();
     const o = await newOrder(s.id);
     // Same price: nothing changes.
@@ -101,7 +102,12 @@ describe('PA HT unitaire typed in the order follows the product sheet', () => {
     });
     expect(res.statusCode, res.body).toBe(200);
     const [after] = await t.db.select().from(product).where(eq(product.id, p.id));
-    expect(after).toMatchObject({ purchasePriceExcl: '5.4000', purchasePriceIncl: '5.2750' });
+    // The VAT amount and the TTC follow the HT at the rate of the product: 5.4 x 1.055.
+    expect(after).toMatchObject({
+      purchasePriceExcl: '5.4000',
+      purchaseVatAmount: '0.2970',
+      purchasePriceIncl: '5.6970',
+    });
     const hist = await t.db.select().from(priceHistory);
     expect(hist).toHaveLength(1);
     expect(hist[0]).toMatchObject({ productId: p.id, purchasePriceExcl: '5.4000', source: 'FORM' });
