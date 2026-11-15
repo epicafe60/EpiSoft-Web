@@ -42,7 +42,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate, tzSql } from '../../lib/dates';
 import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
@@ -306,7 +306,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         ws.addRow({
           ...r,
           balance: r.balance === null ? null : Number(r.balance),
-          image: r.imageConsentAt ? `Oui (${toParisDate(r.imageConsentAt)})` : 'Non renseigné',
+          image: r.imageConsentAt ? `Oui (${toShopDate(r.imageConsentAt)})` : 'Non renseigné',
           newsletter: r.newsletterOptInAt ? 'Oui' : 'Non',
           tickets: r.ticketEmailOptOut ? 'Non' : r.email ? 'Oui' : '—',
         });
@@ -621,7 +621,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .insert(memberPayment)
           .values({
             householdId: h.id,
-            date: b.date ?? toParisDate(at),
+            date: b.date ?? toShopDate(at),
             amount: b.amount,
             purpose: 'TOPUP',
             method: b.method,
@@ -702,7 +702,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           where: eq(membershipType.id, b.typeId),
         });
         if (!type) throw badRequest('Type d’adhésion inconnu.');
-        const date = b.date ?? toParisDate(new Date());
+        const date = b.date ?? toShopDate(new Date());
         const amount = b.amount ?? type.price;
         const [pay] = await tx
           .insert(memberPayment)
@@ -821,7 +821,7 @@ export async function householdDetail(db: Db | Tx, id: string) {
       forced: sql<boolean>`${walletEntry.forcedBy} is not null`,
       // R-CAG-08: back-office top-up of today, not from the till.
       cancellable: sql<boolean>`${walletEntry.kind} = 'TOPUP' and ${walletEntry.saleId} is null and ${walletEntry.paymentId} is not null
-        and (${walletEntry.createdAt} at time zone 'Europe/Paris')::date = (now() at time zone 'Europe/Paris')::date
+        and (${walletEntry.createdAt} at time zone ${tzSql()})::date = (now() at time zone ${tzSql()})::date
         and not exists (select 1 from app.member_payment p where p.id = ${walletEntry.paymentId} and p.cash_session_id is not null)
         and not exists (select 1 from app.wallet_entry c where c.cancels_entry_id = ${walletEntry.id})`,
       byName: sql<

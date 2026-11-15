@@ -4,6 +4,8 @@ import {
   DEFAULT_BRANDING,
   DEFAULT_LOGO_URL,
   SETTING_DEFAULTS,
+  DEFAULT_TIME_ZONE,
+  setAppTimeZone,
   type BrandingInfo,
 } from '@episoft/shared';
 import { api } from './api';
@@ -20,6 +22,7 @@ export const DEFAULT_BRANDING_INFO: BrandingInfo = {
   accentColor: DEFAULT_BRANDING.accentColor,
   logoUrl: DEFAULT_LOGO_URL,
   customLogo: false,
+  timeZone: DEFAULT_TIME_ZONE,
 };
 
 function readCached(): BrandingInfo | undefined {
@@ -31,10 +34,14 @@ function readCached(): BrandingInfo | undefined {
   }
 }
 
+// The time zone of the shop applies from the first call, also offline (last known value).
+setAppTimeZone(readCached()?.timeZone ?? DEFAULT_TIME_ZONE);
+
 export const brandingQuery = queryOptions({
   queryKey: ['branding'],
   queryFn: async (): Promise<BrandingInfo> => {
     const info = await api.get<BrandingInfo>('/branding');
+    setAppTimeZone(info.timeZone);
     try {
       localStorage.setItem(KEY, JSON.stringify(info));
     } catch {
@@ -55,6 +62,7 @@ export function useBranding(): BrandingInfo {
 export function BrandingEffects() {
   const b = useBranding();
   useEffect(() => {
+    setAppTimeZone(b.timeZone);
     document.title = b.appName;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', b.accentColor);
     if (b.customLogo) {
@@ -76,6 +84,6 @@ export function BrandingEffects() {
       b.accentColor.toLowerCase() === DEFAULT_BRANDING.accentColor
         ? ''
         : `:root:not(.dark){--primary:${b.accentColor};--ring:${b.accentColor}}`;
-  }, [b.appName, b.accentColor, b.customLogo, b.logoUrl]);
+  }, [b.appName, b.accentColor, b.customLogo, b.logoUrl, b.timeZone]);
   return null;
 }

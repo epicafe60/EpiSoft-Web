@@ -15,7 +15,7 @@ import {
   type Db,
 } from '@episoft/db';
 import type { Config } from '../../config';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { notFound } from '../../lib/problem';
 
 /** Self-service: a member sees their own household, never anyone else's. */
@@ -35,7 +35,7 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       .select({ id: member.id, firstName: member.firstName, lastName: member.lastName })
       .from(member)
       .where(eq(member.householdId, householdId));
-    const today = toParisDate(new Date());
+    const today = toShopDate(new Date());
     const [current] = await db
       .select({
         endDate: membership.endDate,

@@ -23,6 +23,7 @@ export * from './roles';
 export * from './scale';
 export * from './branding';
 export * from './settings';
+export * from './timezone';
 export * from './sort';
 export * from './imports';
 export * from './reviews';

@@ -28,7 +28,7 @@ import {
   type Section,
 } from '@episoft/shared';
 import type { Config } from '../../config';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate, tzSql } from '../../lib/dates';
 import { loadPdfConfig, loadPdfLogo } from '../../lib/pdf-template';
 import { reportPdf, reportXlsx, type ReportLine, type ReportTable } from '../../lib/report-output';
 import { badRequest, notFound } from '../../lib/problem';
@@ -399,7 +399,7 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
            where (${!validatedOnly} or e.status = 'VALIDATED')
            group by 1),
         w as (
-          select to_char(w.at at time zone 'Europe/Paris', 'YYYY-MM') as m, sum(w.amount) as v
+          select to_char(w.at at time zone ${tzSql()}, 'YYYY-MM') as m, sum(w.amount) as v
             from app.wallet_entry w group by 1)
         select coalesce(acc.m, w.m) as m, coalesce(w.v, 0)::text as wallet, coalesce(acc.v, 0)::text as acc
           from acc full join w on acc.m = w.m
@@ -455,7 +455,7 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
 
     /** Dettes fournisseurs par ancienneté (R-CPT-16). */
     async 'aged-payables'() {
-      const today = toParisDate(new Date());
+      const today = toShopDate(new Date());
       const invoices = await db
         .select({
           supplierId: supplierInvoice.supplierId,
@@ -526,7 +526,7 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       if (!build) throw notFound('Édition inconnue.');
       const table = await build(req.query);
       if (req.query.format === 'json') return table;
-      const file = `${req.params.name}-${toParisDate(new Date())}`;
+      const file = `${req.params.name}-${toShopDate(new Date())}`;
       if (req.query.format === 'xlsx') {
         return reply
           .header('content-disposition', `attachment; filename="${file}.xlsx"`)
@@ -606,7 +606,7 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         creditCents: decimalToCents(r.credit),
         lettering: r.lettering,
         letteredOn: r.letteredOn,
-        validatedOn: toParisDate(r.validatedAt ?? new Date()),
+        validatedOn: toShopDate(r.validatedAt ?? new Date()),
       }));
       const siren = (await loadSettings(db))['association.identity'].siren ?? 'SIREN';
       return reply

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db, Tx } from '@episoft/db';
 import { centsToDecimal, parsePrice4, parseQtyToMilli, stockValueCents } from '@episoft/shared';
+import { tzSql } from '../../lib/dates';
 
 const milli = (v: string | null | undefined) =>
   v === null || v === undefined ? 0 : (parseQtyToMilli(v) ?? 0);
@@ -16,10 +17,10 @@ export async function stockValuation(db: Db | Tx, date: string, basis: 'excl' | 
     category: string | null;
   }>(sql`
     select p.id, p.code, p.name, c.name as category,
-           coalesce((select sum(m.qty) from app.stock_movement m where m.product_id = p.id and m.at < (${date}::date + 1)::timestamp at time zone 'Europe/Paris'), 0)::text as qty,
+           coalesce((select sum(m.qty) from app.stock_movement m where m.product_id = p.id and m.at < (${date}::date + 1)::timestamp at time zone ${tzSql()}), 0)::text as qty,
            coalesce(
              (select ${basis === 'excl' ? sql`h.purchase_price_excl` : sql`h.purchase_price_incl`} from app.price_history h
-               where h.product_id = p.id and h.at < (${date}::date + 1)::timestamp at time zone 'Europe/Paris'
+               where h.product_id = p.id and h.at < (${date}::date + 1)::timestamp at time zone ${tzSql()}
                order by h.at desc limit 1),
              ${basis === 'excl' ? sql`p.purchase_price_excl` : sql`p.purchase_price_incl`})::text as price
       from app.product p left join app.category c on c.id = p.category_id

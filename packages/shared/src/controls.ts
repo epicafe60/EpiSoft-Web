@@ -1,5 +1,6 @@
 import { inclFromExcl4 } from './supplies';
 import { normalizeSearch } from './text';
+import { shopFormat } from './timezone';
 
 // Protections and warnings (docs/evols plan « protections »). Everything here is a pure
 // function: the till, the API and the tests share the same rules. A warning never blocks
@@ -506,17 +507,15 @@ export function memberDuplicates<M extends MemberLike>(
 
 // --- The shop's session is the day's (R-SES-05) ---------------------------------------
 
-const PARIS_DAY = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Paris' });
-
-/** The calendar day in Paris, as YYYY-MM-DD. */
-export const parisDay = (d: Date): string => PARIS_DAY.format(d);
+/** The calendar day in the time zone of the shop, as YYYY-MM-DD. */
+export const shopDay = (d: Date): string => shopFormat('sv-SE', {}).format(d);
 
 /**
  * A ticket sold on a later day than the one the session was opened: the session of the day before
  * was never closed. The ticket is kept (never lost), and flagged.
  */
 export function sessionDayStale(openedAt: Date, soldAt: Date): boolean {
-  return parisDay(openedAt) < parisDay(soldAt);
+  return shopDay(openedAt) < shopDay(soldAt);
 }
 
 /** A cashier is « connected » when their sign-in was used within this many minutes (R-SES-06). */

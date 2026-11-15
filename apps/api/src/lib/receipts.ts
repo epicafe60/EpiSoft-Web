@@ -8,7 +8,7 @@ import {
   type PaymentMethod,
   type Values,
 } from '@episoft/shared';
-import { formatParis } from './dates';
+import { formatShop } from './dates';
 import { queueTemplatedEmail } from './email-render';
 import { escapeHtml } from './mail';
 
@@ -49,7 +49,7 @@ export function saleReceiptValues(firstName: string, s: ReceiptSale): Values {
   return {
     prenom: firstName,
     numero: s.number,
-    date: formatParis(s.soldAt),
+    date: formatShop(s.soldAt),
     total: formatEuro(s.total),
     lignes: table,
     paiements: s.payments
@@ -74,7 +74,7 @@ export function topupReceiptValues(
 ): Values {
   return {
     prenom: firstName,
-    date: formatParis(r.at),
+    date: formatShop(r.at),
     ancien_solde: euros(r.beforeCents),
     montant: euros(r.amountCents),
     mode: PAYMENT_METHOD_LABELS[r.method],

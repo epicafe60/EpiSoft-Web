@@ -10,6 +10,7 @@ import {
   type SnapshotMember,
   type SnapshotMembershipType,
   type SnapshotProduct,
+  shopDay,
 } from '@episoft/shared';
 import type { OutboxEntry } from './db';
 
@@ -32,11 +33,10 @@ export interface LocalOperationsInput {
   scope: OperationScope;
 }
 
-const parisDay = (iso: string) =>
-  new Date(iso).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const dayOf = (iso: string) => shopDay(new Date(iso));
 
 const inScope = (scope: OperationScope, sessionId: string, at: string) =>
-  'sessionId' in scope ? sessionId === scope.sessionId : parisDay(at) === scope.day;
+  'sessionId' in scope ? sessionId === scope.sessionId : dayOf(at) === scope.day;
 
 /** The tickets this till has cancelled (a cancellation refused by the server does not count). */
 export function cancelledSaleIds(entries: readonly OutboxEntry[]): Set<string> {

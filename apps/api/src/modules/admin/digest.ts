@@ -1,9 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { jobRun, member, type Db } from '@episoft/db';
-import { addDays, decimalToCents } from '@episoft/shared';
+import { addDays, decimalToCents, shopFormat } from '@episoft/shared';
 import type { Config } from '../../config';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { notifyStaff } from '../../lib/alerts';
 import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { sendPush } from '../../lib/push';
@@ -53,7 +53,7 @@ export async function sendExpiryDigest(
 ): Promise<number> {
   const cfg = (await loadSettings(db))['stock.expiryAlert'];
   if (!cfg.enabled) return 0;
-  const today = toParisDate(now);
+  const today = toShopDate(now);
   const sent = await runOncePerDay(db, 'expiry-digest', today, async () => {
     const rows = await db.execute<{ name: string; best_before: string; qty: string }>(sql`
       select p.name, b.best_before::text, b.qty::text
@@ -98,7 +98,7 @@ export async function sendLowWalletReminders(
 ): Promise<number> {
   const cfg = (await loadSettings(db))['wallet.lowReminder'];
   if (!cfg.enabled) return 0;
-  const today = toParisDate(now);
+  const today = toShopDate(now);
   const sent = await runOncePerDay(db, 'wallet-low', today, async () => {
     const due = await db.execute<{ household_id: string; balance: string }>(sql`
       select b.household_id, b.balance::text
@@ -150,7 +150,7 @@ export async function sendIntegrityAlert(
   log?: FastifyBaseLogger,
 ): Promise<number> {
   if (!report.errors) return 0;
-  const sent = await runOncePerDay(db, 'integrity-alert', toParisDate(now), async () => {
+  const sent = await runOncePerDay(db, 'integrity-alert', toShopDate(now), async () => {
     const failing = report.checks.filter((c) => c.severity === 'error' && c.count > 0);
     await notifyStaff(
       db,
@@ -187,7 +187,7 @@ export async function sendAttentionSummary(
   log?: FastifyBaseLogger,
 ): Promise<number> {
   const thresholds = (await loadSettings(db))['controls.thresholds'];
-  const sent = await runOncePerDay(db, 'attention-summary', toParisDate(now), async () => {
+  const sent = await runOncePerDay(db, 'attention-summary', toShopDate(now), async () => {
     const items = (await computeAttention(db, thresholds, now)).filter(
       (i) => !i.code.startsWith('INTEGRITY'),
     );
@@ -216,16 +216,7 @@ export async function sendAttentionSummary(
 export function startDailyDigestJob(db: Db, config: Config, log: FastifyBaseLogger): () => void {
   const run = async () => {
     const now = new Date();
-    if (
-      Number(
-        new Intl.DateTimeFormat('fr-FR', {
-          hour: '2-digit',
-          hour12: false,
-          timeZone: 'Europe/Paris',
-        }).format(now),
-      ) < 7
-    )
-      return;
+    if (Number(shopFormat('fr-FR', { hour: '2-digit', hour12: false }).format(now)) < 7) return;
     try {
       const expiry = await sendExpiryDigest(db, config, now, log);
       const wallets = await sendLowWalletReminders(db, config, now, log);

@@ -1,28 +1,25 @@
-// Business dates are Paris dates (the shop's), whatever the server time zone.
+import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { shopFormat, timeZoneLiteral } from '@episoft/shared';
 
-const parisDate = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Paris',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
+// Business dates are the shop's dates (its time zone, a setting), whatever the server time zone.
 
-/** YYYY-MM-DD in Europe/Paris. */
-export function toParisDate(d: Date): string {
-  return parisDate.format(d);
+/** YYYY-MM-DD in the time zone of the shop. */
+export function toShopDate(d: Date): string {
+  return shopFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 
-export function parisYear(d: Date): number {
-  return Number(toParisDate(d).slice(0, 4));
+export function shopYear(d: Date): number {
+  return Number(toShopDate(d).slice(0, 4));
 }
-
-const display = new Intl.DateTimeFormat('fr-FR', {
-  timeZone: 'Europe/Paris',
-  dateStyle: 'short',
-  timeStyle: 'short',
-});
 
 /** "03/10/2026 18:42" for e-mails and reports. */
-export function formatParis(d: Date): string {
-  return display.format(d);
+export function formatShop(d: Date): string {
+  return shopFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' }).format(d);
 }
+
+/**
+ * The time zone as a piece of SQL (`at time zone 'Europe/Paris'`): a checked name, never a typed value.
+ * Read when the query is built, not when the file is loaded: a change of the setting applies at once,
+ * also to the queries written once at the top of a file.
+ */
+export const tzSql = (): SQLWrapper => ({ getSQL: (): SQL => sql.raw(timeZoneLiteral()) });

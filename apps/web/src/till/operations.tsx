@@ -18,6 +18,7 @@ import {
   provisionalNumber,
   type OperationFilter,
   type OperationRow,
+  shopDay,
 } from '@episoft/shared';
 import { api } from '@/lib/api';
 import type { SaleDetail } from '@/lib/types';
@@ -120,7 +121,7 @@ export function OperationsPage() {
   const navigate = useNavigate();
 
   const sessionId = meta.session?.id;
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const today = shopDay(new Date());
   // Without a session open, the only thing to show is the day.
   const byDay = wholeDay || !sessionId;
   const scope: OperationScope = byDay ? { day: today } : { sessionId: sessionId! };

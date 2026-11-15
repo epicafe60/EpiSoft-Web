@@ -21,8 +21,9 @@ import {
   type OperationRow,
   type PaymentMethod,
 } from '@episoft/shared';
+import { tzSql } from '../../lib/dates';
 
-const PARIS_DAY = (col: SQL) => sql`(${col} at time zone 'Europe/Paris')::date`;
+const PARIS_DAY = (col: SQL) => sql`(${col} at time zone ${tzSql()})::date`;
 
 /**
  * The operations of a session, or of a day (Paris time, every till): one row per ticket and one per

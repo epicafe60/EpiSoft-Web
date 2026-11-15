@@ -26,7 +26,7 @@ import {
 import type { Config } from '../../config';
 import { sendPush } from '../../lib/push';
 import { audit } from '../../lib/audit';
-import { toParisDate } from '../../lib/dates';
+import { toShopDate } from '../../lib/dates';
 import { queueTemplatedEmail } from '../../lib/email-render';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/problem';
 import { shopOpen } from '../../lib/shop-gate';
@@ -165,7 +165,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
       const b = req.body;
       const user = req.user!;
       if (b.memberId && b.memberId !== user.id && !canOrderFor(user.roles)) throw forbidden();
-      const today = toParisDate(new Date());
+      const today = toShopDate(new Date());
       if (!pickupDateValid(b.pickupDate, today))
         throw badRequest('La date de retrait ne peut pas être passée.');
       return db.transaction(async (tx) => {

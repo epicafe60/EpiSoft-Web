@@ -50,6 +50,8 @@ export interface BrandingInfo {
   logoUrl: string;
   /** True when the logo is not the one shipped with the application. */
   customLogo: boolean;
+  /** The time zone of the shop (IANA name). */
+  timeZone: string;
 }
 
 export const DEFAULT_LOGO_URL = '/logo.png';

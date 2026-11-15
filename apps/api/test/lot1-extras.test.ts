@@ -11,7 +11,7 @@ import {
   walletEntry,
 } from '@episoft/db';
 import { addDays } from '@episoft/shared';
-import { toParisDate } from '../src/lib/dates';
+import { toShopDate } from '../src/lib/dates';
 import { sendMembershipReminders } from '../src/modules/members/reminders';
 import { createUser, login, refusedToAppRole, setupTestApp } from './helpers';
 
@@ -50,7 +50,7 @@ describe('R-ADH-04 membership reminder', () => {
       .select()
       .from(membershipType)
       .where(eq(membershipType.code, 'ANNUAL'));
-    const today = toParisDate(new Date());
+    const today = toShopDate(new Date());
     const due = await household1();
     const renewed = await household1();
     await t.db.insert(membership).values([

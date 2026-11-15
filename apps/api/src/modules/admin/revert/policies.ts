@@ -7,8 +7,9 @@ import {
   parseQtyToMilli,
   type AuditAction,
   type RowChange,
+  shopFormat,
 } from '@episoft/shared';
-import { toParisDate } from '../../../lib/dates';
+import { toShopDate } from '../../../lib/dates';
 import { reverseEntry } from '../../accounting/service';
 import { cancelTopupEntry } from '../../members/wallet-cancel';
 import { lockedBalanceCents } from '../../pos/wallet';
@@ -51,8 +52,7 @@ const inserted = (ctx: RevertContext, table: string) =>
   ctx.changes.filter((c) => c.table === table && c.op === 'I' && c.new).map((c) => c.new!);
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
-const dateFr = (d: Date) =>
-  new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris' }).format(d);
+const dateFr = (d: Date) => shopFormat('fr-FR', {}).format(d);
 
 /** A correction of the opposite amount on each cagnotte the action credited or debited. */
 const oppositeCorrection =
@@ -93,7 +93,7 @@ const topup = (ctx: RevertContext): Policy => {
     return none(
       'Versement fait en caisse : l’argent est dans le tiroir. Rendez-le à l’adhérent, puis passez une correction de cagnotte avec un motif depuis la fiche du foyer.',
     );
-  if (toParisDate(ctx.entry.at) === toParisDate(new Date()))
+  if (toShopDate(ctx.entry.at) === toShopDate(new Date()))
     return {
       kind: 'compensate',
       label: 'Retirer le versement saisi aujourd’hui',

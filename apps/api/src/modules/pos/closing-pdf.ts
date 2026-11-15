@@ -8,7 +8,7 @@ import {
   pdfTemplateDef,
   type Values,
 } from '@episoft/shared';
-import { formatParis } from '../../lib/dates';
+import { formatShop } from '../../lib/dates';
 import { eur, keyValues, render, table, pdfText } from '../../lib/pdf';
 import {
   associationValues,
@@ -32,9 +32,9 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
   const logo = config.logo ? await loadPdfLogo(db) : null;
   const values: Values = {
     ...associationValues(settings['association.identity']),
-    date_session: formatParis(s.openedAt).slice(0, 10),
-    ouverture: formatParis(s.openedAt),
-    cloture: s.closedAt ? formatParis(s.closedAt) : 'session ouverte',
+    date_session: formatShop(s.openedAt).slice(0, 10),
+    ouverture: formatShop(s.openedAt),
+    cloture: s.closedAt ? formatShop(s.closedAt) : 'session ouverte',
   };
   return render((doc) => {
     // The header and the footer are the template's; the figures of the session are the report.
