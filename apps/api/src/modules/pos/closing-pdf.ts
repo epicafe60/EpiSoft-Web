@@ -10,8 +10,13 @@ import {
 } from '@episoft/shared';
 import { formatParis } from '../../lib/dates';
 import { eur, keyValues, render, table, pdfText } from '../../lib/pdf';
-import { drawPdfHtml } from '../../lib/pdf-html';
-import { associationValues, installFooter, loadPdfConfig } from '../../lib/pdf-template';
+import {
+  associationValues,
+  drawHeader,
+  installFooter,
+  loadPdfConfig,
+  loadPdfLogo,
+} from '../../lib/pdf-template';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
 
@@ -24,6 +29,7 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
   const settings = await loadSettings(db);
   const def = pdfTemplateDef('cash_closing')!;
   const { config } = await loadPdfConfig(db, 'cash_closing');
+  const logo = config.logo ? await loadPdfLogo(db) : null;
   const values: Values = {
     ...associationValues(settings['association.identity']),
     date_session: formatParis(s.openedAt).slice(0, 10),
@@ -33,9 +39,10 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
   return render((doc) => {
     // The header and the footer are the template's; the figures of the session are the report.
     installFooter(doc, fillZone(config.zones.footer ?? '', values, def.variables), 40, 515);
-    doc.y = drawPdfHtml(
+    doc.y = drawHeader(
       doc,
       fillZone(config.zones.header ?? '', values, def.variables),
+      logo,
       40,
       40,
       515,

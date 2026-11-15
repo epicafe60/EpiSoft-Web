@@ -29,7 +29,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { toParisDate } from '../../lib/dates';
-import { loadPdfConfig } from '../../lib/pdf-template';
+import { loadPdfConfig, loadPdfLogo } from '../../lib/pdf-template';
 import { reportPdf, reportXlsx, type ReportLine, type ReportTable } from '../../lib/report-output';
 import { badRequest, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -534,10 +534,18 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .send(await reportXlsx(table));
       }
       const identity = (await loadSettings(db))['association.identity'];
+      const template = await loadPdfConfig(db, 'report');
       return reply
         .header('content-disposition', `attachment; filename="${file}.pdf"`)
         .type('application/pdf')
-        .send(await reportPdf(table, identity, (await loadPdfConfig(db, 'report')).config));
+        .send(
+          await reportPdf(
+            table,
+            identity,
+            template.config,
+            template.config.logo ? await loadPdfLogo(db) : null,
+          ),
+        );
     },
   );
 
