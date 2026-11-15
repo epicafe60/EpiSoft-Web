@@ -520,6 +520,10 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
                   v.purchaseExcl4 === null
                     ? null
                     : price4ToDecimal(inclFromExcl4(v.purchaseExcl4, vat)),
+                purchaseVatAmount:
+                  v.purchaseExcl4 === null
+                    ? null
+                    : price4ToDecimal(inclFromExcl4(v.purchaseExcl4, vat) - v.purchaseExcl4),
                 salePrice: centsToDecimal(v.salePriceCents ?? 0),
                 labelPending: true,
               })
@@ -559,7 +563,9 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           const set: Partial<typeof product.$inferInsert> = {};
           if (apply('purchasePrice')) {
             set.purchasePriceExcl = price4Str(v.purchaseExcl4);
-            set.purchasePriceIncl = price4ToDecimal(inclFromExcl4(v.purchaseExcl4!, cur.vatRate));
+            const incl4 = inclFromExcl4(v.purchaseExcl4!, cur.vatRate);
+            set.purchasePriceIncl = price4ToDecimal(incl4);
+            set.purchaseVatAmount = price4ToDecimal(incl4 - v.purchaseExcl4!);
           }
           if (apply('salePrice')) {
             set.salePrice = centsToDecimal(v.salePriceCents!);

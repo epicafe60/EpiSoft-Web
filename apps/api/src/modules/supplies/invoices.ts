@@ -18,7 +18,7 @@ import {
   centsToDecimal,
   decimalToCents,
   invoicePaySchema,
-  invoiceDueDate,
+  invoiceDueDateFor,
   invoiceSchema,
   orderTotals,
   parsePrice4,
@@ -234,7 +234,14 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   ) => {
     const s = await tx.query.supplier.findFirst({ where: eq(supplier.id, b.supplierId) });
     if (!s) throw badRequest('Fournisseur inconnu.');
-    const dueDate = b.dueDate ?? invoiceDueDate(b.date, s.paymentTermsDays);
+    const dueDate =
+      b.dueDate ??
+      invoiceDueDateFor({
+        invoiceDate: b.date,
+        entryDate: toParisDate(new Date()),
+        termsDays: s.paymentTermsDays,
+        payAtMonthEnd: s.payAtMonthEnd,
+      });
     if (dueDate < b.date) throw badRequest('L’échéance doit suivre la date de facture.');
     const dup = await tx.query.supplierInvoice.findFirst({
       where: and(

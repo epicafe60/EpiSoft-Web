@@ -82,7 +82,7 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
   it('normalises amounts and quantities', () => {
     expect(productCreateSchema.parse(p)).toMatchObject({
       unitQty: '0.155',
-      purchasePriceExcl: '1.20',
+      purchasePriceExcl: '1.2000',
       salePrice: '2.50',
     });
   });
@@ -91,7 +91,29 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     expect(productCreateSchema.safeParse({ ...p, eans: ['3168930167984'] }).success).toBe(false);
   });
 
-  it('computes PA TTC from PA HT and VAT', () => {
+  it('R-PRD-04: HT, VAT amount and TTC are kept as typed, even when they disagree', () => {
+    const r = productCreateSchema.parse({
+      ...p,
+      purchasePriceExcl: '1,20',
+      purchaseVatAmount: '9,5',
+      purchasePriceIncl: '0,3333',
+    });
+    expect(r).toMatchObject({
+      purchasePriceExcl: '1.2000',
+      purchaseVatAmount: '9.5000',
+      purchasePriceIncl: '0.3333',
+    });
+  });
+
+  it('R-PRD-04: the three purchase amounts are optional (a service has none)', () => {
+    const r = productCreateSchema.parse({ ...p, purchasePriceExcl: null });
+    expect(r.purchasePriceExcl).toBeNull();
+    expect(r.purchaseVatAmount).toBeUndefined();
+    expect(r.purchasePriceIncl).toBeUndefined();
+    expect(productCreateSchema.safeParse({ ...p, purchasePriceIncl: 'abc' }).success).toBe(false);
+  });
+
+  it('suggests PA TTC from PA HT and VAT (bulk grid only)', () => {
     expect(purchasePriceIncl('1.20', '5.50')).toBe('1.2660');
     expect(purchasePriceIncl('10', '20.00')).toBe('12.0000');
   });

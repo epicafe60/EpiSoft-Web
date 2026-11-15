@@ -40,10 +40,19 @@ export function ImagePicker({
   open,
   onClose,
   onPick,
+  title = 'Insérer une image',
+  description = 'Les images sont jointes au courriel : elles s’affichent sans dépendre d’une adresse publique.',
+  types = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+  pickVerb = 'Insérer',
 }: {
   open: boolean;
   onClose: () => void;
   onPick: (asset: { id: string; name: string }) => void;
+  title?: string;
+  description?: string;
+  /** The kinds of image that can be chosen or added (a PDF only draws PNG and JPEG). */
+  types?: string[];
+  pickVerb?: string;
 }) {
   const queryClient = useQueryClient();
   const assets = useQuery({
@@ -68,17 +77,17 @@ export function ImagePicker({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Insérer une image"
-      description="Les images sont jointes au courriel : elles s’affichent sans dépendre d’une adresse publique."
+      title={title}
+      description={description}
       className="max-w-2xl"
     >
       <div className="grid gap-4">
         <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent">
           <Upload className="size-4" aria-hidden />
-          Ajouter une image (PNG, JPEG, WebP, GIF)
+          Ajouter une image ({types.map((t) => t.replace('image/', '').toUpperCase()).join(', ')})
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
+            accept={types.join(',')}
             className="sr-only"
             aria-label="Ajouter une image"
             onChange={(e) => {
@@ -93,23 +102,25 @@ export function ImagePicker({
           <p className="text-sm text-muted-foreground">Aucune image pour l’instant.</p>
         ) : null}
         <ul className="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
-          {(assets.data ?? []).map((a) => (
-            <li key={a.id}>
-              <button
-                type="button"
-                className="grid w-full gap-1 rounded-md border p-2 text-left hover:bg-accent"
-                onClick={() => onPick(a)}
-                aria-label={`Insérer l’image ${a.name}`}
-              >
-                <img
-                  src={`${EMAIL_ASSET_PATH}${a.id}`}
-                  alt=""
-                  className="h-20 w-full rounded bg-muted object-contain"
-                />
-                <span className="truncate text-xs">{a.name}</span>
-              </button>
-            </li>
-          ))}
+          {(assets.data ?? [])
+            .filter((a) => types.includes(a.mime))
+            .map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  className="grid w-full gap-1 rounded-md border p-2 text-left hover:bg-accent"
+                  onClick={() => onPick(a)}
+                  aria-label={`${pickVerb} l’image ${a.name}`}
+                >
+                  <img
+                    src={`${EMAIL_ASSET_PATH}${a.id}`}
+                    alt=""
+                    className="h-20 w-full rounded bg-muted object-contain"
+                  />
+                  <span className="truncate text-xs">{a.name}</span>
+                </button>
+              </li>
+            ))}
         </ul>
       </div>
     </Dialog>

@@ -257,6 +257,7 @@ async function migrateCatalog(src: LegacySource, tx: Tx, r: Report) {
       status: d.status,
       purchasePriceExcl: d.purchasePriceExcl,
       purchasePriceIncl: d.purchasePriceIncl,
+      purchaseVatAmount: d.purchaseVatAmount,
       salePrice: d.salePrice,
       minStock: d.minStock,
       labelPending: d.labelPending,

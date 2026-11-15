@@ -7,8 +7,7 @@ import {
   type Values,
 } from '@episoft/shared';
 import { eur, render, table, type Column } from './pdf';
-import { drawPdfHtml } from './pdf-html';
-import { associationValues, installFooter } from './pdf-template';
+import { associationValues, drawHeader, installFooter } from './pdf-template';
 
 // A report is a plain table: the same structure feeds the screen, the Excel export and the PDF.
 
@@ -64,6 +63,7 @@ export function reportPdf(
   r: ReportTable,
   identity: Settings['association.identity'],
   config: PdfTemplateConfig,
+  logo: Buffer | null = null,
 ) {
   const def = pdfTemplateDef('report')!;
   const values: Values = {
@@ -77,9 +77,10 @@ export function reportPdf(
       const left = doc.page.margins.left;
       // The header and the footer are the template's; the table is the report.
       installFooter(doc, fillZone(config.zones.footer ?? '', values, def.variables), left, width);
-      doc.y = drawPdfHtml(
+      doc.y = drawHeader(
         doc,
         fillZone(config.zones.header ?? '', values, def.variables),
+        config.logo ? logo : null,
         left,
         doc.page.margins.top,
         width,

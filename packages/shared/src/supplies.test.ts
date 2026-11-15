@@ -3,7 +3,9 @@ import {
   inclFromExcl4,
   inventoryAdjustmentMilli,
   saleAlreadyCounted,
+  endOfMonth,
   invoiceDueDate,
+  invoiceDueDateFor,
   margin,
   nextSupplierCode,
   orderLineTotals,
@@ -78,6 +80,43 @@ describe('suppliers and invoices', () => {
 
   it('computes the due date (R-FAC-01)', () => {
     expect(invoiceDueDate('2026-10-03', 30)).toBe('2026-11-02');
+  });
+
+  it('finds the last day of a month, leap years and December included', () => {
+    expect(endOfMonth('2026-11-15')).toBe('2026-11-30');
+    expect(endOfMonth('2026-12-01')).toBe('2026-12-31');
+    expect(endOfMonth('2028-02-10')).toBe('2028-02-29');
+    expect(endOfMonth('2026-02-28')).toBe('2026-02-28');
+  });
+
+  it('is due at the end of the month it is entered when paid « à réception fin de mois » (R-FAC-01)', () => {
+    const base = { termsDays: 30, payAtMonthEnd: true };
+    // The month of the entry counts, not the month of the invoice.
+    expect(invoiceDueDateFor({ ...base, invoiceDate: '2026-10-03', entryDate: '2026-11-15' })).toBe(
+      '2026-11-30',
+    );
+    expect(invoiceDueDateFor({ ...base, invoiceDate: '2026-11-14', entryDate: '2026-11-15' })).toBe(
+      '2026-11-30',
+    );
+    // Entered on the last day: due that day.
+    expect(invoiceDueDateFor({ ...base, invoiceDate: '2026-11-30', entryDate: '2026-11-30' })).toBe(
+      '2026-11-30',
+    );
+    // An invoice dated after the end of the month of its entry is not due before its date.
+    expect(invoiceDueDateFor({ ...base, invoiceDate: '2026-12-05', entryDate: '2026-11-28' })).toBe(
+      '2026-12-05',
+    );
+  });
+
+  it('keeps the payment terms of the supplier otherwise', () => {
+    expect(
+      invoiceDueDateFor({
+        invoiceDate: '2026-10-03',
+        entryDate: '2026-11-15',
+        termsDays: 30,
+        payAtMonthEnd: false,
+      }),
+    ).toBe('2026-11-02');
   });
 
   it('flags probable duplicates (R-FAC-05)', () => {

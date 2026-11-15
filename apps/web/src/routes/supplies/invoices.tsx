@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp, Plus } from 'lucide-react';
 import {
   centsToDecimal,
-  invoiceDueDate,
+  invoiceDueDateFor,
   parseAmountToCents,
   SUPPLIER_PAYMENT_METHOD_LABELS,
   SUPPLIER_PAYMENT_METHODS,
@@ -240,7 +240,14 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   // Due date proposed from the supplier's payment terms (R-FAC-01).
   useEffect(() => {
     if (!invoice && supplier.data && date)
-      setDueDate(invoiceDueDate(date, supplier.data.paymentTermsDays));
+      setDueDate(
+        invoiceDueDateFor({
+          invoiceDate: date,
+          entryDate: todayIso(),
+          termsDays: supplier.data.paymentTermsDays,
+          payAtMonthEnd: supplier.data.payAtMonthEnd,
+        }),
+      );
   }, [supplier.data, date, invoice]);
 
   const check = useQuery({

@@ -3,7 +3,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { auditLog, pdfTemplate, product } from '@episoft/db';
 import { PDF_TEMPLATES, defaultPdfConfig, pdfTemplateDef } from '@episoft/shared';
 import { sanitizePdfHtml, parsePdfHtml } from '../src/lib/pdf-html';
-import { loadPdfConfig } from '../src/lib/pdf-template';
+import { loadPdfConfig, loadPdfLogo } from '../src/lib/pdf-template';
+import { reportPdf } from '../src/lib/report-output';
+import { loadSettings } from '../src/modules/admin/settings-store';
 import { createUser, login, setupTestApp, waitForIdle } from './helpers';
 
 // The PDF documents whose wording and columns the administrators edit: who may, what is cleaned and
@@ -197,9 +199,8 @@ describe('editing a document', () => {
     expect(await t.db.select().from(pdfTemplate)).toHaveLength(0);
   });
 
-  it('refuses a logo for a document that has none, and columns for one that has no choice', async () => {
+  it('refuses columns for a document that has no choice of them', async () => {
     const closing = defaultPdfConfig(pdfTemplateDef('cash_closing')!);
-    expect((await save('cash_closing', { ...closing, logo: true })).statusCode).toBe(400);
     expect(
       (await save('cash_closing', { ...closing, columns: [{ key: 'name', label: 'P' }] }))
         .statusCode,
@@ -327,5 +328,116 @@ describe('what a saved template changes in the documents', () => {
     // A template that cannot be read leaves the order printable, in the wording of the application.
     await t.db.execute(sql`update app.pdf_template set config = '{"zones": 3}'::jsonb`);
     expect((await download()).statusCode).toBe(200);
+  });
+});
+
+describe('the logo of the PDF documents', () => {
+  // 1×1 images: the PNG of the e-mail tests, and another one.
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const OTHER = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  const GIF = Buffer.from('R0lGODlhAQABAAAAACw=', 'base64');
+
+  const upload = async (bytes: Buffer, type: string, name: string) =>
+    (
+      await t.app.inject({
+        method: 'POST',
+        url: '/api/v1/email-assets',
+        headers: { ...admin, 'content-type': type, 'x-file-name': encodeURIComponent(name) },
+        payload: bytes,
+      })
+    ).json().id as string;
+  const header = (headerImageId: string | null) =>
+    call('PUT', '/email-layout', admin, {
+      headerImageId,
+      headerAlt: '',
+      footerHtml: '<p>Pied</p>',
+      accentColor: '#14532d',
+    });
+  const choose = (body: object) => call('PUT', '/settings/documents.logo', admin, body);
+  const hasLogo = (pdf: Buffer) => pdf.toString('latin1').includes('/Subtype /Image');
+
+  beforeEach(async () => {
+    await t.db.execute(sql`truncate app.email_template, app.email_layout, app.email_asset cascade`);
+    await t.db.execute(sql`delete from app.setting where key = 'documents.logo'`);
+  });
+
+  it('is the header image of the e-mails by default', async () => {
+    expect(await loadPdfLogo(t.db)).toBeNull();
+    await header(await upload(PNG, 'image/png', 'mail.png'));
+    expect((await loadPdfLogo(t.db))?.equals(PNG)).toBe(true);
+  });
+
+  it('can be another image of the library, and goes back to the one of the e-mails', async () => {
+    await header(await upload(PNG, 'image/png', 'mail.png'));
+    const other = await upload(OTHER, 'image/png', 'pdf.png');
+    expect((await choose({ source: 'IMAGE', imageId: other })).statusCode).toBe(200);
+    expect((await loadPdfLogo(t.db))?.equals(OTHER)).toBe(true);
+    // The e-mails keep theirs.
+    const layout = (await call('GET', '/email-layout', admin)).json();
+    expect(layout.headerImageId).not.toBe(other);
+    expect((await choose({ source: 'EMAIL', imageId: null })).statusCode).toBe(200);
+    expect((await loadPdfLogo(t.db))?.equals(PNG)).toBe(true);
+  });
+
+  it('falls back to the image of the e-mails when the chosen one is gone or is not a PNG or a JPEG', async () => {
+    await header(await upload(PNG, 'image/png', 'mail.png'));
+    const gif = await upload(GIF, 'image/gif', 'anim.gif');
+    await choose({ source: 'IMAGE', imageId: gif });
+    expect((await loadPdfLogo(t.db))?.equals(PNG)).toBe(true);
+    const other = await upload(OTHER, 'image/png', 'pdf.png');
+    await choose({ source: 'IMAGE', imageId: other });
+    await t.db.execute(sql`delete from app.email_asset where id = ${other}`);
+    expect((await loadPdfLogo(t.db))?.equals(PNG)).toBe(true);
+  });
+
+  it('asks for an image when « another image » is chosen, and protects it from deletion', async () => {
+    const refused = await choose({ source: 'IMAGE', imageId: null });
+    expect(refused.statusCode).toBe(400);
+    expect(JSON.stringify(refused.json())).toContain('Choisissez une image');
+    const id = await upload(OTHER, 'image/png', 'pdf.png');
+    await choose({ source: 'IMAGE', imageId: id });
+    const list = (await call('GET', '/email-assets', admin)).json() as {
+      id: string;
+      usedBy: string[];
+    }[];
+    expect(list.find((a) => a.id === id)!.usedBy).toContain('Logo des documents PDF');
+    expect((await call('DELETE', `/email-assets/${id}`, admin)).statusCode).toBe(409);
+    // Back to the e-mails' image: the other one can go.
+    await choose({ source: 'EMAIL', imageId: null });
+    expect((await call('DELETE', `/email-assets/${id}`, admin)).statusCode).toBe(204);
+  });
+
+  it.each(PDF_TEMPLATES.map((d) => d.key))(
+    'is drawn on %s, unless its template says no',
+    async (key) => {
+      await header(await upload(PNG, 'image/png', 'mail.png'));
+      const config = defaultPdfConfig(pdfTemplateDef(key)!);
+      const withLogo = await call('POST', `/pdf-templates/${key}/preview`, admin, { config });
+      expect(hasLogo(withLogo.rawPayload), key).toBe(true);
+      const without = await call('POST', `/pdf-templates/${key}/preview`, admin, {
+        config: { ...config, logo: false },
+      });
+      expect(hasLogo(without.rawPayload), key).toBe(false);
+    },
+  );
+
+  it('is on the reports, from the image chosen for the documents', async () => {
+    const id = await upload(PNG, 'image/png', 'pdf.png');
+    await choose({ source: 'IMAGE', imageId: id });
+    const table = {
+      title: 'Journal',
+      columns: [{ key: 'a', label: 'A', type: 'text' as const }],
+      rows: [{ cells: { a: 'x' } }],
+    };
+    const identity = (await loadSettings(t.db))['association.identity'];
+    const config = defaultPdfConfig(pdfTemplateDef('report')!);
+    expect(hasLogo(await reportPdf(table, identity, config, await loadPdfLogo(t.db)))).toBe(true);
+    expect(hasLogo(await reportPdf(table, identity, { ...config, logo: false }, null))).toBe(false);
   });
 });
