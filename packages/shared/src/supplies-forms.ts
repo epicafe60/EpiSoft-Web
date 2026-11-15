@@ -258,8 +258,6 @@ export const labelsSchema = z.object({
   productIds: z.array(z.string().uuid()).min(1).max(1000),
   perPage: z.union([z.literal(24), z.literal(40)]).optional(),
   markDone: z.boolean().default(false),
-  /** R-EVO-07: false prints the label without its barcode. */
-  barcode: z.boolean().default(true),
 });
 
 /** R-STK-07: a dated batch of a product (best-before date and quantity). */

@@ -1,16 +1,7 @@
-import bwipjs from 'bwip-js/node';
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import {
-  category,
-  priceHistory,
-  product,
-  productBarcode,
-  supplier,
-  universe,
-  type Db,
-} from '@episoft/db';
+import { category, priceHistory, product, supplier, universe, type Db } from '@episoft/db';
 import {
   bulkPricesSchema,
   categorySchema,
@@ -22,7 +13,6 @@ import {
   parseQtyToMilli,
   price4ToDecimal,
   pricePerKgOrLitreCents,
-  QUALITY_LABELS,
   universeSchema,
   type Quality,
   type Unit,
@@ -210,7 +200,7 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
 
   // --- Labels (R-PRD-06) ------------------------------------------------------------------------
 
-  /** A4 sheet of 24 (3 × 8) or 40 (4 × 10) labels: name, price, price per kg/L, origin, barcode. */
+  /** A4 sheet of 24 (3 × 8) or 40 (4 × 10) labels: name, price, price per kg/L and supplier (legal mentions), no barcode. */
   app.post(
     '/products/labels/pdf',
     { ...editors, schema: { body: labelsSchema } },
@@ -233,25 +223,6 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
         .leftJoin(supplier, eq(supplier.id, product.supplierId))
         .where(inArray(product.id, req.body.productIds))
         .orderBy(product.name);
-      const eans = await db
-        .select()
-        .from(productBarcode)
-        .where(inArray(productBarcode.productId, req.body.productIds));
-      const barcodes = new Map<string, Buffer>();
-      for (const p of req.body.barcode ? prods : []) {
-        const ean = eans.find((e) => e.productId === p.id)?.ean;
-        barcodes.set(
-          p.id,
-          await bwipjs.toBuffer({
-            bcid: ean ? (ean.length === 8 ? 'ean8' : 'ean13') : 'code128',
-            text: ean ?? p.code,
-            scale: 2,
-            height: 8,
-            includetext: true,
-            textsize: 8,
-          }),
-        );
-      }
       const cols = perPage === 24 ? 3 : 4;
       const rowsPerPage = perPage === 24 ? 8 : 10;
       const pdf = await render(
@@ -296,31 +267,25 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
               .font('Helvetica-Bold')
               .fontSize(perPage === 24 ? 18 : 14)
               .text(eur(p.salePrice) + unitLabel, x + pad, y + h * 0.36, { width: w - 2 * pad });
-            const small: string[] = [];
+            // Legal mentions where the barcode used to be: price per kg/L (only when the
+            // product has a weight or volume) and supplier (nothing without one).
+            const legal: string[] = [];
             if (perUnit !== null && p.saleMode === 'UNIT')
-              small.push(
-                `${eur(centsToDecimal(perUnit))} ${p.unit === 'G' || p.unit === 'KG' ? 'le kg' : 'le L'}`,
+              legal.push(
+                `Prix au ${p.unit === 'G' || p.unit === 'KG' ? 'kg' : 'litre'} : ${eur(centsToDecimal(perUnit))}`,
               );
-            const origin = [
-              ...(p.qualities as Quality[])
-                .filter((q) => q !== 'STANDARD')
-                .map((q) => QUALITY_LABELS[q]),
-              p.supplierName,
-            ]
-              .filter(Boolean)
-              .join(' · ');
-            if (origin) small.push(origin);
-            doc
-              .font('Helvetica')
-              .fontSize(6.5)
-              .text(pdfText(small.join(' — ')), x + pad, y + h * 0.58, {
-                width: req.body.barcode ? w * 0.48 : w - 2 * pad,
-                height: h * 0.35,
-              });
-            if (req.body.barcode)
-              doc.image(barcodes.get(p.id)!, x + w * 0.5, y + h * 0.56, {
-                fit: [w * 0.48 - pad, h * 0.38],
-              });
+            if (p.supplierName) legal.push(`Fournisseur : ${p.supplierName}`);
+            legal.forEach((line, n) =>
+              doc
+                .font('Helvetica')
+                .fontSize(perPage === 24 ? 7.5 : 6.5)
+                .text(pdfText(line), x + pad, y + h * 0.62 + n * (perPage === 24 ? 11 : 9.5), {
+                  width: w - 2 * pad,
+                  height: perPage === 24 ? 9 : 8,
+                  lineBreak: false,
+                  ellipsis: true,
+                }),
+            );
             // R-EVO-07: red dot for a local product, green dot for an organic one.
             const dots: string[] = [];
             if ((p.qualities as Quality[]).includes('LOCAL')) dots.push('#d62828');

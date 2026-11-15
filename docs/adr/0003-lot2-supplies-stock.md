@@ -4,7 +4,7 @@ Date: 2026-10-03. Status: proposed, to be confirmed.
 
 ## Choices
 
-1. **PDF documents with pdfkit and bwip-js** (pure JavaScript, no system binary): purchase
+1. **PDF documents with pdfkit** (pure JavaScript, no system binary): purchase
    orders, label sheets, closing reports. Spec §7.2 suggested Typst or Playwright; both
    need a binary or a browser in the server image.
 2. **One stock ledger helper** for every movement (sales, receipts, losses, corrections,
