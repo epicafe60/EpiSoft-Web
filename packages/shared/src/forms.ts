@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { pastOrTodayDate } from './dates';
 import { MEMBER_STATUSES } from './api';
-import { parsePrice4, price4ToDecimal } from './supplies';
+import { inclFromExcl4, parsePrice4, price4ToDecimal } from './supplies';
 import {
   MEMBER_PAYMENT_METHODS,
   PRODUCT_KINDS,
@@ -219,6 +219,25 @@ export function salePriceProblem(p: {
         'Le prix de vente est inférieur au prix d’achat HT : la revente à perte est interdite (art. L442-5 du Code de commerce). Si c’est une exception (produit périssable menacé, fin de série), indiquez le motif.',
     };
   return null;
+}
+
+/**
+ * The three purchase amounts of a product sheet built from a PA HT received on a delivery, at the
+ * VAT rate of the product (R-PRD-04): VAT = TTC - HT, TTC = HT x (1 + rate), to 4 decimals.
+ * Null when the PA HT is not a valid price. The result always passes purchasePricesProblem.
+ */
+export function purchaseAmountsFromExcl(
+  excl: string,
+  vatRate: string,
+): { purchasePriceExcl: string; purchaseVatAmount: string; purchasePriceIncl: string } | null {
+  const excl4 = parsePrice4(excl);
+  if (excl4 === null || excl4 < 0) return null;
+  const incl4 = inclFromExcl4(excl4, vatRate);
+  return {
+    purchasePriceExcl: price4ToDecimal(excl4),
+    purchaseVatAmount: price4ToDecimal(incl4 - excl4),
+    purchasePriceIncl: price4ToDecimal(incl4),
+  };
 }
 
 export const productFields = {
