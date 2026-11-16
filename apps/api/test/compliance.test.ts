@@ -192,6 +192,8 @@ describe('product information and claims', () => {
         name: 'Pâtes',
         salePrice: '2.00',
         isFood: true,
+        unitQty: '500',
+        unit: 'G',
         ingredients: 'Blé dur',
         allergensDecision: 'LISTED',
         allergens: ['GLUTEN'],
@@ -488,7 +490,7 @@ describe('RGPD: consents and legal pages', () => {
       method: 'PUT',
       url: '/api/v1/settings/legal.texts',
       headers: admin,
-      payload: { ...put.json(), privacyContact: 'pas un courriel' },
+      payload: { ...(put.json() as object), privacyContact: 'pas un courriel' },
     });
     expect(bad.statusCode).toBe(400);
   });

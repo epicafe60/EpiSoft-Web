@@ -165,6 +165,19 @@ export const consentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         .where(eq(member.id, req.user!.id))
         .for('update');
       if (!m) throw notFound('Compte introuvable.');
+      // A choice the sheet already holds but whose record is missing is recorded first, so that
+      // its withdrawal leaves a trace (and the audit entry that goes with the change).
+      const held = {
+        NEWSLETTER: m.newsletterOptInAt !== null,
+        IMAGE_RIGHTS: m.imageConsentAt !== null,
+      }[purpose as 'NEWSLETTER' | 'IMAGE_RIGHTS'];
+      if (held)
+        await recordConsent(tx, req, {
+          memberId: m.id,
+          purpose,
+          granted: true,
+          channel: 'MIGRATION',
+        });
       if (purpose === 'EMAIL_RECEIPTS') {
         await tx.update(member).set({ ticketEmailOptOut: !granted }).where(eq(member.id, m.id));
       } else if (purpose === 'NEWSLETTER') {
