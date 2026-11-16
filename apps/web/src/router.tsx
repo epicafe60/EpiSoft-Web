@@ -12,6 +12,7 @@ import { ApiError } from './lib/api';
 import { meQuery } from './lib/auth';
 import { BrandingEffects } from './lib/branding';
 import { LoginPage } from './routes/login';
+import { LegalMentionsPage, PrivacyPage } from './routes/legal';
 import { ForgotPasswordPage, SetPasswordPage } from './routes/password';
 import { AppShell } from './routes/shell';
 import { HomePage } from './routes/home';
@@ -32,6 +33,8 @@ import { SuppliesLayout } from './routes/supplies/layout';
 import { OrderPage, OrdersPage } from './routes/supplies/orders';
 import { NewSupplierPage, SupplierPage, SuppliersPage } from './routes/supplies/suppliers';
 import { InvoicePage, InvoicesPage, NewInvoicePage } from './routes/supplies/invoices';
+import { TraceabilityPage } from './routes/supplies/traceability';
+import { RegisterPage } from './routes/admin/register';
 import { StockPage } from './routes/supplies/stock';
 import { InventoriesPage, InventoryPage } from './routes/supplies/inventories';
 import { BulkPricesPage, LabelsPage, ShelvesPage } from './routes/catalog/tools';
@@ -103,6 +106,18 @@ const loginRoute = createRoute({
     if (await context.queryClient.ensureQueryData(meQuery)) throw redirect({ to: '/' });
   },
   component: LoginPage,
+});
+
+const legalMentionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/mentions-legales',
+  component: LegalMentionsPage,
+});
+
+const privacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/confidentialite',
+  component: PrivacyPage,
 });
 
 const forgotRoute = createRoute({
@@ -325,6 +340,11 @@ const stockRoute = createRoute({
   getParentRoute: () => suppliesRoute,
   path: '/stock',
   component: StockPage,
+});
+const traceabilityRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/tracabilite',
+  component: TraceabilityPage,
 });
 const inventoriesRoute = createRoute({
   getParentRoute: () => suppliesRoute,
@@ -560,6 +580,11 @@ const adminDocumentsRoute = createRoute({
   path: '/documents',
   component: PdfTemplatesPage,
 });
+const adminRegisterRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/registre',
+  component: RegisterPage,
+});
 const adminTillRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/caisse',
@@ -568,6 +593,8 @@ const adminTillRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  legalMentionsRoute,
+  privacyRoute,
   forgotRoute,
   setPasswordRoute,
   tillRoute.addChildren([saleRoute, operationsRoute, ticketsRedirectRoute, closingRoute]),
@@ -601,6 +628,7 @@ const routeTree = rootRoute.addChildren([
       newInvoiceRoute,
       invoiceRoute,
       stockRoute,
+      traceabilityRoute,
       inventoriesRoute,
       inventoryRoute,
     ]),
@@ -637,6 +665,7 @@ const routeTree = rootRoute.addChildren([
       adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,
+      adminRegisterRoute,
       adminEmailsRoute,
       adminDocumentsRoute,
     ]),

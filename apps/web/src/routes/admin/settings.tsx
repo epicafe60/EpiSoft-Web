@@ -290,6 +290,60 @@ export function SettingsPage() {
         }}
       </SettingCard>
 
+      <SettingCard
+        settingKey="legal.texts"
+        title="Mentions légales et confidentialité"
+        description="Texte des pages publiques « Mentions légales » et « Politique de confidentialité » (liées depuis la page de connexion). Un champ laissé vide utilise le texte standard ; l’adresse, le SIREN, le RNA et le courriel viennent de l’identité ci-dessus."
+        initial={data['legal.texts']}
+      >
+        {(v, set, errors) => {
+          const one = (key: keyof typeof v, label: string, hint?: string) => (
+            <Field label={label} error={errors[key]} {...(hint ? { hint } : {})}>
+              {(p) => (
+                <Input
+                  {...p}
+                  value={text(v[key])}
+                  onChange={(e) => set({ ...v, [key]: e.target.value })}
+                />
+              )}
+            </Field>
+          );
+          const area = (key: keyof typeof v, label: string) => (
+            <Field label={label} error={errors[key]} hint="Un paragraphe par ligne. Vide : texte standard.">
+              {(p) => (
+                <textarea
+                  {...p}
+                  rows={4}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  value={text(v[key])}
+                  onChange={(e) => set({ ...v, [key]: e.target.value })}
+                />
+              )}
+            </Field>
+          );
+          return (
+            <>
+              {one('publicationDirector', 'Directeur ou directrice de la publication')}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {one('hostName', 'Hébergeur (nom)')}
+                {one('hostAddress', 'Hébergeur (adresse)')}
+              </div>
+              {one('privacyContact', 'Courriel pour exercer ses droits', 'Par défaut : le courriel de l’association.')}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {one('dpoName', 'Délégué à la protection des données (si désigné)')}
+                {one('dpoContact', 'Contact du délégué')}
+              </div>
+              {area('purposes', 'Finalités')}
+              {area('legalBasis', 'Base légale')}
+              {area('recipients', 'Destinataires')}
+              {area('retention', 'Durées de conservation')}
+              {area('rights', 'Droits des personnes')}
+              {area('extra', 'Informations complémentaires (mentions légales)')}
+            </>
+          );
+        }}
+      </SettingCard>
+
       <div className="grid content-start gap-6">
         <SettingCard
           settingKey="pos.defaultFloat"
