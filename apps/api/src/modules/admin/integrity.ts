@@ -11,6 +11,7 @@ import { FALLBACK_HELP, INTEGRITY_HELP, type IntegrityHelp } from './integrity-h
 import { ANALYSIS_OF, integrityAnalysis } from './integrity-analysis';
 import { reportXlsx } from '../../lib/report-output';
 import { tzSql } from '../../lib/dates';
+import { FISCAL_HELP, fiscalFindings } from '../fiscal/integrity';
 
 type Row = Record<string, unknown>;
 
@@ -565,6 +566,44 @@ export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
       });
     }
   }
+  // ADR 0016: the checks of the inalterable till recompute chains and totals, so they are code, not SQL.
+  try {
+    for (const f of await fiscalFindings(db)) {
+      const open = f.rows.filter((r) => !ackOf.has(`${f.id}|${r.ref}`));
+      checks.push({
+        id: f.id,
+        label: f.label,
+        severity: f.severity,
+        count: open.length,
+        samples: open.slice(0, SAMPLES),
+        list: null,
+        fix: null,
+        help: FISCAL_HELP[f.id] ?? FALLBACK_HELP,
+        analysis: false,
+        ackable: f.severity === 'warning',
+        accepted: f.rows
+          .filter((r) => ackOf.has(`${f.id}|${r.ref}`))
+          .slice(0, 50)
+          .map((r) => ({ ...r, note: ackOf.get(`${f.id}|${r.ref}`) ?? null })),
+      });
+    }
+  } catch (e) {
+    checks.push({
+      id: 'FIS-00',
+      label: 'Vérification de la caisse inaltérable',
+      severity: 'error',
+      count: 1,
+      samples: [
+        { ref: 'contrôle', detail: `Échec de la vérification : ${(e as Error).message}`, link: null },
+      ],
+      list: null,
+      fix: null,
+      help: FALLBACK_HELP,
+      analysis: false,
+      ackable: false,
+      accepted: [],
+    });
+  }
   const report = {
     at: new Date().toISOString(),
     errors: checks.filter((c) => c.severity === 'error').reduce((n, c) => n + c.count, 0),
@@ -668,7 +707,11 @@ export const integrityRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
     '/admin/integrity/accept',
     { ...guard, schema: { body: key.extend({ note: z.string().trim().max(300).optional() }) } },
     async (req) => {
-      const check = INTEGRITY_CHECKS.find((c) => c.id === req.body.checkId);
+      const check =
+        INTEGRITY_CHECKS.find((c) => c.id === req.body.checkId) ??
+        (req.body.checkId === 'FIS-05' || req.body.checkId === 'FIS-06' || req.body.checkId === 'FIS-07'
+          ? { id: req.body.checkId, severity: 'warning' as const }
+          : undefined);
       if (!check) throw notFound('Contrôle inconnu.');
       if (check.severity !== 'warning')
         throw badRequest('Une anomalie de calcul ne peut pas être acceptée : corrigez-la.');

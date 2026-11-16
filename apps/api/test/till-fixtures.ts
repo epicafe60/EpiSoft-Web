@@ -48,7 +48,7 @@ export async function resetTill(db: Db): Promise<void> {
     app.job_run, app.wallet_snapshot, app.invoice_receipt, app.supplier_invoice, app.goods_receipt_line,
     app.goods_receipt, app.preorder_line, app.preorder, app.sync_receipt, app.sale_payment,
     app.sale_line, app.membership, app.wallet_entry, app.member_payment, app.sale, app.cash_count,
-    app.cash_session, app.pos_device, app.stock_movement, app.product_barcode, app.price_history,
+    app.cash_session, app.pos_device, app.ticket_reprint, app.fiscal_journal, app.period_closing, app.stock_movement, app.product_barcode, app.price_history,
     app.number_counter cascade`);
   await db.execute(sql`delete from app.product where code not in ('01001', '01002', '01004')`);
   await db.execute(sql`delete from app.supplier`);

@@ -90,7 +90,7 @@ export function saleOp(args: {
   emailReceipt: boolean;
   overdraftForcedBy: string | null;
   now: Date;
-}): SyncOp {
+}): Extract<SyncOp, { kind: 'SALE' }> {
   const { draft } = args;
   return {
     kind: 'SALE',

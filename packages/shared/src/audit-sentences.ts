@@ -61,6 +61,12 @@ export const AUDIT_SENTENCES = {
   'sale.create': (a) =>
     `a encaissé un ticket${named(a, 'number')}${a?.total ? ` de ${s(a.total)} €` : ''}`,
   'sale.cancel': (a) => `a annulé un ticket${named(a, 'number')}`,
+  'sale.return': (a) =>
+    `a établi un avoir${named(a, 'number')}${a?.total ? ` de ${s(a.total)} €` : ''}`,
+  'sale.reprint': (a) => `a réimprimé un ticket (DUPLICATA)${named(a, 'number')}`,
+  'period.close': (a) =>
+    `a clôturé ${a?.kind === 'YEAR' ? 'une année' : a?.kind === 'MONTH' ? 'un mois' : 'une journée'} de caisse${named(a, 'start')}`,
+  'fiscal.archive': () => 'a exporté l’archive fiscale de la caisse',
   'sale.email_sent': (a) => `a envoyé un ticket par courriel${named(a, 'number')}`,
   'sale.warnings_reviewed': (a) => `a examiné les avertissements d’un ticket${named(a, 'number')}`,
   'sync.rejected': (a) =>

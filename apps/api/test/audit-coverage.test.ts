@@ -14,6 +14,7 @@ const NO_WRITE: Record<string, string> = {
   'POST /supplier-invoices/check': 'vérifie une facture avant de la saisir',
   'POST /email-templates/:key/preview':
     'aperçu d’un courriel avec des valeurs d’exemple, rien n’est enregistré',
+  'POST /admin/fiscal/archive/verify': 'contrôle une archive fiscale fournie, rien n’est enregistré',
   'POST /pdf-templates/:key/preview':
     'aperçu d’un PDF avec des valeurs d’exemple, rien n’est enregistré',
 };

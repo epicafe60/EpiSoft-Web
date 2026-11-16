@@ -1,4 +1,12 @@
-import { shouldDropSession, type Snapshot, type SyncOp, type SyncResult } from '@episoft/shared';
+import {
+  registerNumber,
+  sealOp,
+  shouldDropSession,
+  type SealedOp,
+  type Snapshot,
+  type SyncOp,
+  type SyncResult,
+} from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
 import { getMeta, setMeta, tillDb, type OutboxEntry, type TillDb } from './db';
 import { backoffMs, newDeviceName } from './logic';
@@ -49,6 +57,61 @@ export async function enqueue(
     if (extra) await extra();
     return op;
   });
+}
+
+class SealRace extends Error {}
+
+/**
+ * ADR 0016 §1: adds a ticket, a cancellation or a credit note to the outbox with its register
+ * number and its seal. The number comes from the register's own gapless counter, which moves in the
+ * same IndexedDB transaction as the outbox: no ticket without a number, no number without a ticket.
+ * The hash is computed before the transaction (Web Crypto is asynchronous, and an IndexedDB
+ * transaction closes while it waits), then the counter is checked again inside it: if another tab
+ * sealed a document in between, it starts over.
+ */
+export async function enqueueSealed<T extends SealedOp>(
+  deviceName: string,
+  build: (a: { deviceSeq: number; number: string }) => T,
+  extra?: () => Promise<void>,
+  db: TillDb = tillDb,
+): Promise<T> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const deviceSeq0 = await getMeta('deviceSeq', db);
+    const seal0 = await getMeta('ticketSeal', db);
+    const deviceSeq = deviceSeq0 + 1;
+    const seq = seal0.seq + 1;
+    const op = build({ deviceSeq, number: registerNumber(deviceName, seq) });
+    const seal = await sealOp(op, seq, seal0.hash);
+    const sealed = { ...op, payload: { ...op.payload, seal } } as T;
+    try {
+      return await db.transaction('rw', [db.outbox, db.meta, db.drafts], async () => {
+        if (
+          (await getMeta('deviceSeq', db)) !== deviceSeq0 ||
+          (await getMeta('ticketSeal', db)).seq !== seal0.seq
+        )
+          throw new SealRace();
+        await db.outbox.add({
+          id: sealed.id,
+          seq: deviceSeq,
+          kind: sealed.kind,
+          op: sealed,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          attempts: 0,
+          lastError: null,
+          syncedAt: null,
+          result: null,
+        });
+        await setMeta('deviceSeq', deviceSeq, db);
+        await setMeta('ticketSeal', { seq, hash: seal.hash }, db);
+        if (extra) await extra();
+        return sealed;
+      });
+    } catch (e) {
+      if (!(e instanceof SealRace)) throw e;
+    }
+  }
+  throw new Error('La caisse est occupée : réessayez.');
 }
 
 export class SyncEngine {

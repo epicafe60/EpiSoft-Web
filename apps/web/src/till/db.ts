@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { GENESIS_HASH } from '@episoft/shared';
 import type {
   CashierCheck,
   SnapshotHousehold,
@@ -93,6 +94,11 @@ export interface MetaValues {
   /** Open session on this device (possibly not yet known by the server). */
   session: { id: string; openedAt: string; openingFloat: string } | null;
   deviceSeq: number;
+  /**
+   * ADR 0016: the register's counter of documents (tickets, cancellations, credit notes), gapless,
+   * and the hash of the last one: the next document is sealed on top of it.
+   */
+  ticketSeal: { seq: number; hash: string };
   cursor: string | null;
   lastSnapshotAt: string | null;
   lastPushAt: string | null;
@@ -116,6 +122,7 @@ const DEFAULTS: MetaValues = {
   device: null,
   session: null,
   deviceSeq: 0,
+  ticketSeal: { seq: 0, hash: GENESIS_HASH },
   cursor: null,
   lastSnapshotAt: null,
   lastPushAt: null,

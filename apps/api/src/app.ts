@@ -21,6 +21,8 @@ import { TILL_ROUTES } from './plugins/till-routes';
 import { authRoutes } from './modules/auth/routes';
 import { adminRoutes } from './modules/admin/routes';
 import { posRoutes } from './modules/pos/routes';
+import { fiscalRoutes } from './modules/fiscal/routes';
+import { configureFiscal } from './modules/fiscal/journal';
 import { memberRoutes } from './modules/members/routes';
 import { catalogRoutes } from './modules/catalog/routes';
 import { walletRoutes } from './modules/members/wallet-routes';
@@ -73,6 +75,7 @@ declare module 'fastify' {
 }
 
 export async function buildApp(db: Db, config: Config, opts: FastifyServerOptions = {}) {
+  configureFiscal(config);
   const app = Fastify({
     // Behind Caddy in production: trust it for the client IP (R-AUTH-07).
     trustProxy: config.NODE_ENV === 'production' ? 'loopback,uniquelocal' : false,
@@ -157,6 +160,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(authRoutes, { db, config });
       await api.register(adminRoutes, { db, config });
       await api.register(posRoutes, { db, config });
+      await api.register(fiscalRoutes, { db, config });
       await api.register(memberRoutes, { db, config });
       await api.register(catalogRoutes, { db, config });
       await api.register(walletRoutes, { db, config });

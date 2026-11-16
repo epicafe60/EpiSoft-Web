@@ -45,7 +45,9 @@ export async function setupTestApp() {
       for (let attempt = 1; ; attempt++) {
         try {
           await db.execute(sql`truncate app.audit_log, app.data_change, app.login_log, app.session, app.password_reset_token,
-        app.email_outbox, app.import_mapping, app.setting, app.user_role, app.member, app.household cascade`);
+        app.email_outbox, app.import_mapping, app.setting, app.user_role, app.member, app.household,
+        app.fiscal_journal cascade`);
+          await db.execute(sql`delete from app.number_counter where key = 'fiscal_journal'`);
           break;
         } catch (e) {
           const code = (e as { cause?: { code?: string } }).cause?.code;

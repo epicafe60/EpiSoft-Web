@@ -34,6 +34,15 @@ const cashierCheck = z.enum(CASHIER_CHECKS).optional();
  */
 const cashierProof = z.string().uuid().optional();
 
+/** ADR 0016: the seal the till puts on a ticket, a cancellation or a credit note (offline-proof). */
+export const tillSealSchema = z.object({
+  seq: z.number().int().positive(),
+  prev: z.string().regex(/^[0-9a-f]{64}$/),
+  hash: z.string().regex(/^[0-9a-f]{64}$/),
+});
+/** Absent from a till older than ADR 0016: the ticket is then recorded as « not sealed ». */
+const seal = tillSealSchema.optional();
+
 export const saleLineSchema = z.object({
   productId: z.string().uuid(),
   label: z.string().min(1).max(200),
@@ -65,6 +74,7 @@ export const saleOpSchema = z.object({
     memberId: z.string().uuid().nullable(),
     soldAt: isoDateTime,
     provisionalNumber: z.string().max(40),
+    seal,
     lines: z.array(saleLineSchema).min(1).max(500),
     payments: z.array(salePaymentSchema).min(1).max(20),
     total: amount,
@@ -89,7 +99,50 @@ export const saleCancelOpSchema = z.object({
     cashierProof,
     at: isoDateTime,
     provisionalNumber: z.string().max(40),
+    seal,
     reason: z.string().max(300).optional(),
+  }),
+});
+
+/** ADR 0016 §5: return of some lines of a ticket, as a credit note linked to it. */
+export const saleReturnOpSchema = z.object({
+  ...base,
+  kind: z.literal('SALE_RETURN'),
+  payload: z.object({
+    /** Id of the credit note, generated on the device. */
+    returnSaleId: z.string().uuid(),
+    saleId: z.string().uuid(),
+    sessionId: z.string().uuid(),
+    cashierId: z.string().uuid(),
+    cashierCheck,
+    cashierProof,
+    at: isoDateTime,
+    provisionalNumber: z.string().max(40),
+    seal,
+    reason: z.string().trim().min(3).max(300),
+    /** One method for the whole refund; the server checks it against what was paid. */
+    refundMethod: z.enum(PAYMENT_METHODS),
+    /** Back in stock (true) or written off as a loss (false). */
+    restock: z.boolean(),
+    /** Lines of the original ticket (1-based rank) and the quantity given back. */
+    lines: z
+      .array(z.object({ lineNo: z.number().int().positive(), qty: quantity }))
+      .min(1)
+      .max(500),
+  }),
+});
+
+/** ADR 0016 §4: a ticket was printed again (« DUPLICATA »). */
+export const ticketReprintOpSchema = z.object({
+  ...base,
+  kind: z.literal('TICKET_REPRINT'),
+  payload: z.object({
+    saleId: z.string().uuid(),
+    sessionId: z.string().uuid(),
+    cashierId: z.string().uuid(),
+    cashierCheck,
+    cashierProof,
+    at: isoDateTime,
   }),
 });
 
@@ -125,6 +178,8 @@ export const syncOpSchema = z.discriminatedUnion('kind', [
   sessionOpenOpSchema,
   saleOpSchema,
   saleCancelOpSchema,
+  saleReturnOpSchema,
+  ticketReprintOpSchema,
   walletTopupOpSchema,
 ]);
 export type SyncOp = z.infer<typeof syncOpSchema>;

@@ -19,6 +19,7 @@ import {
   session as signInSession,
   syncReceipt,
   syncRejection,
+  ticketReprint,
   userRole,
   walletEntry,
   type Db,
@@ -45,6 +46,11 @@ import {
   sessionDayStale,
   ticketWarnings,
   walletMoveNeedsConfirm,
+  CASH_PAYMENT_LIMIT_CENTS,
+  cashPaymentProblem,
+  parseReturnQty,
+  returnLineRefund,
+  type SealedOp,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -55,6 +61,8 @@ import { alertNow } from '../../lib/alerts';
 import { loadSettings } from '../admin/settings-store';
 import { recordMovement } from '../stock/ledger';
 import { nextSaleNumber } from './numbers';
+import { appendJournal, sealSale } from '../fiscal/journal';
+import { accountingDayFor, checkTillSeal } from '../fiscal/ticket';
 import { currentMembershipEnd, lockedBalanceCents } from './wallet';
 
 /** A business rule refused the operation; it is answered REJECTED, not as an error. */
@@ -266,9 +274,14 @@ async function dispatch(ctx: Ctx, op: SyncOp): Promise<{ number?: string; sessio
       return { sessionId: await openSession(ctx, op.payload) };
     case 'SALE':
       // The sale id is the operation id, generated on the device (§6.2: idempotency key).
-      return { number: await recordSale(ctx, op.payload, op.deviceSeq, op.id) };
+      return { number: await recordSale(ctx, op.payload, op.deviceSeq, op.id, op) };
     case 'SALE_CANCEL':
-      return { number: await cancelSale(ctx, op.payload, op.deviceSeq) };
+      return { number: await cancelSale(ctx, op.payload, op.deviceSeq, op) };
+    case 'SALE_RETURN':
+      return { number: await returnSale(ctx, op.payload, op.deviceSeq, op) };
+    case 'TICKET_REPRINT':
+      await reprintTicket(ctx, op.payload, op.id);
+      return {};
     case 'WALLET_TOPUP':
       await topup(ctx, op.payload);
       return {};
@@ -322,6 +335,19 @@ async function openSession(
     openedBy: p.openedBy,
     openedAt,
     openingFloat: p.openingFloat,
+  });
+  await appendJournal(ctx.tx, {
+    kind: 'SESSION_OPEN',
+    refType: 'session',
+    refId: p.sessionId,
+    at: openedAt,
+    data: {
+      id: p.sessionId,
+      device: ctx.deviceId,
+      openedBy: p.openedBy,
+      openedAt: openedAt.toISOString(),
+      openingFloat: p.openingFloat,
+    },
   });
   await audit(ctx.tx, ctx.req, {
     action: 'session.open',
@@ -467,6 +493,7 @@ async function recordSale(
   p: SalePayload,
   deviceSeq: number,
   saleId: string,
+  op: Extract<SyncOp, { kind: 'SALE' }>,
 ): Promise<string> {
   const { tx } = ctx;
   const claimedAt = new Date(p.soldAt);
@@ -558,6 +585,10 @@ async function recordSale(
     );
   if (payments.reduce((s, x) => s + x.cents, 0) !== totalCents)
     throw new Rejected('Le ticket n’est pas soldé.');
+  // ADR 0016 §6: the till refuses it; a ticket already cashed (an older till) is kept and flagged.
+  for (const x of payments)
+    if (x.method === 'CASH' && x.cents > CASH_PAYMENT_LIMIT_CENTS)
+      warn(ctx, 'CASH_LIMIT_EXCEEDED', cashPaymentProblem(x.cents)!);
 
   // Member and household. Wallet payments need a household (R-VTE-02).
   let householdId: string | null = null;
@@ -575,12 +606,14 @@ async function recordSale(
   if (needsHousehold && !householdId)
     throw new Rejected('Le paiement par cagnotte exige un adhérent rattaché à un foyer.');
 
+  const fiscal = await fiscalOf(ctx, op, saleId, soldAt);
   const number = await nextSaleNumber(tx, soldAt);
   const discountCents = lines.reduce((s, x) => s + x.discountCents, 0);
   await tx.insert(sale).values({
     id: saleId,
     number,
     provisionalNumber: p.provisionalNumber,
+    ...fiscal,
     deviceSeq,
     deviceId: ctx.deviceId,
     sessionId: session.id,
@@ -813,6 +846,7 @@ async function recordSale(
   }
   if (ctx.warnings.length)
     await tx.update(sale).set({ warnings: ctx.warnings }).where(eq(sale.id, saleId));
+  await sealSale(tx, 'SALE', saleId, soldAt);
   await audit(tx, ctx.req, {
     action: 'sale.create',
     entity: 'sale',
@@ -921,6 +955,7 @@ async function cancelSale(
   ctx: Ctx,
   p: Extract<SyncOp, { kind: 'SALE_CANCEL' }>['payload'],
   deviceSeq: number,
+  op: Extract<SyncOp, { kind: 'SALE_CANCEL' }>,
 ): Promise<string> {
   const { tx } = ctx;
   const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
@@ -944,6 +979,16 @@ async function cancelSale(
   }
   if (original.cancelsSaleId) throw new Rejected('Un ticket d’annulation ne peut pas être annulé.');
   if (original.status === 'CANCELLED') throw new Rejected('Ce ticket est déjà annulé.');
+  if (original.returnsSaleId) throw new Rejected('Un avoir ne peut pas être annulé.');
+  const [partlyReturned] = await tx
+    .select({ id: sale.id })
+    .from(sale)
+    .where(eq(sale.returnsSaleId, original.id))
+    .limit(1);
+  if (partlyReturned)
+    throw new Rejected(
+      'Ce ticket a déjà été remboursé en partie : établissez un avoir pour le reste.',
+    );
   // A ticket of the current session can be cancelled at the till; older ones need ADMIN, and
   // the administrator keeping the till themself (R-SES-07: another cashier never uses their rights).
   const adminAtTill =
@@ -971,11 +1016,13 @@ async function cancelSale(
   const neg = (v: string) => centsToDecimal(-decimalToCents(v));
   const negQty = (v: string) => milliToDecimal(-parseQtyToMilli(v)!);
 
+  const fiscal = await fiscalOf(ctx, op, p.cancelSaleId, at);
   const number = await nextSaleNumber(tx, at);
   await tx.insert(sale).values({
     id: p.cancelSaleId,
     number,
     provisionalNumber: p.provisionalNumber,
+    ...fiscal,
     deviceSeq,
     deviceId: ctx.deviceId,
     sessionId: session.id,
@@ -1047,6 +1094,7 @@ async function cancelSale(
   }
   await tx.update(membership).set({ cancelledAt: at }).where(eq(membership.saleId, original.id));
   await tx.update(sale).set({ status: 'CANCELLED' }).where(eq(sale.id, original.id));
+  await sealSale(tx, 'SALE_CANCEL', p.cancelSaleId, at);
   await audit(tx, ctx.req, {
     action: 'sale.cancel',
     entity: 'sale',
@@ -1143,4 +1191,285 @@ export async function sendTopupReceipt(
         where: and(eq(member.householdId, householdId), sql`${member.email} is not null`),
       });
   if (to?.email && !to.ticketEmailOptOut) await queueTopupReceipt(tx, to.email, to.firstName, r);
+}
+
+// --- ADR 0016: seal, credit note, duplicata --------------------------------------------
+
+/** The accounting day and the till's seal of a document, decided before it is written. */
+async function fiscalOf(ctx: Ctx, op: SealedOp, docId: string, at: Date) {
+  const w = (code: string, message: string) => warn(ctx, code, message);
+  const accountingDay = await accountingDayFor(ctx.tx, at, w);
+  const seal = await checkTillSeal(ctx.tx, ctx.deviceId, op, docId, w);
+  return { ...seal, accountingDay };
+}
+
+/**
+ * ADR 0016 §5: the return of some lines of a ticket, as a credit note. The server computes the
+ * amounts from the original lines (pro rata, never more than was sold), checks that the money goes
+ * back the way it came (or into the cagnotte), and puts the goods back in stock or writes them off.
+ */
+async function returnSale(
+  ctx: Ctx,
+  p: Extract<SyncOp, { kind: 'SALE_RETURN' }>['payload'],
+  deviceSeq: number,
+  op: Extract<SyncOp, { kind: 'SALE_RETURN' }>,
+): Promise<string> {
+  const { tx } = ctx;
+  const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
+  const at = await trustedTime(ctx, new Date(p.at), session.openedAt);
+  const cashierCheck = await noteCashier(ctx, p);
+  const [original] = await tx.select().from(sale).where(eq(sale.id, p.saleId)).for('update');
+  if (!original) {
+    const origin = await tx.query.syncReceipt.findFirst({
+      where: eq(syncReceipt.clientId, p.saleId),
+    });
+    if (!origin)
+      waitOrRefuse(
+        new Date(p.at),
+        'Le ticket à rembourser n’est pas encore arrivé : le poste réessaiera.',
+        'Le ticket à rembourser n’est jamais arrivé sur le serveur',
+      );
+    throw new Rejected('Le ticket à rembourser avait été refusé : il n’y a rien à rembourser.');
+  }
+  if (original.cancelsSaleId || original.returnsSaleId)
+    throw new Rejected('On ne rembourse qu’un ticket de vente.');
+  if (original.status === 'CANCELLED')
+    throw new Rejected('Ce ticket est annulé : il n’y a plus rien à rembourser.');
+  // Same rule as a cancellation: an older ticket needs an administrator keeping the till.
+  const adminAtTill =
+    hasAnyRole(ctx.req.user!.roles, ['ADMIN']) && p.cashierId === ctx.req.user!.id;
+  if (original.sessionId !== session.id && !adminAtTill)
+    throw new Rejected('Seul un administrateur peut rembourser un ticket d’une session précédente.');
+
+  const origLines = await tx
+    .select()
+    .from(saleLine)
+    .where(eq(saleLine.saleId, original.id))
+    .orderBy(saleLine.lineNo);
+  // What earlier credit notes already gave back, line by line.
+  const earlier = await tx
+    .select({
+      lineId: saleLine.returnsLineId,
+      qty: sql<string>`sum(${saleLine.qty})::numeric(12,3)::text`,
+      total: sql<string>`sum(${saleLine.lineTotal})::numeric(12,2)::text`,
+    })
+    .from(saleLine)
+    .innerJoin(sale, eq(sale.id, saleLine.saleId))
+    .where(eq(sale.returnsSaleId, original.id))
+    .groupBy(saleLine.returnsLineId);
+  const seen = new Set<number>();
+  const rows = p.lines.map((r) => {
+    const line = origLines.find((l) => l.lineNo === r.lineNo);
+    if (!line) throw new Rejected(`La ligne ${r.lineNo} n’existe pas sur le ticket.`);
+    if (seen.has(r.lineNo)) throw new Rejected(`La ligne ${r.lineNo} est répétée.`);
+    seen.add(r.lineNo);
+    const qtyMilli = parseReturnQty(r.qty);
+    if (!qtyMilli) throw new Rejected(`Quantité invalide (ligne ${r.lineNo}).`);
+    const was = earlier.find((e) => e.lineId === line.id);
+    const result = returnLineRefund({
+      lineTotalCents: decimalToCents(line.lineTotal),
+      qtyMilli: parseQtyToMilli(line.qty)!,
+      returnedQtyMilli: was ? -parseQtyToMilli(was.qty)! : 0,
+      returnedCents: was ? -decimalToCents(was.total) : 0,
+      returnQtyMilli: qtyMilli,
+    });
+    if ('error' in result) throw new Rejected(`Ligne ${r.lineNo} : ${result.error}`);
+    return { line, qtyMilli, cents: result.cents };
+  });
+  const refundCents = rows.reduce((t, x) => t + x.cents, 0);
+  if (refundCents <= 0) throw new Rejected('Le montant à rembourser est nul.');
+
+  // Never more than was paid by the method chosen; the cagnotte is always possible for a member.
+  const pays = await tx.select().from(salePayment).where(eq(salePayment.saleId, original.id));
+  const paid = pays
+    .filter((x) => x.method === p.refundMethod)
+    .reduce((t, x) => t + decimalToCents(x.amount), 0);
+  const giveBack = await tx
+    .select({ amount: salePayment.amount })
+    .from(salePayment)
+    .innerJoin(sale, eq(sale.id, salePayment.saleId))
+    .where(and(eq(sale.returnsSaleId, original.id), eq(salePayment.method, p.refundMethod)));
+  const alreadyBack = giveBack.reduce((t, x) => t - decimalToCents(x.amount), 0);
+  if (p.refundMethod === 'WALLET') {
+    if (!original.householdId)
+      throw new Rejected('Un remboursement en cagnotte exige un adhérent rattaché à un foyer.');
+  } else if (refundCents + alreadyBack > paid) {
+    throw new Rejected(
+      'Le remboursement dépasse ce qui a été payé par ce moyen : choisissez-en un autre.',
+    );
+  }
+  const cashProblem = p.refundMethod === 'CASH' ? cashPaymentProblem(refundCents) : null;
+  if (cashProblem) throw new Rejected(cashProblem);
+
+  const prods = new Map(
+    (
+      await tx
+        .select({ id: product.id, kind: product.kind, name: product.name })
+        .from(product)
+        .where(
+          inArray(
+            product.id,
+            origLines.map((l) => l.productId),
+          ),
+        )
+    ).map((x) => [x.id, x]),
+  );
+  const fiscal = await fiscalOf(ctx, op, p.returnSaleId, at);
+  const number = await nextSaleNumber(tx, at);
+  const neg = (cents: number) => centsToDecimal(-cents);
+  await tx.insert(sale).values({
+    id: p.returnSaleId,
+    number,
+    provisionalNumber: p.provisionalNumber,
+    ...fiscal,
+    deviceSeq,
+    deviceId: ctx.deviceId,
+    sessionId: session.id,
+    cashierId: p.cashierId,
+    memberId: original.memberId,
+    householdId: original.householdId,
+    soldAt: at,
+    total: neg(refundCents),
+    returnsSaleId: original.id,
+    returnReason: p.reason,
+    refundMethod: p.refundMethod,
+    hasServices: rows.some((x) => prods.get(x.line.productId)?.kind === 'SERVICE'),
+    warnings: ctx.warnings.length ? ctx.warnings : null,
+    createdAt: recordedNow,
+  });
+  await tx.insert(saleLine).values(
+    rows.map((x, i) => ({
+      saleId: p.returnSaleId,
+      lineNo: i + 1,
+      productId: x.line.productId,
+      label: x.line.label,
+      qty: milliToDecimal(-x.qtyMilli),
+      unitPrice: x.line.unitPrice,
+      catalogPrice: x.line.catalogPrice,
+      discount: '0',
+      lineTotal: neg(x.cents),
+      vatRate: x.line.vatRate,
+      returnsLineId: x.line.id,
+    })),
+  );
+  await tx
+    .insert(salePayment)
+    .values({ saleId: p.returnSaleId, method: p.refundMethod, amount: neg(refundCents) });
+
+  const goods = rows.filter((x) => prods.get(x.line.productId)?.kind === 'GOODS');
+  // Back on the shelf, or written off: either way the stock of the ticket is accounted for.
+  await moveStock(
+    ctx,
+    goods.map((x) => ({ productId: x.line.productId, qtyMilli: x.qtyMilli })),
+    'SALE_CANCEL',
+    p.returnSaleId,
+    at,
+  );
+  if (!p.restock)
+    for (const x of goods)
+      await recordMovement(tx, {
+        productId: x.line.productId,
+        qtyMilli: -x.qtyMilli,
+        kind: 'LOSS',
+        sourceType: 'sale_return_loss',
+        sourceId: p.returnSaleId,
+        comment: `Retour sans remise en stock : ${p.reason}`,
+        by: p.cashierId,
+        at,
+      });
+  await compensateCountedSale(
+    ctx,
+    goods.map((x) => ({
+      productId: x.line.productId,
+      name: prods.get(x.line.productId)?.name ?? x.line.label,
+      qtyMilli: x.qtyMilli,
+    })),
+    p.returnSaleId,
+    at,
+    'CANCEL',
+  );
+  if (p.refundMethod === 'WALLET' && original.householdId) {
+    await lockedBalanceCents(tx, original.householdId);
+    await tx.insert(walletEntry).values({
+      householdId: original.householdId,
+      at,
+      amount: centsToDecimal(refundCents),
+      kind: 'REFUND',
+      saleId: p.returnSaleId,
+      comment: `Avoir sur le ticket ${original.number}`,
+      createdBy: p.cashierId,
+    });
+  }
+  await sealSale(tx, 'SALE_RETURN', p.returnSaleId, at);
+  await audit(tx, ctx.req, {
+    action: 'sale.return',
+    entity: 'sale',
+    entityId: original.id,
+    ...asCashier(ctx, p),
+    before: { number: original.number, total: original.total },
+    after: {
+      number,
+      returnId: p.returnSaleId,
+      total: neg(refundCents),
+      reason: p.reason,
+      refundMethod: p.refundMethod,
+      restock: p.restock,
+      lines: rows.map((x) => ({ lineNo: x.line.lineNo, qty: milliToDecimal(x.qtyMilli) })),
+      cashierCheck,
+      ...(ctx.warnings.length ? { warnings: ctx.warnings.map((w) => w.code) } : {}),
+    },
+  });
+  return number;
+}
+
+/** ADR 0016 §4: a ticket printed again. Counted, audited and sealed in the journal. */
+async function reprintTicket(
+  ctx: Ctx,
+  p: Extract<SyncOp, { kind: 'TICKET_REPRINT' }>['payload'],
+  opId: string,
+): Promise<void> {
+  const { tx } = ctx;
+  const session = await sessionOf(ctx, p.sessionId, new Date(p.at));
+  const at = await trustedTime(ctx, new Date(p.at), session.openedAt);
+  const cashierCheck = await noteCashier(ctx, p);
+  // The ticket is locked: two copies printed at once get two ranks.
+  const [doc] = await tx.select().from(sale).where(eq(sale.id, p.saleId)).for('update');
+  if (!doc) {
+    const origin = await tx.query.syncReceipt.findFirst({
+      where: eq(syncReceipt.clientId, p.saleId),
+    });
+    if (!origin)
+      waitOrRefuse(
+        new Date(p.at),
+        'Le ticket réimprimé n’est pas encore arrivé : le poste réessaiera.',
+        'Le ticket réimprimé n’est jamais arrivé sur le serveur',
+      );
+    throw new Rejected('Le ticket réimprimé avait été refusé.');
+  }
+  const [{ n }] = (await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(ticketReprint)
+    .where(eq(ticketReprint.saleId, doc.id))) as [{ n: number }];
+  await tx.insert(ticketReprint).values({
+    id: opId,
+    saleId: doc.id,
+    copyNo: n + 1,
+    at,
+    cashierId: p.cashierId,
+    deviceId: ctx.deviceId,
+  });
+  await appendJournal(tx, {
+    kind: 'DUPLICATA',
+    refType: 'sale',
+    refId: doc.id,
+    at,
+    data: { id: opId, sale: doc.id, number: doc.number, copy: n + 1, cashier: p.cashierId },
+  });
+  await audit(tx, ctx.req, {
+    action: 'sale.reprint',
+    entity: 'sale',
+    entityId: doc.id,
+    ...asCashier(ctx, p),
+    after: { number: doc.number, copy: n + 1, cashierCheck },
+  });
 }

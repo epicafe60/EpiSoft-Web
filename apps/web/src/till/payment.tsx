@@ -4,6 +4,7 @@ import { Trash2 } from 'lucide-react';
 import {
   applyPayment,
   canAddPayment,
+  cashPaymentProblem,
   DEFAULT_THRESHOLDS,
   centsToDecimal,
   formatEuro,
@@ -123,6 +124,14 @@ export function PaymentDialog({
     }
     const { amountCents, changeCents } = applyPayment(state.remainingCents, method, typed);
     if (amountCents <= 0) return;
+    // ADR 0016 §6: the law caps what is paid in cash (art. D112-3 CMF): refused, not warned.
+    if (method === 'CASH') {
+      const cashProblem = cashPaymentProblem(
+        payments.filter((p) => p.method === 'CASH').reduce((s, p) => s + p.amountCents, 0) +
+          amountCents,
+      );
+      if (cashProblem) return setError(cashProblem);
+    }
     setPayments([
       ...payments,
       {

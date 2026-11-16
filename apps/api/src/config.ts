@@ -40,6 +40,11 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost'),
   /** Shared secret of the backup scripts, which report their result to the API (optional). */
   BACKUP_REPORT_TOKEN: z.string().min(16).optional(),
+  /**
+   * ADR 0016: key of the HMAC that signs every entry of the till's journal. Kept outside the
+   * database (in /etc/episoft/): whoever rewrites the database cannot sign what they rewrote.
+   */
+  FISCAL_SEAL_KEY: z.string().min(32).optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

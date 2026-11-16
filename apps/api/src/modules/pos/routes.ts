@@ -8,6 +8,7 @@ import {
   cashSessionAlias,
   entry,
   member,
+  periodClosing,
   posDevice,
   sale,
   saleLine,
@@ -43,6 +44,7 @@ import { euros, queueSaleReceipt } from '../../lib/receipts';
 import { loadSettings } from '../admin/settings-store';
 import { assertCashier, checkCashierPin, checkMemberPassword } from '../../lib/till-cashier';
 import { sessionSummary, type SessionSummary } from './closing';
+import { appendJournal } from '../fiscal/journal';
 import { listOperations } from './operations';
 import { closingPdf } from './closing-pdf';
 import { generateSessionEntry, regularizeSessionEntry } from '../accounting/auto';
@@ -544,6 +546,21 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
         .set({ status: 'CLOSED', closedAt: sql`clock_timestamp()`, closedBy: closerId })
         .where(eq(cashSession.id, s.id))
         .returning({ closedAt: cashSession.closedAt })) as [{ closedAt: Date }];
+      await appendJournal(tx, {
+        kind: 'SESSION_CLOSE',
+        refType: 'session',
+        refId: s.id,
+        at: closedAt,
+        data: {
+          id: s.id,
+          closedBy: closerId,
+          closedAt: closedAt.toISOString(),
+          expectedCash: values.expectedCash,
+          countedCash: values.countedCash,
+          difference: values.difference,
+          bankDeposit: values.bankDeposit,
+        },
+      });
       await audit(tx, req, {
         action: 'session.close',
         entity: 'cash_session',
@@ -632,6 +649,17 @@ export const posRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asyn
           .for('update');
         if (!s) throw notFound('Session inconnue.');
         if (s.status !== 'CLOSED') throw conflict('Cette session n’est pas clôturée.');
+        // ADR 0016: a closed day (Z) is final; its sessions are not reopened.
+        const [dayClosed] = await tx
+          .select({ day: periodClosing.periodStart })
+          .from(periodClosing)
+          .innerJoin(sale, eq(sale.accountingDay, periodClosing.periodStart))
+          .where(and(eq(periodClosing.kind, 'DAY'), eq(sale.sessionId, s.id)))
+          .limit(1);
+        if (dayClosed)
+          throw conflict(
+            `La journée du ${dayClosed.day} est clôturée (Z) : sa session ne peut plus être rouverte.`,
+          );
         // R-SES-05: one session open at a time, for the whole shop.
         const other = await tx.query.cashSession.findFirst({
           where: eq(cashSession.status, 'OPEN'),

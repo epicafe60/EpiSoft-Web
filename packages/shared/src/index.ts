@@ -37,6 +37,7 @@ export * from './supplies';
 export * from './supplies-forms';
 export * from './table-export';
 export * from './sync';
+export * from './fiscal';
 export * from './text';
 export * from './till-pin';
 export * from './revert';
