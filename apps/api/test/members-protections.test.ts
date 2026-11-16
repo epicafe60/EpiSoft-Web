@@ -31,6 +31,7 @@ const newMember = {
   newsletter: false,
   username: null,
   householdId: null,
+  privacyNoticeGiven: true,
 };
 
 const create = async (over: object = {}) => {
