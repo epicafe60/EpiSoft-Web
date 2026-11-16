@@ -281,6 +281,20 @@
       "when": 1794757797646,
       "tag": "0039_invoice_free_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794778458182,
+      "tag": "0040_vat_lines_and_regime",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794778468916,
+      "tag": "0041_vat_backfill",
+      "breakpoints": true
     }
   ]
 }

@@ -43,9 +43,9 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   await page.goto('/appros/factures/nouvelle');
   await page.getByLabel('Fournisseur').fill(SEED.honey.supplier);
   await page.getByLabel('Date', { exact: true }).fill('2026-11-02');
-  await page.getByLabel('Total HT (€)').fill('120,50');
+  await page.getByLabel('Taux').selectOption('0.00');
+  await page.getByLabel('HT (€)').fill('120,50');
   await page.getByLabel('TVA (€)').fill('0');
-  await page.getByLabel('Total TTC (€)').fill('120,50');
   // The piece number is required: refused under its field.
   await page.getByRole('button', { name: 'Créer la facture' }).click();
   await expect(page.getByText('N° de pièce requis.')).toBeVisible();
@@ -58,7 +58,7 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   expect(rows).toEqual([{ total_incl: '120.50', total_vat: '0.00' }]);
 });
 
-test('a supplier invoice whose HT, VAT and TTC do not add up is refused', async ({ page }) => {
+test('a supplier invoice whose VAT does not match its rate is refused', async ({ page }) => {
   const piece = `F-${unique()}`;
   await login(page, USERS.admin);
   await page.goto('/appros/factures/nouvelle');
@@ -73,24 +73,15 @@ test('a supplier invoice whose HT, VAT and TTC do not add up is refused', async 
       )
     )[0]!.n;
 
-  // 100 + 5,50 is not 105,49: refused under the TTC field, nothing is saved.
-  await page.getByLabel('Total HT (€)').fill('100');
-  await page.getByLabel('TVA (€)').fill('5,50');
-  await page.getByLabel('Total TTC (€)').fill('105,49');
+  // 5,5 % of 100 is 5,50: a VAT of 9 is refused under the lines, nothing is saved.
+  await page.getByLabel('HT (€)').fill('100');
+  await page.getByLabel('TVA (€)').fill('9');
   await create.click();
-  await expect(page.getByText('Le TTC doit être égal au total HT plus la TVA.')).toBeVisible();
-  expect(await count()).toBe('0');
-
-  // A VAT above 20 % of the HT is refused as well.
-  await page.getByLabel('TVA (€)').fill('30');
-  await page.getByLabel('Total TTC (€)').fill('130');
-  await create.click();
-  await expect(page.getByText('La TVA dépasse 20 % du total HT')).toBeVisible();
+  await expect(page.getByText(/Ligne 1 : la TVA à 5,5 %/)).toBeVisible();
   expect(await count()).toBe('0');
 
   // Corrected, the invoice is saved.
   await page.getByLabel('TVA (€)').fill('5,50');
-  await page.getByLabel('Total TTC (€)').fill('105,50');
   await create.click();
   await expect(page.getByRole('button', { name: 'Enregistrer le règlement' })).toBeVisible();
   expect(await count()).toBe('1');

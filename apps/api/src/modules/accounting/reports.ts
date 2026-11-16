@@ -21,6 +21,8 @@ import {
   centsToDecimal,
   decimalToCents,
   formatEntryNumber,
+  formatVatRate,
+  vatBreakdownIncl,
   incomeStatement,
   reportQuerySchema,
   situation,
@@ -448,6 +450,110 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           { key: 'cumWallet', label: 'Cagnottes cumulées', type: 'money', width: 1.4 },
           { key: 'cumAcc', label: '411000 cumulé', type: 'money', width: 1.4 },
           { key: 'cumGap', label: 'Écart cumulé', type: 'money', width: 1.3 },
+        ],
+        rows,
+      };
+    },
+
+    /**
+     * R-TVA-06: VAT collected on the sales and deductible on the supplier invoices, by rate, for a
+     * period (the CA3 is filled from it). Sales: HT = round(sum TTC / (1 + rate)) per rate, never per
+     * ticket; donations and top-ups of the cagnotte are out of the scope of VAT.
+     */
+    async vat(q) {
+      // A month or a quarter (CA3): explicit dates win over the fiscal year.
+      let from = q.from;
+      let to = q.to;
+      if (q.fiscalYearId && !q.from && !q.to) {
+        const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, q.fiscalYearId));
+        if (!fy) throw notFound('Exercice introuvable.');
+        from = fy.startDate;
+        to = fy.endDate;
+      }
+      const salesRows = await db.execute<{ rate: string; cents: string }>(sql`
+        select l.vat_rate::text as rate, coalesce(sum(l.line_total), 0)::text as cents
+          from app.sale s
+          join app.sale_line l on l.sale_id = s.id
+          join app.product p on p.id = l.product_id
+         where p.code <> '01004'
+           and s.vat_regime = 'LIABLE'
+           and (${from ?? null}::date is null or (s.sold_at at time zone ${tzSql()})::date >= ${from ?? null}::date)
+           and (${to ?? null}::date is null or (s.sold_at at time zone ${tzSql()})::date <= ${to ?? null}::date)
+         group by 1`);
+      const purchaseRows = await db.execute<{ rate: string; excl: string; vat: string }>(sql`
+        select l.rate::text as rate, sum(l.excl)::text as excl, sum(l.vat)::text as vat
+          from app.supplier_invoice_vat_line l
+          join app.supplier_invoice i on i.id = l.invoice_id
+         where i.vat_regime = 'LIABLE'
+           and (${from ?? null}::date is null or i.date >= ${from ?? null}::date)
+           and (${to ?? null}::date is null or i.date <= ${to ?? null}::date)
+         group by 1`);
+      const sales = vatBreakdownIncl(
+        salesRows.rows.map((r) => ({ rate: r.rate, inclCents: decimalToCents(r.cents) })),
+      );
+      const collected = new Map(
+        sales.byRate.map((r) => [r.rate, { excl: r.exclCents, vat: r.vatCents }]),
+      );
+      const deductible = new Map(
+        purchaseRows.rows.map((r) => [
+          Number(r.rate).toFixed(2),
+          { excl: decimalToCents(r.excl), vat: decimalToCents(r.vat) },
+        ]),
+      );
+      const rates = [...new Set([...collected.keys(), ...deductible.keys()])].sort(
+        (a, b) => Number(a) - Number(b),
+      );
+      const sum = { cHt: 0, cVat: 0, dHt: 0, dVat: 0 };
+      const rows = rates.map((rate) => {
+        const c = collected.get(rate) ?? { excl: 0, vat: 0 };
+        const d = deductible.get(rate) ?? { excl: 0, vat: 0 };
+        sum.cHt += c.excl;
+        sum.cVat += c.vat;
+        sum.dHt += d.excl;
+        sum.dVat += d.vat;
+        return cell({
+          rate: formatVatRate(rate),
+          salesBase: money(c.excl),
+          collected: money(c.vat),
+          purchasesBase: money(d.excl),
+          deductible: money(d.vat),
+          balance: money(c.vat - d.vat),
+        });
+      });
+      rows.push(
+        cell(
+          {
+            rate: 'Total',
+            salesBase: money(sum.cHt),
+            collected: money(sum.cVat),
+            purchasesBase: money(sum.dHt),
+            deductible: money(sum.dVat),
+            balance: money(sum.cVat - sum.dVat),
+          },
+          true,
+        ),
+      );
+      const result = sum.cVat - sum.dVat;
+      rows.push(
+        cell(
+          {
+            rate: result >= 0 ? 'TVA à payer' : 'Crédit de TVA',
+            balance: money(Math.abs(result)),
+          },
+          true,
+        ),
+      );
+      return {
+        title: 'TVA collectée et déductible',
+        // Only what was recorded under the LIABLE regime counts; franchise and exempt periods carry no VAT.
+        subtitle: `${await periodLabel(q)} · opérations sous le régime assujetti uniquement · hors dons et cagnotte`,
+        columns: [
+          { key: 'rate', label: 'Taux', type: 'text', width: 1.4 },
+          { key: 'salesBase', label: 'Ventes HT', type: 'money', width: 1.4 },
+          { key: 'collected', label: 'TVA collectée', type: 'money', width: 1.4 },
+          { key: 'purchasesBase', label: 'Achats HT', type: 'money', width: 1.4 },
+          { key: 'deductible', label: 'TVA déductible', type: 'money', width: 1.4 },
+          { key: 'balance', label: 'TVA due (collectée − déductible)', type: 'money', width: 1.8 },
         ],
         rows,
       };

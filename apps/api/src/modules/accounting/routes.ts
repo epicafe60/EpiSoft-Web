@@ -34,6 +34,7 @@ import {
   reverseEntry,
   validateEntries,
 } from './service';
+import { vatRegimeRoutes } from './vat-regime';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
 
@@ -54,6 +55,7 @@ export const accountingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
   { db },
 ) => {
   const compta = { preHandler: app.requireRoles('COMPTA') };
+  await app.register(vatRegimeRoutes, { db });
 
   // --- Chart of accounts (R-CPT-01) --------------------------------------------------------
 

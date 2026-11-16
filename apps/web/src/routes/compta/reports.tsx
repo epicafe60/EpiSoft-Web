@@ -9,6 +9,7 @@ import { Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import { cn } from '@/lib/utils';
 import { QueryError } from '../errors';
+import { useVatRegime } from '@/lib/vat-regime';
 import { useFiscalYears, useJournals } from './queries';
 import type { ReportTableData } from './types';
 
@@ -22,6 +23,7 @@ const REPORTS = [
   { key: 'ledger', label: 'Grand livre' },
   { key: 'wallet-411', label: 'Rapprochement cagnottes / 411000' },
   { key: 'aged-payables', label: 'Dettes fournisseurs par ancienneté' },
+  { key: 'vat', label: 'TVA collectée et déductible (CA3)' },
 ] as const;
 
 /** Editions that cover every fiscal year. */
@@ -29,6 +31,8 @@ const NO_YEAR: string[] = ['aged-payables', 'wallet-411'];
 
 export function ReportsPage() {
   const years = useFiscalYears();
+  // R-TVA-07: no VAT statement unless the association is liable to VAT.
+  const vatApplies = (useVatRegime().data?.current ?? 'LIABLE') === 'LIABLE';
   const journals = useJournals();
   // ?edition=wallet-411 (link from the integrity page) opens that edition directly.
   const [report, setReport] = useState<(typeof REPORTS)[number]['key']>(() => {
@@ -40,10 +44,17 @@ export function ReportsPage() {
   const [accountFrom, setFrom] = useState('');
   const [accountTo, setTo] = useState('');
   const [validatedOnly, setValidatedOnly] = useState(false);
+  const [periodFrom, setPeriodFrom] = useState('');
+  const [periodTo, setPeriodTo] = useState('');
 
   const fy = fiscalYearId || years.data?.[0]?.id || '';
   const params = new URLSearchParams();
   if (fy && !NO_YEAR.includes(report)) params.set('fiscalYearId', fy);
+  if (report === 'vat' && (periodFrom || periodTo)) {
+    params.delete('fiscalYearId');
+    if (periodFrom) params.set('from', periodFrom);
+    if (periodTo) params.set('to', periodTo);
+  }
   if (journalId && report === 'journal') params.set('journalId', journalId);
   if (accountFrom) params.set('accountFrom', accountFrom);
   if (accountTo) params.set('accountTo', accountTo);
@@ -68,7 +79,7 @@ export function ReportsPage() {
               value={report}
               onChange={(e) => setReport(e.target.value as typeof report)}
             >
-              {REPORTS.map((r) => (
+              {REPORTS.filter((r) => r.key !== 'vat' || vatApplies).map((r) => (
                 <option key={r.key} value={r.key}>
                   {r.label}
                 </option>
@@ -93,6 +104,32 @@ export function ReportsPage() {
               </Select>
             )}
           </Field>
+        ) : null}
+        {report === 'vat' ? (
+          <>
+            <Field label="Du" hint="Facultatif : un mois ou un trimestre (CA3)">
+              {(p) => (
+                <Input
+                  {...p}
+                  type="date"
+                  className="w-40"
+                  value={periodFrom}
+                  onChange={(e) => setPeriodFrom(e.target.value)}
+                />
+              )}
+            </Field>
+            <Field label="Au">
+              {(p) => (
+                <Input
+                  {...p}
+                  type="date"
+                  className="w-40"
+                  value={periodTo}
+                  onChange={(e) => setPeriodTo(e.target.value)}
+                />
+              )}
+            </Field>
+          </>
         ) : null}
         {report === 'journal' ? (
           <Field label="Journal">

@@ -3,6 +3,12 @@ import { VAT_RATES } from './catalog';
 import { amountInput } from './forms';
 import { isValidEmail } from './text';
 import { parseAmountToCents } from './money';
+import {
+  invoiceTotalsDecimal,
+  invoiceVatLinesProblem,
+  normalizeVatRate,
+  type VatRegime,
+} from './vat';
 import { milliToDecimal, parseQtyToMilli } from './pos';
 import { parsePrice4, price4ToDecimal } from './supplies';
 
@@ -206,21 +212,19 @@ export const SUPPLIER_PAYMENT_METHOD_LABELS: Record<SupplierPaymentMethod, strin
 };
 
 /**
- * Consistency of the three typed totals of a supplier invoice. They stay free fields (one invoice
- * may mix several VAT rates), but an impossible combination is refused: a non-positive HT, a
- * negative VAT, a TTC different from HT + VAT, or a VAT above the highest French rate (20 %).
+ * R-TVA-03 / R-FAC-01: one line per VAT rate (rate, HT, VAT). The totals HT, VAT and TTC of the
+ * invoice are the sums of the lines, derived by the server (never typed). The VAT of each line must
+ * equal HT x rate within 2 cents, else the invoice is refused.
  */
-export function invoiceTotalsProblem(excl: string, vat: string, incl: string): string | null {
-  const e = parseAmountToCents(excl);
-  const v = parseAmountToCents(vat);
-  const t = parseAmountToCents(incl);
-  if (e === null || v === null || t === null) return null; // reported by the field itself
-  if (e <= 0) return 'Le total HT doit être positif.';
-  if (v < 0) return 'La TVA ne peut pas être négative.';
-  if (e + v !== t) return 'Le TTC doit être égal au total HT plus la TVA.';
-  if (v * 5 > e) return 'La TVA dépasse 20 % du total HT : vérifiez les montants.';
-  return null;
-}
+export const invoiceVatLineSchema = z.object({
+  rate: z
+    .string()
+    .trim()
+    .refine((r) => normalizeVatRate(r) !== null, 'Taux de TVA : 0, 2,1, 5,5, 10 ou 20 %.')
+    .transform((r) => normalizeVatRate(r)!),
+  excl: amountInput,
+  vat: amountInput,
+});
 
 export const invoiceSchema = z
   .object({
@@ -228,19 +232,75 @@ export const invoiceSchema = z
     pieceRef: z.string().trim().min(1, 'N° de pièce requis.').max(60),
     date: isoDate,
     dueDate: isoDate.optional(),
-    totalExcl: amountInput,
-    /** R-FAC-01: the VAT may be 0. */
-    totalVat: amountInput,
-    /** Amount due to the supplier, typed by the team. Not checked against HT + TVA (no rounding warning). */
-    totalIncl: amountInput,
+    /**
+     * Required when the association is liable to VAT; optional otherwise (franchise, exemption: no
+     * VAT is recoverable, then `totalIncl` alone is enough).
+     */
+    vatLines: z.array(invoiceVatLineSchema).max(5).default([]),
+    /** Only without a breakdown (regime other than LIABLE). */
+    totalIncl: amountInput.optional(),
     paymentMethod: z.enum(SUPPLIER_PAYMENT_METHODS).nullable(),
     comment: text(500),
     receiptIds: z.array(z.string().uuid()).max(50).default([]),
   })
   .superRefine((v, ctx) => {
-    const problem = invoiceTotalsProblem(v.totalExcl, v.totalVat, v.totalIncl);
-    if (problem) ctx.addIssue({ code: 'custom', path: ['totalIncl'], message: problem });
+    if (v.vatLines.length === 0) {
+      if (v.totalIncl === undefined)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['vatLines'],
+          message: 'Ajoutez au moins une ligne de TVA (ou le total TTC hors régime assujetti).',
+        });
+      return;
+    }
+    const problem = invoiceVatLinesProblem(v.vatLines);
+    if (problem) ctx.addIssue({ code: 'custom', path: ['vatLines'], message: problem });
   });
+
+export type InvoiceInput = z.infer<typeof invoiceSchema>;
+
+/**
+ * R-TVA-03: the amounts an invoice is saved with, by VAT regime on its date. LIABLE: the breakdown
+ * is required and the totals are its sums. Otherwise (no VAT charged nor recoverable): a breakdown
+ * is optional; without one, the total TTC typed is the whole cost (HT = TTC, VAT 0). Returns an
+ * error message to refuse the invoice.
+ */
+export function resolveInvoiceAmounts(
+  regime: VatRegime,
+  v: Pick<InvoiceInput, 'vatLines' | 'totalIncl'>,
+):
+  | {
+      ok: true;
+      lines: InvoiceInput['vatLines'];
+      totalExcl: string;
+      totalVat: string;
+      totalIncl: string;
+    }
+  | { ok: false; message: string } {
+  if (v.vatLines.length > 0) {
+    const t = invoiceTotalsDecimal(v.vatLines);
+    if (v.totalIncl !== undefined && v.totalIncl !== t.totalIncl)
+      return {
+        ok: false,
+        message: `Le total TTC (${v.totalIncl} €) ne correspond pas à la ventilation (${t.totalIncl} €).`,
+      };
+    return { ok: true, lines: v.vatLines, ...t };
+  }
+  if (regime === 'LIABLE')
+    return {
+      ok: false,
+      message: 'L’association est assujettie à la TVA : ventilez la facture par taux de TVA.',
+    };
+  const incl = v.totalIncl !== undefined ? parseAmountToCents(v.totalIncl) : null;
+  if (incl === null || incl <= 0) return { ok: false, message: 'Le total TTC doit être positif.' };
+  return {
+    ok: true,
+    lines: [],
+    totalExcl: v.totalIncl!,
+    totalVat: '0.00',
+    totalIncl: v.totalIncl!,
+  };
+}
 
 export const invoicePaySchema = z.object({
   date: isoDate,

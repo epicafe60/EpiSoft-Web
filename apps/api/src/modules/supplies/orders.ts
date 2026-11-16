@@ -956,10 +956,10 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             priceChanged &&
             parsePrice4(p.purchasePriceExcl ?? '0') === parsePrice4(l.unitPriceExcl)
           ) {
-            const incl = price4ToDecimal(inclFromExcl4(parsePrice4(c.unitPriceExcl)!, p.vatRate));
+            // R-TVA-02: HT, VAT amount and TTC stay consistent at the product's rate.
             const [after] = await tx
               .update(product)
-              .set({ purchasePriceExcl: c.unitPriceExcl, purchasePriceIncl: incl })
+              .set(purchaseAmountsFor(c.unitPriceExcl, p.vatRate))
               .where(eq(product.id, p.id))
               .returning();
             await tx.insert(priceHistory).values({

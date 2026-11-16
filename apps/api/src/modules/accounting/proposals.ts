@@ -94,27 +94,7 @@ async function planLines(
   for (const p of pays.rows) payments[p.method] = decimalToCents(p.cents);
 
   const a = await accountMap(db);
-  const rev = await db.execute<{ kind: string; account: string | null; cents: string }>(sql`
-    select case when exists (select 1 from app.membership_type mt where mt.product_id = p.id) then 'MEMBERSHIP'
-                when p.code = '01004' then 'DONATION' else 'SALES' end as kind,
-           c.sales_account_number as account,
-           coalesce(sum(l.line_total), 0)::text as cents
-      from app.sale s
-      join app.sale_line l on l.sale_id = s.id
-      join app.product p on p.id = l.product_id
-      left join app.category c on c.id = p.category_id
-     where s.session_id in (${list})
-     group by 1, 2`);
-  const revenue: Record<string, number> = {};
-  for (const r of rev.rows) {
-    const acct =
-      r.kind === 'MEMBERSHIP'
-        ? a.memberships
-        : r.kind === 'DONATION'
-          ? a.donations
-          : (r.account ?? a.sales);
-    revenue[acct] = (revenue[acct] ?? 0) + decimalToCents(r.cents);
-  }
+  const { revenue, vatCollected } = await sessionsRevenue(db, ids, a);
 
   // Top-ups: taken at the till (linked to a session) or, for the history, dated inside the period.
   const tops = await db.execute<{ method: MoneyMethod; cents: string }>(sql`
@@ -131,7 +111,7 @@ async function planLines(
   const diff = await db.execute<{ d: string }>(sql`
     select coalesce(sum(c.difference), 0)::text as d from app.cash_count c where c.session_id in (${list})`);
   const lines = buildSessionEntry(
-    { payments, revenue, topups, cashDifferenceCents: decimalToCents(diff.rows[0]?.d ?? '0') },
+    { payments, revenue, vatCollected, topups, cashDifferenceCents: decimalToCents(diff.rows[0]?.d ?? '0') },
     a,
   );
   // Tickets migrated from the old application can carry lines that differ from what was paid

@@ -120,9 +120,7 @@ describe('R-EVO-20 supplier invoice VAT', () => {
       supplierId: s!.id,
       pieceRef: 'F-100',
       date: '2026-10-01',
-      totalExcl: '100.00',
-      totalVat: '5,50',
-      totalIncl: '105.50',
+      vatLines: [{ rate: '5.5', excl: '100.00', vat: '5,50' }],
       paymentMethod: null,
       comment: null,
       receiptIds: [],
@@ -145,12 +143,12 @@ describe('R-EVO-20 supplier invoice VAT', () => {
       method: 'PUT',
       url: `/api/v1/supplier-invoices/${id}`,
       headers: h,
-      payload: { ...body, totalVat: '7.00', totalIncl: '107.00' },
+      payload: { ...body, vatLines: [{ rate: '10', excl: '100', vat: '10' }] },
     });
     expect(put.statusCode, put.body).toBe(200);
-    expect(await read()).toMatchObject({ totalVat: '7.00', totalIncl: '107.00' });
+    expect(await read()).toMatchObject({ totalVat: '10.00', totalIncl: '110.00' });
     const list = (await call('GET', '/supplier-invoices')).json() as { totalVat?: string }[];
-    expect(list[0]?.totalVat).toBe('7.00');
+    expect(list[0]?.totalVat).toBe('10.00');
   });
 });
 
@@ -281,9 +279,7 @@ describe('R-EVO-11 correcting a validated receipt', () => {
       supplierId: s!.id,
       pieceRef: 'FK-1',
       date: '2026-10-02',
-      totalExcl: '11.00',
-      totalVat: '0.60',
-      totalIncl: '11.60',
+      vatLines: [{ rate: '5.50', excl: '11.00', vat: '0.60' }],
       paymentMethod: 'TRANSFER',
       comment: null,
       receiptIds: [receiptId],

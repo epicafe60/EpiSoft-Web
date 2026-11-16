@@ -10,6 +10,7 @@ import {
   media,
   supplier,
   supplierInvoice,
+  supplierInvoiceVatLine,
   type Db,
   type Tx,
 } from '@episoft/db';
@@ -20,6 +21,7 @@ import {
   invoicePaySchema,
   invoiceDueDateFor,
   invoiceSchema,
+  resolveInvoiceAmounts,
   orderTotals,
   parsePrice4,
   parseQtyToMilli,
@@ -33,6 +35,7 @@ import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { payInvoice, syncInvoiceEntry } from '../accounting/auto';
 import { eur } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { regimeOn } from '../../lib/vat-regime';
 import { loadSettings } from '../admin/settings-store';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
@@ -214,8 +217,18 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       db,
       links.map((l) => l.id),
     );
+    const vatLines = await db
+      .select({
+        rate: supplierInvoiceVatLine.rate,
+        excl: supplierInvoiceVatLine.excl,
+        vat: supplierInvoiceVatLine.vat,
+      })
+      .from(supplierInvoiceVatLine)
+      .where(eq(supplierInvoiceVatLine.invoiceId, inv.id))
+      .orderBy(supplierInvoiceVatLine.rate);
     return {
       ...inv,
+      vatLines,
       createdAt: inv.createdAt.toISOString(),
       updatedAt: inv.updatedAt.toISOString(),
       dueReminderSentAt: inv.dueReminderSentAt?.toISOString() ?? null,
@@ -256,14 +269,21 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       if (rs.length !== b.receiptIds.length || rs.some((r) => r.supplierId !== s.id))
         throw badRequest('Réception d’un autre fournisseur.');
     }
+    const regime = await regimeOn(tx, b.date);
+    const resolved = resolveInvoiceAmounts(regime, b);
+    if (!resolved.ok) throw badRequest(resolved.message);
+    const amounts = resolved;
     const values = {
       supplierId: s.id,
       pieceRef: b.pieceRef,
       date: b.date,
       dueDate,
-      totalExcl: b.totalExcl,
-      totalVat: b.totalVat,
-      totalIncl: b.totalIncl,
+      // R-TVA-03: the totals are derived (the sums of the VAT lines), never typed freely.
+      totalExcl: amounts.totalExcl,
+      totalVat: amounts.totalVat,
+      totalIncl: amounts.totalIncl,
+      // R-TVA-07: the regime of the invoice date is kept with the invoice.
+      vatRegime: regime,
       paymentMethod: b.paymentMethod,
       comment: b.comment,
     };
@@ -273,6 +293,16 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           .insert(supplierInvoice)
           .values({ ...values, createdBy: userId })
           .returning();
+    await tx.delete(supplierInvoiceVatLine).where(eq(supplierInvoiceVatLine.invoiceId, inv!.id));
+    if (amounts.lines.length)
+      await tx.insert(supplierInvoiceVatLine).values(
+        amounts.lines.map((l) => ({
+          invoiceId: inv!.id,
+          rate: l.rate,
+          excl: l.excl,
+          vat: l.vat,
+        })),
+      );
     await tx.delete(invoiceReceipt).where(eq(invoiceReceipt.invoiceId, inv!.id));
     if (b.receiptIds.length)
       await tx
@@ -289,7 +319,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         action: 'invoice.create',
         entity: 'supplier_invoice',
         entityId: inv.id,
-        after: inv,
+        after: { ...inv, vatLines: req.body.vatLines },
       });
       return { id: inv.id, duplicates: await duplicatesOf(tx, inv) };
     }),
@@ -314,7 +344,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           entity: 'supplier_invoice',
           entityId: inv.id,
           before,
-          after: inv,
+          after: { ...inv, vatLines: req.body.vatLines },
         });
         return { id: inv.id };
       }),

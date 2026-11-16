@@ -150,6 +150,9 @@ export interface InvoiceDetail {
   totalExcl: string;
   totalVat: string;
   totalIncl: string;
+  /** R-TVA-03: the breakdown by rate (empty for an invoice entered without one). */
+  vatLines: { rate: string; excl: string; vat: string }[];
+  vatRegime: 'LIABLE' | 'FRANCHISE' | 'EXEMPT';
   status: 'TO_PAY' | 'PAID';
   paymentMethod: SupplierPaymentMethod | null;
   paidAt: string | null;

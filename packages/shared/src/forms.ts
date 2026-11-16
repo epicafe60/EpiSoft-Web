@@ -14,6 +14,7 @@ import {
 import { centsToDecimal, parseAmountToCents } from './money';
 import { isValidEan, parseQtyToMilli, milliToDecimal } from './pos';
 import { patchOf } from './patch';
+import { purchaseVatProblem } from './vat';
 import { isValidEmail } from './text';
 
 // Back-office forms (members, households, catalogue). Shared by the web forms and the API.
@@ -139,26 +140,23 @@ const purchaseAmountInput = z
   .transform((s) => price4ToDecimal(parsePrice4(s)!));
 
 /**
- * Consistency of the three purchase amounts typed on a product sheet (R-PRD-04). They stay free
- * fields, but an impossible combination is refused: PA TTC below PA HT, a VAT above the highest
- * French rate (20 % of the PA HT), or, when the three are given, a PA TTC that is not PA HT plus
+ * Consistency of the three purchase amounts typed on a product sheet (R-PRD-04, R-TVA-02). They
+ * stay typed fields, but an impossible combination is refused: PA TTC below PA HT, a VAT amount
+ * that is not PA HT x the product's rate (one cent tolerance), or a PA TTC that is not PA HT plus
  * the VAT amount. Empty fields are not checked.
  */
 export function purchasePricesProblem(prices: {
   purchasePriceExcl?: string | null;
   purchaseVatAmount?: string | null;
   purchasePriceIncl?: string | null;
+  vatRate: string;
 }): string | null {
-  const excl = prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null;
-  const vat = prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null;
-  const incl = prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null;
-  if (excl !== null && incl !== null && incl < excl)
-    return 'Le PA TTC ne peut pas être inférieur au PA HT.';
-  if (excl !== null && vat !== null && vat * 5 > excl + 5)
-    return 'Le montant de TVA dépasse 20 % du PA HT : vérifiez les montants.';
-  if (excl !== null && vat !== null && incl !== null && excl + vat !== incl)
-    return 'Le PA TTC doit être égal au PA HT plus le montant de TVA.';
-  return null;
+  return purchaseVatProblem({
+    excl4: prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null,
+    vat4: prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null,
+    incl4: prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null,
+    rate: prices.vatRate,
+  });
 }
 
 export const productFields = {
