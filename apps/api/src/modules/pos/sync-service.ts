@@ -1239,7 +1239,9 @@ async function returnSale(
   const adminAtTill =
     hasAnyRole(ctx.req.user!.roles, ['ADMIN']) && p.cashierId === ctx.req.user!.id;
   if (original.sessionId !== session.id && !adminAtTill)
-    throw new Rejected('Seul un administrateur peut rembourser un ticket d’une session précédente.');
+    throw new Rejected(
+      'Seul un administrateur peut rembourser un ticket d’une session précédente.',
+    );
 
   const origLines = await tx
     .select()

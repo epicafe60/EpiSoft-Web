@@ -187,7 +187,9 @@ export async function closePeriod(tx: DbOrTx, input: ClosePeriodInput) {
       const months = [...new Set(days.map((d) => `${d.slice(0, 7)}-01`))];
       const missing = months.filter((m) => !closed.has(m));
       if (missing.length)
-        throw conflict(`Clôturez d’abord les mois : ${missing.map((m) => m.slice(0, 7)).join(', ')}.`);
+        throw conflict(
+          `Clôturez d’abord les mois : ${missing.map((m) => m.slice(0, 7)).join(', ')}.`,
+        );
     }
     totals = computePeriodTotals(await closingDocs(tx, start, end));
     // A month or a year does not add to the perpetual total: it carries the one of its last day.

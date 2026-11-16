@@ -80,7 +80,11 @@ export async function checkTillSeal(
     .select({ id: sale.id })
     .from(sale)
     .where(
-      and(eq(sale.deviceId, deviceId), eq(sale.registerSeq, seal.seq), sql`${sale.id} <> ${saleId}`),
+      and(
+        eq(sale.deviceId, deviceId),
+        eq(sale.registerSeq, seal.seq),
+        sql`${sale.id} <> ${saleId}`,
+      ),
     )
     .limit(1);
   if (dup)
@@ -92,7 +96,11 @@ export async function checkTillSeal(
   if (seal.seq === 1)
     return seal.prev === GENESIS_HASH
       ? { ...base, tillSealStatus: 'OK' }
-      : flag('BROKEN_LINK', 'SEAL_BROKEN_LINK', 'Le premier ticket du poste ne part pas de l’origine.');
+      : flag(
+          'BROKEN_LINK',
+          'SEAL_BROKEN_LINK',
+          'Le premier ticket du poste ne part pas de l’origine.',
+        );
   const [before] = await tx
     .select({ hash: sale.tillHash })
     .from(sale)

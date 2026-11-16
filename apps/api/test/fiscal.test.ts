@@ -84,7 +84,10 @@ const api = (method: 'GET' | 'POST', url: string, payload?: object) =>
   t.app.inject({ method, url: `/api/v1${url}`, headers: till.admin, payload });
 
 const forceClose = async () =>
-  expect((await api('POST', `/pos/sessions/${till.sessionId}/force-close`, { comment: 'test' })).statusCode).toBe(200);
+  expect(
+    (await api('POST', `/pos/sessions/${till.sessionId}/force-close`, { comment: 'test' }))
+      .statusCode,
+  ).toBe(200);
 
 describe('the till seals its tickets (§1)', () => {
   it('records a sealed ticket with its register number and chain, and chains it in the journal', async () => {
@@ -97,8 +100,16 @@ describe('the till seals its tickets (§1)', () => {
     expect(res[0]!.warnings).toEqual([]);
     const ra = await rowOf(a.id);
     const rb = await rowOf(b.id);
-    expect(ra).toMatchObject({ register_seq: 1, till_seal_status: 'OK', provisional_number: 'CAISSE1-000001' });
-    expect(rb).toMatchObject({ register_seq: 2, till_prev_hash: ra.till_hash, till_seal_status: 'OK' });
+    expect(ra).toMatchObject({
+      register_seq: 1,
+      till_seal_status: 'OK',
+      provisional_number: 'CAISSE1-000001',
+    });
+    expect(rb).toMatchObject({
+      register_seq: 2,
+      till_prev_hash: ra.till_hash,
+      till_seal_status: 'OK',
+    });
     const journal = await t.db.execute<{ kind: string; seq: number }>(
       sql`select seq, kind from app.fiscal_journal order by seq`,
     );
@@ -261,7 +272,9 @@ describe('period closings (§3)', () => {
     const { p, reg } = await soldAndClosedDay();
     await forceClose();
     const day = today();
-    expect((await api('POST', '/fiscal/closings', { kind: 'DAY', start: day })).statusCode).toBe(200);
+    expect((await api('POST', '/fiscal/closings', { kind: 'DAY', start: day })).statusCode).toBe(
+      200,
+    );
     const late = await sealedSale(reg, [{ productId: p.id, unitPrice: '2.00' }], '2.00');
     const [r] = await till.push([late]);
     expect(r!.status).toBe('OK');
@@ -298,7 +311,12 @@ describe('period closings (§3)', () => {
     await forceClose();
     const day = today();
     const z = (await api('POST', '/fiscal/closings', { kind: 'DAY', start: day })).json();
-    expect(z).toMatchObject({ tickets: 2, cancellations: 1, netTotal: '3.00', grandTotal: '13.00' });
+    expect(z).toMatchObject({
+      tickets: 2,
+      cancellations: 1,
+      netTotal: '3.00',
+      grandTotal: '13.00',
+    });
   });
 
   it('refuses a month before it is over, or with a day left open', async () => {
@@ -307,7 +325,9 @@ describe('period closings (§3)', () => {
     const res = await api('POST', '/fiscal/closings', { kind: 'MONTH', start: month });
     expect(res.statusCode).toBe(409);
     expect(res.json().detail).toMatch(/pas terminée/);
-    expect((await api('POST', '/fiscal/closings', { kind: 'MONTH', start: '2026-11-15' })).statusCode).toBe(409);
+    expect(
+      (await api('POST', '/fiscal/closings', { kind: 'MONTH', start: '2026-11-15' })).statusCode,
+    ).toBe(409);
   });
 
   it('closes by itself the days gone by, in order, once their drawers are closed', async () => {
@@ -325,7 +345,9 @@ describe('period closings (§3)', () => {
   it('does not reopen the session of a closed day', async () => {
     await soldAndClosedDay();
     await forceClose();
-    expect((await api('POST', '/fiscal/closings', { kind: 'DAY', start: today() })).statusCode).toBe(200);
+    expect(
+      (await api('POST', '/fiscal/closings', { kind: 'DAY', start: today() })).statusCode,
+    ).toBe(200);
     const res = await api('POST', `/pos/sessions/${till.sessionId}/reopen`);
     expect(res.statusCode).toBe(409);
     expect(res.json().detail).toMatch(/clôturée \(Z\)/);
@@ -336,7 +358,11 @@ describe('credit notes (§5)', () => {
   async function ticket(unitPrice = '10.00', qty = '3') {
     const p = await addProduct(t.db, { stockQty: '20' });
     const reg = register();
-    const sale = await sealedSale(reg, [{ productId: p.id, qty, unitPrice }], (Number(unitPrice) * Number(qty)).toFixed(2));
+    const sale = await sealedSale(
+      reg,
+      [{ productId: p.id, qty, unitPrice }],
+      (Number(unitPrice) * Number(qty)).toFixed(2),
+    );
     await till.push([sale]);
     return { p, reg, sale };
   }
@@ -365,8 +391,11 @@ describe('credit notes (§5)', () => {
     })) as Promise<Extract<SealedOp, { kind: 'SALE_RETURN' }>>;
   const stock = async (id: string) =>
     Number(
-      (await t.db.execute<{ s: string }>(sql`select stock_qty::text as s from app.product where id = ${id}`))
-        .rows[0]!.s,
+      (
+        await t.db.execute<{ s: string }>(
+          sql`select stock_qty::text as s from app.product where id = ${id}`,
+        )
+      ).rows[0]!.s,
     );
 
   it('gives back some of the lines as a negative document linked to the ticket', async () => {
@@ -384,9 +413,13 @@ describe('credit notes (§5)', () => {
       till_seal_status: 'OK',
     });
     expect(await stock(p.id)).toBe(18);
-    const pay = await t.db.execute(sql`select amount::text from app.sale_payment where sale_id = ${op.payload.returnSaleId}`);
+    const pay = await t.db.execute(
+      sql`select amount::text from app.sale_payment where sale_id = ${op.payload.returnSaleId}`,
+    );
     expect(pay.rows[0]).toMatchObject({ amount: '-10.00' });
-    const audit = await t.db.execute(sql`select count(*)::int as n from app.audit_log where action = 'sale.return'`);
+    const audit = await t.db.execute(
+      sql`select count(*)::int as n from app.audit_log where action = 'sale.return'`,
+    );
     expect(audit.rows[0]).toMatchObject({ n: 1 });
     await expectIntegrity(t.db);
   });
@@ -396,7 +429,9 @@ describe('credit notes (§5)', () => {
     const op = await returnOp(reg, sale.id, { restock: false });
     expect((await till.push([op]))[0]!.status).toBe('OK');
     expect(await stock(p.id)).toBe(17);
-    const loss = await t.db.execute(sql`select count(*)::int as n from app.stock_movement where kind = 'LOSS' and source_id = ${op.payload.returnSaleId}`);
+    const loss = await t.db.execute(
+      sql`select count(*)::int as n from app.stock_movement where kind = 'LOSS' and source_id = ${op.payload.returnSaleId}`,
+    );
     expect(loss.rows[0]).toMatchObject({ n: 1 });
     await expectIntegrity(t.db);
   });
@@ -481,9 +516,13 @@ describe('duplicata (§4)', () => {
     expect(res.map((r) => r.status)).toEqual(['OK', 'OK']);
     const copies = await t.db.execute(sql`select copy_no from app.ticket_reprint order by copy_no`);
     expect(copies.rows.map((r) => r.copy_no)).toEqual([1, 2]);
-    const logged = await t.db.execute(sql`select count(*)::int as n from app.audit_log where action = 'sale.reprint'`);
+    const logged = await t.db.execute(
+      sql`select count(*)::int as n from app.audit_log where action = 'sale.reprint'`,
+    );
     expect(logged.rows[0]).toMatchObject({ n: 2 });
-    const chained = await t.db.execute(sql`select count(*)::int as n from app.fiscal_journal where kind = 'DUPLICATA'`);
+    const chained = await t.db.execute(
+      sql`select count(*)::int as n from app.fiscal_journal where kind = 'DUPLICATA'`,
+    );
     expect(chained.rows[0]).toMatchObject({ n: 2 });
     expect(await refusedToAppRole(sql`delete from app.ticket_reprint`)).toBe('23000');
     await expectIntegrity(t.db);
@@ -526,7 +565,9 @@ describe('the archive (§8)', () => {
     (archive.sections.sales[0] as { total: string }).total = '0.01';
     const bad = await api('POST', '/admin/fiscal/archive/verify', archive as unknown as object);
     expect(bad.json().ok).toBe(false);
-    const audited = await t.db.execute(sql`select count(*)::int as n from app.audit_log where action = 'fiscal.archive'`);
+    const audited = await t.db.execute(
+      sql`select count(*)::int as n from app.audit_log where action = 'fiscal.archive'`,
+    );
     expect(audited.rows[0]).toMatchObject({ n: 1 });
   });
 });

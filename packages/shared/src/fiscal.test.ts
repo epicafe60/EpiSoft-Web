@@ -106,9 +106,9 @@ describe('the till seal (offline, §1)', () => {
     const tampered = sale({ total: '0.50' });
     expect(await tillSealIsConsistent(tampered, seal)).toBe(false);
     // The number printed must be the one the seal counts.
-    expect(
-      await tillSealIsConsistent(sale({ provisionalNumber: 'CAISSE1-000009' }), seal),
-    ).toBe(false);
+    expect(await tillSealIsConsistent(sale({ provisionalNumber: 'CAISSE1-000009' }), seal)).toBe(
+      false,
+    );
   });
 
   it('chains the documents of a register: each one covers the previous hash', async () => {
@@ -128,7 +128,13 @@ async function chain(n: number, key?: string): Promise<JournalRow[]> {
   const rows: JournalRow[] = [];
   let prevHash = GENESIS_HASH;
   for (let seq = 1; seq <= n; seq++) {
-    const r = { seq, at: `2026-11-15T10:0${seq}:00.000Z`, kind: 'SALE', data: { n: seq }, prevHash };
+    const r = {
+      seq,
+      at: `2026-11-15T10:0${seq}:00.000Z`,
+      kind: 'SALE',
+      data: { n: seq },
+      prevHash,
+    };
     const hash = await journalHash(r);
     rows.push({ ...r, hash, signature: key ? await hmacSha256Hex(key, hash) : null });
     prevHash = hash;
@@ -276,10 +282,9 @@ describe('period totals and the perpetual grand total (§3)', () => {
 describe('the archive (§8)', () => {
   const key = 'a'.repeat(32);
   async function archive() {
-    const sections = Object.fromEntries(ARCHIVE_SECTIONS.map((s) => [s, [] as unknown[]])) as Record<
-      (typeof ARCHIVE_SECTIONS)[number],
-      unknown[]
-    >;
+    const sections = Object.fromEntries(
+      ARCHIVE_SECTIONS.map((s) => [s, [] as unknown[]]),
+    ) as Record<(typeof ARCHIVE_SECTIONS)[number], unknown[]>;
     sections.sales = [{ id: 's1', total: '5' }];
     sections.journal = await chain(3, key);
     return buildArchive(
@@ -306,10 +311,12 @@ describe('the archive (§8)', () => {
     expect((await verifyArchive(cut, key)).ok).toBe(false);
 
     const forged = structuredClone(edited);
-    forged.manifest.sha256.sales = (await buildArchive(
-      { ...edited.sections },
-      { generatedAt: edited.generatedAt, from: '', to: '' },
-    )).manifest.sha256.sales;
+    forged.manifest.sha256.sales = (
+      await buildArchive(
+        { ...edited.sections },
+        { generatedAt: edited.generatedAt, from: '', to: '' },
+      )
+    ).manifest.sha256.sales;
     const v = await verifyArchive(forged, key);
     expect(v.ok).toBe(false);
     expect(v.problems.join(' ')).toMatch(/signature de l’archive invalide/);

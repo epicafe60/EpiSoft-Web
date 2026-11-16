@@ -200,9 +200,17 @@ export async function verifyJournalChain(
           detail: `le rang ${r.seq} suit le rang ${prev.seq} : il manque des entrées`,
         });
       if (r.prevHash !== prev.hash)
-        breaks.push({ seq: r.seq, problem: 'LINK', detail: 'l’empreinte précédente ne correspond pas' });
+        breaks.push({
+          seq: r.seq,
+          problem: 'LINK',
+          detail: 'l’empreinte précédente ne correspond pas',
+        });
     } else if (opts.startPrev !== undefined && r.prevHash !== opts.startPrev) {
-      breaks.push({ seq: r.seq, problem: 'LINK', detail: 'la première entrée ne suit pas l’origine' });
+      breaks.push({
+        seq: r.seq,
+        problem: 'LINK',
+        detail: 'la première entrée ne suit pas l’origine',
+      });
     }
     if ((await journalHash(r)) !== r.hash)
       breaks.push({
@@ -335,7 +343,9 @@ export function computePeriodTotals(docs: readonly ClosingDoc[]): PeriodTotals {
     byVat: [...vat.entries()]
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([rate, c]) => ({ rate, ttc: centsToDecimal(c) })),
-    byMethod: Object.fromEntries([...methods.entries()].sort().map(([m, c]) => [m, centsToDecimal(c)])),
+    byMethod: Object.fromEntries(
+      [...methods.entries()].sort().map(([m, c]) => [m, centsToDecimal(c)]),
+    ),
     firstNumber: numbers[0] ?? null,
     lastNumber: numbers[numbers.length - 1] ?? null,
   };
@@ -417,7 +427,9 @@ export async function verifyArchive(
       continue;
     }
     if (rows.length !== archive.manifest.counts[s])
-      problems.push(`section « ${s} » : ${rows.length} lignes au lieu de ${archive.manifest.counts[s]}`);
+      problems.push(
+        `section « ${s} » : ${rows.length} lignes au lieu de ${archive.manifest.counts[s]}`,
+      );
     if ((await sha256Hex(canonicalJson(rows))) !== archive.manifest.sha256[s])
       problems.push(`section « ${s} » : le contenu ne correspond plus à son empreinte`);
   }

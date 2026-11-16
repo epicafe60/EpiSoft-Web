@@ -101,7 +101,8 @@ export async function fiscalFindings(db: Db): Promise<FiscalFinding[]> {
     } else if (canonicalJson(now) !== canonicalJson(j.data)) {
       f01.push({
         ref: String((j.data as { number?: string }).number ?? `entrée ${j.seq}`),
-        detail: 'le ticket ne correspond plus à son scellé (montant, ligne, paiement ou date modifié)',
+        detail:
+          'le ticket ne correspond plus à son scellé (montant, ligne, paiement ou date modifié)',
         link: link(j.refId),
       });
     }
@@ -114,7 +115,11 @@ export async function fiscalFindings(db: Db): Promise<FiscalFinding[]> {
             and not exists (select 1 from app.fiscal_journal j where j.ref_type = 'sale' and j.ref_id = sale.id)`,
     );
     for (const r of unsealed.rows)
-      f01.push({ ref: r.number, detail: 'ticket enregistré sans scellé dans le journal', link: link(r.id) });
+      f01.push({
+        ref: r.number,
+        detail: 'ticket enregistré sans scellé dans le journal',
+        link: link(r.id),
+      });
   }
   out.push({
     id: 'FIS-01',
@@ -164,7 +169,11 @@ export async function fiscalFindings(db: Db): Promise<FiscalFinding[]> {
     const ref = `${c.kind} ${c.periodStart}`;
     const totals = computePeriodTotals(await closingDocs(db, c.periodStart, c.periodEnd));
     if (canonicalJson(totals) !== canonicalJson(c.totals))
-      f04.push({ ref, detail: 'les totaux ne correspondent plus aux tickets de la période', link: null });
+      f04.push({
+        ref,
+        detail: 'les totaux ne correspondent plus aux tickets de la période',
+        link: null,
+      });
     const [late] = (
       await db.execute<{ n: number }>(
         sql`select count(*)::int as n from app.sale

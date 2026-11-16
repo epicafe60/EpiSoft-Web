@@ -1,11 +1,5 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import {
-  fiscalJournal,
-  sale,
-  saleLine,
-  salePayment,
-  type DbOrTx,
-} from '@episoft/db';
+import { fiscalJournal, sale, saleLine, salePayment, type DbOrTx } from '@episoft/db';
 import {
   GENESIS_HASH,
   hmacSha256Hex,

@@ -43,8 +43,8 @@ export async function sessionSummary(db: DbOrTx, sessionId: string): Promise<Ses
 
   const [counts] = await db
     .select({
-      sales: sql<number>`count(*) filter (where ${sale.cancelsSaleId} is null)::int`,
-      cancellations: sql<number>`count(*) filter (where ${sale.cancelsSaleId} is not null)::int`,
+      sales: sql<number>`count(*) filter (where ${sale.cancelsSaleId} is null and ${sale.returnsSaleId} is null)::int`,
+      cancellations: sql<number>`count(*) filter (where ${sale.cancelsSaleId} is not null or ${sale.returnsSaleId} is not null)::int`,
       total: sql<string>`coalesce(sum(${sale.total}), 0)::numeric(12,2)::text`,
     })
     .from(sale)

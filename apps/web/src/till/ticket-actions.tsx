@@ -74,7 +74,9 @@ export function TicketActions({
   const [error, setError] = useState<string | null>(null);
   const sessionId = meta.session?.id;
 
-  const methods = [...new Set<PaymentMethod>([...paidWith, ...(hasMember ? ['WALLET' as const] : [])])];
+  const methods = [
+    ...new Set<PaymentMethod>([...paidWith, ...(hasMember ? ['WALLET' as const] : [])]),
+  ];
 
   const reprint = async () => {
     if (!sessionId) return;

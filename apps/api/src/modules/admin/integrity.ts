@@ -594,7 +594,11 @@ export async function runIntegrityChecks(db: Db): Promise<IntegrityReport> {
       severity: 'error',
       count: 1,
       samples: [
-        { ref: 'contrôle', detail: `Échec de la vérification : ${(e as Error).message}`, link: null },
+        {
+          ref: 'contrôle',
+          detail: `Échec de la vérification : ${(e as Error).message}`,
+          link: null,
+        },
       ],
       list: null,
       fix: null,
@@ -709,7 +713,9 @@ export const integrityRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
     async (req) => {
       const check =
         INTEGRITY_CHECKS.find((c) => c.id === req.body.checkId) ??
-        (req.body.checkId === 'FIS-05' || req.body.checkId === 'FIS-06' || req.body.checkId === 'FIS-07'
+        (req.body.checkId === 'FIS-05' ||
+        req.body.checkId === 'FIS-06' ||
+        req.body.checkId === 'FIS-07'
           ? { id: req.body.checkId, severity: 'warning' as const }
           : undefined);
       if (!check) throw notFound('Contrôle inconnu.');

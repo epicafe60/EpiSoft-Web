@@ -57,8 +57,18 @@ describe('enqueueSealed', () => {
 
   it('seals each document on top of the previous one, and the seal holds', async () => {
     const db = newDb();
-    const a = await enqueueSealed('CAISSE1', (x) => sale(id(1), x.deviceSeq, x.number), undefined, db);
-    const b = await enqueueSealed('CAISSE1', (x) => sale(id(2), x.deviceSeq, x.number), undefined, db);
+    const a = await enqueueSealed(
+      'CAISSE1',
+      (x) => sale(id(1), x.deviceSeq, x.number),
+      undefined,
+      db,
+    );
+    const b = await enqueueSealed(
+      'CAISSE1',
+      (x) => sale(id(2), x.deviceSeq, x.number),
+      undefined,
+      db,
+    );
     expect(a.payload.seal).toMatchObject({ seq: 1, prev: GENESIS_HASH });
     expect(b.payload.seal).toMatchObject({ seq: 2, prev: a.payload.seal!.hash });
     expect(await tillSealIsConsistent(a, a.payload.seal!)).toBe(true);
@@ -80,7 +90,12 @@ describe('enqueueSealed', () => {
       ),
     ).rejects.toThrow('disque plein');
     // The number of the failed ticket is given to the next one: no gap.
-    const next = await enqueueSealed('CAISSE1', (x) => sale(id(3), x.deviceSeq, x.number), undefined, db);
+    const next = await enqueueSealed(
+      'CAISSE1',
+      (x) => sale(id(3), x.deviceSeq, x.number),
+      undefined,
+      db,
+    );
     expect(next.payload.provisionalNumber).toBe('CAISSE1-000002');
     expect(await db.outbox.count()).toBe(2);
   });
