@@ -124,6 +124,11 @@ export const receiptSchema = z.object({
         unitPriceExcl: price4Input,
         /** R-STK-07: best-before date of the received batch, tracked on the stock page. */
         bestBefore: isoDate.nullish(),
+        /**
+         * Update the product sheet with this received price (PA HT, VAT, PA TTC). Absent or
+         * false: the sheet is never touched, the real cost stays on the receipt line only.
+         */
+        updateProductPrice: z.boolean().default(false),
       }),
     )
     .min(1, 'Aucune quantité reçue.')
