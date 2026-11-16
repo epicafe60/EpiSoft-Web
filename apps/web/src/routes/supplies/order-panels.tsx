@@ -702,7 +702,8 @@ export function ReceiveDialog({
                       </span>
                       {l.updateProductPrice && newMargin ? (
                         <span className="block text-xs text-muted-foreground">
-                          Marge au PV {euro(l.salePrice)} : {newMargin.ratePct.toLocaleString('fr-FR')} %
+                          Marge au PV {euro(l.salePrice)} :{' '}
+                          {newMargin.ratePct.toLocaleString('fr-FR')} %
                           {current ? ` (avant ${current.ratePct.toLocaleString('fr-FR')} %)` : ''}
                         </span>
                       ) : null}

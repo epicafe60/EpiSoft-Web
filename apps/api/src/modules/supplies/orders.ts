@@ -156,7 +156,6 @@ export async function lastOrderedQty(
   return last;
 }
 
-
 export async function orderDetail(db: Db | Tx, id: string) {
   const o = await db.query.purchaseOrder.findFirst({ where: eq(purchaseOrder.id, id) });
   if (!o) return null;
