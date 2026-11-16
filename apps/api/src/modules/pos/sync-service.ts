@@ -28,7 +28,9 @@ import {
   centsToDecimal,
   decimalToCents,
   hasAnyRole,
+  lineEntryBlocked,
   lineTotalCents,
+  membershipState,
   membershipPeriod,
   milliToDecimal,
   parseQtyToMilli,
@@ -106,6 +108,13 @@ interface Ctx {
 }
 
 const warn = (ctx: Ctx, code: string, message: string) => ctx.warnings.push({ code, message });
+/**
+ * A rule of the association broken by a sale that already happened (offline, ticket printed): it
+ * cannot be refused, so it is recorded as a blocking warning that stays in « À surveiller » until
+ * someone acknowledges it.
+ */
+const warnBlocking = (ctx: Ctx, code: string, message: string) =>
+  ctx.warnings.push({ code, message, severity: 'blocking' });
 
 /**
  * C02: when an operation of a session is written, by the database clock at that very moment, not
@@ -462,6 +471,56 @@ async function noteCashier(
 
 type SalePayload = Extract<SyncOp, { kind: 'SALE' }>['payload'];
 
+/**
+ * Policies of the association (settings of the till) broken by a sale that was made anyway. The
+ * till prevents them with its settings; this is for the ticket that left a stale till or a modified
+ * client: the sale stays, the breach is a blocking warning in « À surveiller ».
+ */
+async function recordPolicyBreaches(
+  ctx: Ctx,
+  t: {
+    lines: { discountCents: number; prod: { id: string } }[];
+    payments: { method: string }[];
+    memberId: string | null;
+    householdId: string | null;
+    isMembershipLine: (productId: string) => boolean;
+    soldDay: string;
+  },
+) {
+  const settings = await loadSettings(ctx.tx);
+  const options = settings['pos.options'];
+  if (!options.discountsEnabled && t.lines.some((l) => l.discountCents > 0))
+    warnBlocking(ctx, 'POLICY_DISCOUNT', 'Remise accordée alors que les remises sont désactivées.');
+  if (!options.allowTransfer && t.payments.some((x) => x.method === 'TRANSFER'))
+    warnBlocking(
+      ctx,
+      'POLICY_TRANSFER',
+      'Règlement par virement alors qu’il est désactivé en caisse.',
+    );
+  const hasMembershipLine = t.lines.some((l) => t.isMembershipLine(l.prod.id));
+  if (!t.memberId && !settings['pos.sellToNonMembers'].enabled)
+    warnBlocking(ctx, 'POLICY_NON_MEMBER', 'Vente à un non-adhérent alors qu’elle est désactivée.');
+  else if (
+    lineEntryBlocked({
+      memberId: t.memberId,
+      hasMembershipLine,
+      requireMemberFirst: options.requireMemberFirst,
+    })
+  )
+    warnBlocking(ctx, 'POLICY_MEMBER_REQUIRED', 'Vente sans adhérent ni adhésion sur le ticket.');
+  if (options.membershipExpiredBlocking && t.householdId && !hasMembershipLine) {
+    const state = membershipState(await currentMembershipEnd(ctx.tx, t.householdId), t.soldDay);
+    if (state !== 'VALID')
+      warnBlocking(
+        ctx,
+        'POLICY_MEMBERSHIP',
+        state === 'EXPIRED'
+          ? 'Vente à un adhérent dont l’adhésion est expirée, alors que cela bloque la vente.'
+          : 'Vente à un foyer sans adhésion, alors que cela bloque la vente.',
+      );
+  }
+}
+
 async function recordSale(
   ctx: Ctx,
   p: SalePayload,
@@ -493,11 +552,14 @@ async function recordSale(
     const discountCents = decimalToCents(l.discount);
     if (unitPriceCents < 0 || discountCents < 0)
       throw new Rejected(`Montant négatif (ligne ${i + 1}).`);
+    // Arithmetic integrity: a discount larger than its line would make a negative line.
+    if (discountCents > Math.round((qtyMilli * unitPriceCents) / 1000))
+      throw new Rejected(`La remise dépasse le montant de la ligne (ligne ${i + 1}).`);
     if (prod.status !== 'ACTIVE')
       warn(ctx, 'PRODUCT_INACTIVE', `${prod.name} n’est plus actif au catalogue.`);
     const catalogCents = decimalToCents(prod.salePrice);
     if (unitPriceCents !== catalogCents) {
-      warn(
+      warnBlocking(
         ctx,
         'PRICE_CHANGED',
         `${prod.name} : prix appliqué ${l.unitPrice} €, catalogue ${prod.salePrice} €.`,
@@ -566,11 +628,19 @@ async function recordSale(
     const m = await tx.query.member.findFirst({ where: eq(member.id, p.memberId) });
     if (!m) throw new Rejected('Adhérent inconnu.');
     if (m.status === 'INACTIVE' || m.status === 'ARCHIVED') {
-      warn(ctx, 'MEMBER_INACTIVE', `${m.firstName} ${m.lastName} n’est plus actif.`);
+      warnBlocking(ctx, 'MEMBER_INACTIVE', `${m.firstName} ${m.lastName} n’est plus actif.`);
     }
     householdId = m.householdId;
     buyer = { firstName: m.firstName, email: m.email, optOut: m.ticketEmailOptOut };
   }
+  await recordPolicyBreaches(ctx, {
+    lines,
+    payments,
+    memberId: p.memberId ?? null,
+    householdId,
+    isMembershipLine: (productId) => types.some((t) => t.productId === productId),
+    soldDay: toShopDate(soldAt),
+  });
   const needsHousehold = payments.some((x) => x.method === 'WALLET' || x.changeToWallet);
   if (needsHousehold && !householdId)
     throw new Rejected('Le paiement par cagnotte exige un adhérent rattaché à un foyer.');

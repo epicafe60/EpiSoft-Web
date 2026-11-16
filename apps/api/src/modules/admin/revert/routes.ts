@@ -12,8 +12,9 @@ import type { Config } from '../../../config';
 import { audit } from '../../../lib/audit';
 import { HttpProblem, conflict, notFound } from '../../../lib/problem';
 import { safeErrorMessage } from '../../../plugins/errors';
+import { refreshTimeZone } from '../settings-store';
 import { policyFor, type Policy, type RevertContext } from './policies';
-import { applyRestore, prepareRestore, type PreparedRestore } from './restore';
+import { applyRestore, assertRestoredValid, prepareRestore, type PreparedRestore } from './restore';
 
 // R-ADM-06: « Annuler cette action » from the journal, for the administrators. The preview runs
 // the undo for real in a transaction that is then rolled back, so what it announces (including a
@@ -120,6 +121,7 @@ export const revertRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       if (!prepared.plan.steps.length)
         throw conflict('Il n’y a plus rien à remettre : les valeurs sont déjà celles d’avant.');
       await applyRestore(tx, prepared.plan.steps);
+      await assertRestoredValid(tx, prepared.plan.steps);
       await notePriceChanges(tx, req.user!.id, prepared.plan.steps);
       message = `${prepared.plan.steps.length} élément(s) remis comme avant.`;
     }
@@ -205,7 +207,7 @@ export const revertRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
     },
     async (req) => {
       try {
-        return await db.transaction(async (tx) => {
+        const done = await db.transaction(async (tx) => {
           // One undo at a time for a given action.
           await tx.execute(
             sql`select pg_advisory_xact_lock(hashtext(${'revert:' + req.params.id}))`,
@@ -225,6 +227,9 @@ export const revertRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             .limit(1);
           return { id: r!.id, message };
         });
+        // An undone setting may be the time zone: the process follows the stored value.
+        await refreshTimeZone(db);
+        return done;
       } catch (err) {
         if (err instanceof HttpProblem) throw err;
         throw conflict(databaseRefusal(err));

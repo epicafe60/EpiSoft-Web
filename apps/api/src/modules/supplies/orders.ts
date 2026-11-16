@@ -30,6 +30,7 @@ import {
   orderTotals,
   parsePrice4,
   parseQtyToMilli,
+  salePriceProblem,
   price4ToDecimal,
   purchasePriceFlag,
   receiptCorrectionSchema,
@@ -376,6 +377,19 @@ export async function recordReceipt(
 ): Promise<{ id: string; number: string; warnings: string[] }> {
   const thresholds = (await loadSettings(tx))['controls.thresholds'];
   const warnings: string[] = [];
+  // The same order line cannot be received twice in one receipt.
+  const seenLines = new Set<string>();
+  for (const [i, l] of input.lines.entries()) {
+    if (!l.orderLineId) continue;
+    if (seenLines.has(l.orderLineId))
+      throw badRequest('Une même ligne de commande apparaît deux fois dans la réception.', [
+        {
+          path: `lines.${i}.orderLineId`,
+          message: 'Cette ligne de commande est déjà dans la réception.',
+        },
+      ]);
+    seenLines.add(l.orderLineId);
+  }
   const year = shopYear(new Date(`${input.date}T12:00:00Z`));
   const number = formatDocNumber('RC', year, await nextNumber(tx, `receipt:${year}`));
   const [r] = await tx
@@ -425,7 +439,15 @@ export async function recordReceipt(
         parseQtyToMilli(ol.qtyReceived)! + parseQtyToMilli(l.qty)! >
         parseQtyToMilli(ol.qtyOrdered)!
       )
-        warnings.push(`${p.name} : reçu plus que commandé (${ol.qtyOrdered} commandé).`);
+        throw badRequest(
+          `${p.name} : la quantité reçue dépasse la quantité commandée (${ol.qtyOrdered} commandé, ${ol.qtyReceived} déjà reçu).`,
+          [
+            {
+              path: `lines.${i}.qty`,
+              message: `Au plus ${milliToDecimal(parseQtyToMilli(ol.qtyOrdered)! - parseQtyToMilli(ol.qtyReceived)!)} restant à recevoir.`,
+            },
+          ],
+        );
       await tx
         .update(purchaseOrderLine)
         .set({ qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${l.qty}::numeric` })
@@ -462,6 +484,18 @@ export async function recordReceipt(
     // Purchase price and accepted selling price (R-PRD-05 history, R-PRD-06 labels).
     const excl = parsePrice4(l.unitPriceExcl)!;
     const newSale = input.newSalePrices[p.id];
+    if (newSale !== undefined) {
+      const sale = salePriceProblem({
+        kind: p.kind,
+        salePrice: newSale,
+        purchasePriceExcl: l.unitPriceExcl,
+        vatRate: p.vatRate,
+      });
+      if (sale)
+        throw badRequest(`${p.name} : ${sale.message}`, [
+          { path: `newSalePrices.${p.id}`, message: sale.message },
+        ]);
+    }
     const paChanged = excl !== parsePrice4(p.purchasePriceExcl ?? '0');
     const pvChanged = newSale !== undefined && newSale !== p.salePrice;
     if (paChanged || pvChanged) {
