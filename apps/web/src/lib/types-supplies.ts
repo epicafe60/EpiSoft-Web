@@ -48,6 +48,9 @@ export interface SupplierDetail {
   paymentTermsDays: number;
   payAtMonthEnd: boolean;
   deliveryDay: string | null;
+  organicCertNumber: string | null;
+  organicCertBody: string | null;
+  organicCertExpiry: string | null;
   updatedAt: string;
   products: {
     id: string;

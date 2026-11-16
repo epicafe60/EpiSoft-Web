@@ -339,6 +339,19 @@ function SupplierForm({
                 le rappel « à payer » apparaît alors.
               </p>
             </div>
+            <fieldset className="grid gap-2 rounded border p-3">
+              <legend className="px-1 text-sm font-medium">Certificat bio</legend>
+              <p className="text-xs text-muted-foreground">
+                Nécessaire pour vendre des produits « bio » de ce fournisseur (règlement UE
+                2018/848) : les trois champs vont ensemble. Sans certificat valide, la mention bio
+                est refusée et signalée dans « À surveiller ».
+              </p>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {text('organicCertNumber', 'Numéro du certificat')}
+                {text('organicCertBody', 'Organisme certificateur')}
+                {text('organicCertExpiry', 'Valide jusqu’au', { type: 'date' })}
+              </div>
+            </fieldset>
             {text('priceListUrl', 'Lien vers les tarifs')}
             <div className="flex flex-wrap gap-6">
               <div className="flex items-center gap-2">

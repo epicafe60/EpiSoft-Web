@@ -473,6 +473,7 @@ interface ReceiveLine {
   salePrice: string;
   newSalePrice: string;
   bestBefore: string;
+  lotNumber: string;
 }
 
 /**
@@ -525,6 +526,7 @@ export function ReceiveDialog({
           salePrice: l.salePrice,
           newSalePrice: '',
           bestBefore: '',
+          lotNumber: '',
         };
       }),
     );
@@ -563,6 +565,7 @@ export function ReceiveDialog({
           qty: l.qty,
           unitPriceExcl: l.unitPriceExcl,
           bestBefore: l.bestBefore || null,
+          lotNumber: l.lotNumber.trim() || null,
         })),
         newSalePrices: Object.fromEntries(
           received.filter((l) => l.newSalePrice).map((l) => [l.productId, l.newSalePrice]),
@@ -606,6 +609,7 @@ export function ReceiveDialog({
                   salePrice: p.salePrice,
                   newSalePrice: '',
                   bestBefore: '',
+                  lotNumber: '',
                 },
               ])
             }
@@ -619,7 +623,7 @@ export function ReceiveDialog({
                 <th className="text-right">Attendu</th>
                 <th className="w-24 text-right">Reçu</th>
                 <th className="w-28 text-right">PA HT réel</th>
-                <th className="w-36">DLC (option)</th>
+                <th className="w-44">Lot et DLC (obligatoires pour l’alimentaire)</th>
                 <th className="w-44">Nouveau PV</th>
               </tr>
             </thead>
@@ -666,7 +670,14 @@ export function ReceiveDialog({
                         onChange={(e) => set(i, { unitPriceExcl: e.target.value })}
                       />
                     </td>
-                    <td data-label="DLC (option)">
+                    <td data-label="Lot et DLC">
+                      <Input
+                        aria-label={`N° de lot ${l.name}`}
+                        placeholder="N° de lot"
+                        className="mb-1"
+                        value={l.lotNumber}
+                        onChange={(e) => set(i, { lotNumber: e.target.value })}
+                      />
                       <Input
                         aria-label={`DLC ${l.name}`}
                         type="date"

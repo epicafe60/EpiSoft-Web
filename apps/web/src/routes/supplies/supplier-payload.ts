@@ -30,6 +30,9 @@ export const EMPTY_SUPPLIER_FORM: SupplierFormState = {
   paymentTermsDays: 30,
   payAtMonthEnd: false,
   deliveryDay: '',
+  organicCertNumber: '',
+  organicCertBody: '',
+  organicCertExpiry: '',
 };
 
 export function supplierToForm(s: SupplierDetail): SupplierFormState {
@@ -55,6 +58,9 @@ export function supplierToForm(s: SupplierDetail): SupplierFormState {
     paymentTermsDays: s.paymentTermsDays,
     payAtMonthEnd: s.payAtMonthEnd,
     deliveryDay: s.deliveryDay ?? '',
+    organicCertNumber: s.organicCertNumber ?? '',
+    organicCertBody: s.organicCertBody ?? '',
+    organicCertExpiry: s.organicCertExpiry ?? '',
   };
 }
 
@@ -64,6 +70,9 @@ export function supplierPayload(f: SupplierFormState, existing: { code: string }
   return {
     ...rest,
     minOrderAmount: f.minOrderAmount || null,
+    organicCertNumber: f.organicCertNumber || null,
+    organicCertBody: f.organicCertBody || null,
+    organicCertExpiry: f.organicCertExpiry || null,
     ...(existing
       ? code !== existing.code
         ? { code }
