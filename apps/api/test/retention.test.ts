@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -8,7 +8,7 @@ import { household, member, setting, walletEntry, type Tx } from '@episoft/db';
 import { DEFAULT_RETENTION, retentionSchema, type RetentionSettings } from '@episoft/shared';
 import { auditSystem } from '../src/lib/audit';
 import { runNightlyRetention } from '../src/modules/admin/retention/job';
-import { buildPlan, planByClass, runPurge } from '../src/modules/admin/retention/engine';
+import { buildPlan, planByClass, purgeState, runPurge } from '../src/modules/admin/retention/engine';
 import { anonymizeInactive, inactiveMembers } from '../src/modules/admin/retention/inactive-members';
 import { diskSpace, weeklySnapshot } from '../src/modules/admin/retention/size';
 import { createUser, login, refusedToAppRole, setupTestApp } from './helpers';
@@ -388,6 +388,8 @@ describe('administration routes', () => {
     expect(unconfirmed.statusCode).toBe(400);
     expect(await count('error_log', `fingerprint = 'z'`)).toBe(1);
 
+    for (const f of readdirSync(dir)) rmSync(join(dir, f)); // archives of the earlier tests
+    purgeState.last = null; // the summary of an earlier test in this process
     const started = await t.app.inject({
       method: 'POST',
       url: '/api/v1/admin/retention/purge',
