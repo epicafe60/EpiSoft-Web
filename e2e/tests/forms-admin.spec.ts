@@ -43,7 +43,7 @@ test('a supplier invoice is entered, with a zero VAT', async ({ page }) => {
   await page.goto('/appros/factures/nouvelle');
   await page.getByLabel('Fournisseur').fill(SEED.honey.supplier);
   await page.getByLabel('Date', { exact: true }).fill('2026-11-02');
-  await page.getByLabel('Taux').selectOption('0.00');
+  await page.getByLabel('Taux', { exact: true }).selectOption('0.00');
   await page.getByLabel('HT (€)').fill('120,50');
   await page.getByLabel('TVA (€)').fill('0');
   // The piece number is required: refused under its field.

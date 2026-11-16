@@ -112,7 +112,13 @@ async function planLines(
   const diff = await db.execute<{ d: string }>(sql`
     select coalesce(sum(c.difference), 0)::text as d from app.cash_count c where c.session_id in (${list})`);
   const lines = buildSessionEntry(
-    { payments, revenue, vatCollected, topups, cashDifferenceCents: decimalToCents(diff.rows[0]?.d ?? '0') },
+    {
+      payments,
+      revenue,
+      vatCollected,
+      topups,
+      cashDifferenceCents: decimalToCents(diff.rows[0]?.d ?? '0'),
+    },
     a,
   );
   // Tickets migrated from the old application can carry lines that differ from what was paid
