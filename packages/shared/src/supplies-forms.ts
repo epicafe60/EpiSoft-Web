@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDate, pastOrTodayDate } from './dates';
 import { VAT_RATES } from './catalog';
 import { amountInput } from './forms';
 import { isValidEmail } from './text';
@@ -15,8 +16,6 @@ const text = (max: number) =>
     .max(max)
     .transform((s) => (s === '' ? null : s))
     .nullable();
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.');
 
 /** Positive quantity with up to 3 decimals, normalised to "1.500". */
 export const qtyInput = z
@@ -89,7 +88,7 @@ export const orderLineSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   /** R-CMD-02: a line with quantity 0 is removed. */
   lines: z.array(orderLineSchema).max(500),
@@ -97,7 +96,7 @@ export const orderSchema = z.object({
 
 export const orderCreateSchema = z.object({
   supplierId: z.string().uuid(),
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   /** Omitted: prefilled with the supplier's active products and suggested quantities. */
   lines: z.array(orderLineSchema).max(500).optional(),
@@ -112,7 +111,7 @@ export const orderSendSchema = z.object({
 // --- Receipts (R-CMD-05/06) ----------------------------------------------------------------
 
 export const receiptSchema = z.object({
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   lines: z
     .array(
@@ -221,17 +220,22 @@ export function invoiceTotalsProblem(excl: string, vat: string, incl: string): s
   const t = parseAmountToCents(incl);
   if (e === null || v === null || t === null) return null; // reported by the field itself
   if (e <= 0) return 'Le total HT doit être positif.';
+  if (e > MAX_INVOICE_CENTS || t > MAX_INVOICE_CENTS)
+    return 'Montant trop élevé pour une facture (100 000 € au plus) : vérifiez la saisie.';
   if (v < 0) return 'La TVA ne peut pas être négative.';
   if (e + v !== t) return 'Le TTC doit être égal au total HT plus la TVA.';
   if (v * 5 > e) return 'La TVA dépasse 20 % du total HT : vérifiez les montants.';
   return null;
 }
 
+/** Ceiling of a supplier invoice total: above it, a typing mistake is far more likely than an invoice. */
+export const MAX_INVOICE_CENTS = 10_000_000; // 100 000 €
+
 export const invoiceSchema = z
   .object({
     supplierId: z.string().uuid(),
     pieceRef: z.string().trim().min(1, 'N° de pièce requis.').max(60),
-    date: isoDate,
+    date: pastOrTodayDate,
     dueDate: isoDate.optional(),
     totalExcl: amountInput,
     /** R-FAC-01: the VAT may be 0. */
@@ -245,10 +249,16 @@ export const invoiceSchema = z
   .superRefine((v, ctx) => {
     const problem = invoiceTotalsProblem(v.totalExcl, v.totalVat, v.totalIncl);
     if (problem) ctx.addIssue({ code: 'custom', path: ['totalIncl'], message: problem });
+    if (v.dueDate && v.dueDate < v.date)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dueDate'],
+        message: 'L’échéance ne peut pas précéder la date de la facture.',
+      });
   });
 
 export const invoicePaySchema = z.object({
-  date: isoDate,
+  date: pastOrTodayDate,
   method: z.enum(SUPPLIER_PAYMENT_METHODS),
 });
 

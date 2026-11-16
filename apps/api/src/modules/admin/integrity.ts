@@ -327,7 +327,7 @@ export const INTEGRITY_CHECKS: IntegrityCheck[] = [
           select round(sum(l.qty * l.unit_price_excl * (1 + l.vat_rate::numeric / 100)), 2) as total
           from app.invoice_receipt ir join app.goods_receipt_line l on l.receipt_id = ir.receipt_id
           where ir.invoice_id = i.id) r on r.total is not null
-      where abs(i.total_incl - r.total) > 1 and i.date < current_date - 30`,
+      where abs(i.total_incl - r.total) > 1 and i.date < (now() at time zone ${tzSql()})::date - 30`,
   },
   {
     id: 'MEM-01',

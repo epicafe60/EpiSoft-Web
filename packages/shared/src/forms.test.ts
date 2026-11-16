@@ -123,8 +123,17 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     ).toBe(false);
     // 20 % exactly is fine; HT alone is fine.
     expect(
-      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+      bad({
+        purchasePriceExcl: '1',
+        purchaseVatAmount: '0,2',
+        purchasePriceIncl: '1,2',
+        vatRate: '20.00',
+      }),
     ).toBe(true);
+    // R-PRD-04: the VAT amount must match the rate of the product (one cent apart).
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(false);
     expect(bad({ purchasePriceExcl: '1' })).toBe(true);
   });
 

@@ -41,6 +41,7 @@ import {
   statementGapCents,
   suggestRules,
   validateRegex,
+  isoDate,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -751,7 +752,7 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       schema: {
         querystring: z.object({
           bankAccountId: z.string().uuid(),
-          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          date: isoDate,
         }),
       },
     },

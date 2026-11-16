@@ -132,13 +132,13 @@ describe('purchase prices typed by hand (R-PRD-04)', () => {
     const { id } = await create({ purchasePriceExcl: '4.10', purchasePriceIncl: '4.3255' });
     const before = await detail(id);
     const res = await patch(id, before.updatedAt, {
-      purchasePriceIncl: '4.40',
-      purchaseVatAmount: '0.30',
+      purchasePriceIncl: '4.33',
+      purchaseVatAmount: '0.23',
     });
     expect(res.statusCode).toBe(200);
     expect(await row(id)).toMatchObject({
-      purchasePriceIncl: '4.4000',
-      purchaseVatAmount: '0.3000',
+      purchasePriceIncl: '4.3300',
+      purchaseVatAmount: '0.2300',
     });
     const { rows } = await t.db.execute<{
       before: Record<string, unknown>;
@@ -148,7 +148,7 @@ describe('purchase prices typed by hand (R-PRD-04)', () => {
     );
     const log = rows[0];
     expect(log!.before).toMatchObject({ purchasePriceIncl: '4.3255', purchaseVatAmount: null });
-    expect(log!.after).toMatchObject({ purchasePriceIncl: '4.4000', purchaseVatAmount: '0.3000' });
+    expect(log!.after).toMatchObject({ purchasePriceIncl: '4.3300', purchaseVatAmount: '0.2300' });
   });
 
   it('a product without any purchase price stays possible', async () => {
