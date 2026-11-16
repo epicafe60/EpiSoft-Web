@@ -281,6 +281,20 @@
       "when": 1794757797646,
       "tag": "0039_invoice_free_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794778153213,
+      "tag": "0040_retention_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794778171353,
+      "tag": "0041_retention_purge",
+      "breakpoints": true
     }
   ]
 }

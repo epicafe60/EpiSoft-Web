@@ -339,6 +339,10 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'import.apply': restore,
   'export.full': none(CANNOT_UNSEND),
   'export.file': none(CANNOT_UNSEND),
+  'retention.purge': none(
+    'Une purge supprime définitivement des lignes anciennes ; la seule copie est l’archive téléchargeable, quand elle a été demandée.',
+  ),
+  'retention.archive_delete': none('Le fichier d’archive supprimé n’est pas conservé.'),
   'member.export_all': none(CANNOT_UNSEND),
   'wallet.report_export': none(CANNOT_UNSEND),
   'error.ack': restore,

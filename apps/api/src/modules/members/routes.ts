@@ -14,9 +14,6 @@ import {
   membershipType,
   product,
   sale,
-  productFavorite,
-  productReview,
-  pushSubscription,
   session,
   userRole,
   walletEntry,
@@ -43,6 +40,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toShopDate, tzSql } from '../../lib/dates';
+import { anonymizeMember } from './anonymize';
 import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
@@ -516,35 +514,9 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .where(eq(member.id, req.params.id))
           .for('update');
         if (!m) throw notFound('Membre introuvable.');
-        await tx.delete(userRole).where(eq(userRole.memberId, m.id));
-        await tx.delete(session).where(eq(session.memberId, m.id));
-        // Free-text reviews and devices are personal data too.
-        await tx.delete(productReview).where(eq(productReview.memberId, m.id));
-        await tx.delete(productFavorite).where(eq(productFavorite.memberId, m.id));
-        await tx.delete(pushSubscription).where(eq(pushSubscription.memberId, m.id));
-        await tx
-          .update(member)
-          .set({
-            lastName: `Membre #${m.number}`,
-            firstName: '-',
-            street: null,
-            postcode: null,
-            communeId: null,
-            phone: null,
-            email: null,
-            username: null,
-            passwordHash: null,
-            qrTokenHash: null,
-            tillPasswordHash: null,
-            tillPasswordSalt: null,
-            newsletterOptInAt: null,
-            publicVisible: false,
-            status: 'ARCHIVED',
-          })
-          .where(eq(member.id, m.id));
-        await audit(tx, req, { action: 'member.anonymize', entity: 'member', entityId: m.id });
-        // R-MBR-08: the journals keep that something changed, not the personal values.
-        await tx.execute(sql`select app.scrub_member(${m.id}::uuid)`);
+        await anonymizeMember(tx, m, () =>
+          audit(tx, req, { action: 'member.anonymize', entity: 'member', entityId: m.id }),
+        );
       });
       return { ok: true };
     },

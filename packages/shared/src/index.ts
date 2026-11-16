@@ -40,3 +40,4 @@ export * from './sync';
 export * from './text';
 export * from './till-pin';
 export * from './revert';
+export * from './retention';

@@ -169,6 +169,9 @@ export const AUDIT_SENTENCES = {
     a?.kind === 'RESTORE_TEST'
       ? `Test de restauration ${a?.ok ? 'réussi' : 'en échec'}`
       : `Sauvegarde ${a?.ok ? 'réussie' : 'en échec'}`,
+  'retention.purge': (a) =>
+    `a purgé des données anciennes${typeof a?.total === 'number' ? ` (${a.total} ligne(s))` : ''}${a?.trigger === 'nightly' ? ' : purge de nuit' : ''}`,
+  'retention.archive_delete': (a) => `a supprimé une archive de purge${named(a, 'file')}`,
   'audit.revert': (a) =>
     `a annulé une action du journal${typeof a?.reason === 'string' && a.reason ? ` (motif : ${a.reason})` : ''}`,
 } satisfies Record<string, (after: After) => string>;

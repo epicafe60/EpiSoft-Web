@@ -40,6 +40,12 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost'),
   /** Shared secret of the backup scripts, which report their result to the API (optional). */
   BACKUP_REPORT_TOKEN: z.string().min(16).optional(),
+  /**
+   * Where the purge puts the compressed copy of what it removes (ADR 0017), for the
+   * administrators to download. Holds personal data: outside the web root, readable by the
+   * application only. Default: `archives` next to where the server is started.
+   */
+  ARCHIVE_DIR: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
