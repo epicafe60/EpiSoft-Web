@@ -303,6 +303,8 @@ export function purchaseVatProblem(p: {
   rate?: string | null;
 }): string | null {
   const { excl4, vat4, incl4 } = p;
+  if (p.rate && normalizeVatRate(p.rate) === null)
+    return `Le taux de TVA du produit (${formatVatRate(p.rate)}) n’existe pas : 0, 2,1, 5,5, 10 ou 20 %.`;
   if (excl4 !== null && incl4 !== null && incl4 < excl4)
     return 'Le PA TTC ne peut pas être inférieur au PA HT.';
   if (excl4 !== null && vat4 !== null && p.rate) {

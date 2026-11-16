@@ -264,7 +264,6 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           fields.vatRate !== undefined
         ) {
           const problem = purchasePricesProblem({
-            vatRate: fields.vatRate ?? before.vatRate,
             purchasePriceExcl:
               fields.purchasePriceExcl !== undefined
                 ? fields.purchasePriceExcl
