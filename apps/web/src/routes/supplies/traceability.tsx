@@ -118,7 +118,9 @@ function LotDetail({ id }: { id: string }) {
                 <td>{t.number}</td>
                 <td>{formatDate(t.soldAt)}</td>
                 <td>{t.qty}</td>
-                <td>{t.member ? `${t.member.name} (n° ${t.member.number})` : 'Client de passage'}</td>
+                <td>
+                  {t.member ? `${t.member.name} (n° ${t.member.number})` : 'Client de passage'}
+                </td>
               </tr>
             ))}
             {r.tickets.length === 0 ? (
@@ -240,9 +242,7 @@ function SaleLookup() {
                             `${x.lotNumber} (${x.qty}${x.bestBefore ? `, DLC ${formatDate(x.bestBefore)}` : ''})`,
                         )
                         .join(' ; ') || '—'}
-                      {Number(l.unexplainedQty) > 0
-                        ? ` · ${l.unexplainedQty} sans lot connu`
-                        : ''}
+                      {Number(l.unexplainedQty) > 0 ? ` · ${l.unexplainedQty} sans lot connu` : ''}
                     </td>
                   </tr>
                 ))}

@@ -225,7 +225,10 @@ export function ProductsPage() {
                     </td>
                     <td className="hidden text-muted-foreground md:table-cell">{p.categoryName}</td>
                     <td className="hidden max-w-64 text-xs text-muted-foreground lg:table-cell">
-                      {[p.isFood ? allergenSentence(p) : null, p.origin ? `Origine : ${p.origin}` : null]
+                      {[
+                        p.isFood ? allergenSentence(p) : null,
+                        p.origin ? `Origine : ${p.origin}` : null,
+                      ]
                         .filter(Boolean)
                         .join(' ')}
                     </td>

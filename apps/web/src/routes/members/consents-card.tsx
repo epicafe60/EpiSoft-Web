@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CONSENT_CHANNEL_LABELS, CONSENT_PURPOSES, CONSENTS, type ConsentChannel } from '@episoft/shared';
+import {
+  CONSENT_CHANNEL_LABELS,
+  CONSENT_PURPOSES,
+  CONSENTS,
+  type ConsentChannel,
+} from '@episoft/shared';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/components/ui/card';

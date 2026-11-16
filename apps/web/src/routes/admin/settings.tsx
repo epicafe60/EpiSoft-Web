@@ -309,7 +309,11 @@ export function SettingsPage() {
             </Field>
           );
           const area = (key: keyof typeof v, label: string) => (
-            <Field label={label} error={errors[key]} hint="Un paragraphe par ligne. Vide : texte standard.">
+            <Field
+              label={label}
+              error={errors[key]}
+              hint="Un paragraphe par ligne. Vide : texte standard."
+            >
               {(p) => (
                 <textarea
                   {...p}
@@ -328,7 +332,11 @@ export function SettingsPage() {
                 {one('hostName', 'Hébergeur (nom)')}
                 {one('hostAddress', 'Hébergeur (adresse)')}
               </div>
-              {one('privacyContact', 'Courriel pour exercer ses droits', 'Par défaut : le courriel de l’association.')}
+              {one(
+                'privacyContact',
+                'Courriel pour exercer ses droits',
+                'Par défaut : le courriel de l’association.',
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 {one('dpoName', 'Délégué à la protection des données (si désigné)')}
                 {one('dpoContact', 'Contact du délégué')}

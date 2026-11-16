@@ -38,6 +38,12 @@ interface ShopProduct {
   categoryId: string | null;
   categoryName: string | null;
   imageId: string | null;
+  isFood: boolean;
+  ingredients: string | null;
+  allergenText: string | null;
+  origin: string | null;
+  qualities: string[];
+  localJustification: string | null;
 }
 
 export interface MyOrder {
@@ -226,6 +232,22 @@ function ProductCard({ product: p }: { product: ShopProduct }) {
         </div>
         {p.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground">{p.description}</p>
+        ) : null}
+        {p.isFood ? (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              Allergènes et ingrédients
+            </summary>
+            {p.allergenText ? <p className="font-medium">{p.allergenText}</p> : null}
+            {p.ingredients ? <p>Ingrédients : {p.ingredients}</p> : null}
+            {p.origin ? <p>Origine : {p.origin}</p> : null}
+          </details>
+        ) : p.origin ? (
+          <p className="text-xs text-muted-foreground">Origine : {p.origin}</p>
+        ) : null}
+        {p.qualities.includes('ORGANIC') ? <p className="text-xs text-success">Bio</p> : null}
+        {p.qualities.includes('LOCAL') && p.localJustification ? (
+          <p className="text-xs text-muted-foreground">Local : {p.localJustification}</p>
         ) : null}
         <RatingButton productId={p.id} name={p.name} rating={ratings?.[p.id]} />
         <div className="mt-auto flex items-center gap-2">
