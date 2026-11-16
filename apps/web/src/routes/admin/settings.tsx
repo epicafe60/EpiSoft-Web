@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
+import { useConfirm } from '@/components/confirm';
 import { QueryError } from '../errors';
 import { ImagePicker } from './email/rich-editor';
 import { brandingLogoUrl, DEFAULT_BRANDING } from '@episoft/shared';
@@ -71,8 +72,24 @@ function SettingCard<K extends SettingKey>({
   const errors = save.error instanceof ApiError ? save.error.fieldErrors() : {};
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
 
-  const submit = (e: FormEvent) => {
+  const confirm = useConfirm();
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
+    // The time zone decides the day of every ticket, closing and statistic: ask before changing it.
+    if (
+      settingKey === 'app.timezone' &&
+      !(await confirm({
+        title: 'Changer le fuseau horaire ?',
+        message:
+          'Le fuseau horaire détermine le jour de chaque ticket, de chaque clôture et de chaque statistique. Il s’applique tout de suite, pour toute la boutique.',
+        impact: [
+          'Les tickets déjà enregistrés ne changent pas, mais leur jour affiché peut changer.',
+        ],
+        confirmLabel: 'Changer le fuseau',
+        destructive: true,
+      }))
+    )
+      return;
     save.mutate(value);
   };
 

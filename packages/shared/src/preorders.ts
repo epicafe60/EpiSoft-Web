@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDate } from './dates';
 import { lineTotalCents, milliToDecimal, parseQtyToMilli } from './pos';
 
 // Customer pre-orders and the online cart (spec §4.14, R-PRE-01..03). Pure rules.
@@ -40,7 +41,7 @@ const qtyInput = z
 
 export const preorderSchema = z.object({
   /** Pick-up date; the API refuses a date in the past. */
-  pickupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date de retrait invalide.'),
+  pickupDate: isoDate,
   comment: z.string().trim().max(300).optional(),
   /** For a volunteer keying in an order for a member. */
   memberId: z.string().uuid().optional(),

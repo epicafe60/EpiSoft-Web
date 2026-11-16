@@ -4,7 +4,9 @@ import {
   memberPatchSchema,
   productCreateSchema,
   productPatchSchema,
+  purchaseAmountsFromExcl,
   purchasePriceIncl,
+  purchasePricesProblem,
   walletCorrectionSchema,
 } from './forms';
 
@@ -121,8 +123,17 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     ).toBe(false);
     // 20 % exactly is fine; HT alone is fine.
     expect(
-      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+      bad({
+        purchasePriceExcl: '1',
+        purchaseVatAmount: '0,2',
+        purchasePriceIncl: '1,2',
+        vatRate: '20.00',
+      }),
     ).toBe(true);
+    // R-PRD-04: the VAT amount must match the rate of the product (one cent apart).
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(false);
     expect(bad({ purchasePriceExcl: '1' })).toBe(true);
   });
 
@@ -159,5 +170,24 @@ describe('messages written by zod itself', () => {
     const text = JSON.stringify(r.success ? [] : r.error.issues.map((i) => i.message));
     expect(text).not.toMatch(/Too big|expected string/);
     expect(text).toMatch(/caract/i);
+  });
+});
+
+describe('purchaseAmountsFromExcl (R-PRD-04)', () => {
+  it('builds HT, VAT and TTC at the rate of the product, always coherent', () => {
+    expect(purchaseAmountsFromExcl('5.4', '5.50')).toEqual({
+      purchasePriceExcl: '5.4000',
+      purchaseVatAmount: '0.2970',
+      purchasePriceIncl: '5.6970',
+    });
+    for (const rate of ['0', '2.10', '5.50', '10', '20'])
+      for (const excl of ['0', '0.0001', '1.2345', '99.9999']) {
+        const a = purchaseAmountsFromExcl(excl, rate)!;
+        expect(purchasePricesProblem(a)).toBeNull();
+      }
+  });
+  it('is null for an invalid price', () => {
+    expect(purchaseAmountsFromExcl('abc', '20')).toBeNull();
+    expect(purchaseAmountsFromExcl('-1', '20')).toBeNull();
   });
 });

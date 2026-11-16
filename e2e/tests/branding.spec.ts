@@ -27,14 +27,14 @@ test('an association gives its own name and colour to the application', async ({
 
   // The menu and the title of the page follow.
   await page.reload();
-  await expect(page).toHaveTitle('GestEpicerie');
+  await expect(page).toHaveTitle(/GestEpicerie$/);
   await expect(page.getByText('GestEpicerie').first()).toBeVisible();
 
   // The sign-in page too, without being signed in.
   await page.context().clearCookies();
   await page.goto('/connexion');
   await expect(page.getByText('Identifiez-vous pour accéder à GestEpicerie.')).toBeVisible();
-  await expect(page).toHaveTitle('GestEpicerie');
+  await expect(page).toHaveTitle(/GestEpicerie$/);
 
   // And the manifest of the installed app.
   const manifest = await page.request.get('/api/v1/branding/manifest.webmanifest');

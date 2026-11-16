@@ -38,6 +38,7 @@ export interface ProductFormState {
   posTabId: string;
   posLabel: string;
   posSort: string;
+  belowCostReason: string;
 }
 
 export const EMPTY_PRODUCT_FORM: ProductFormState = {
@@ -65,6 +66,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormState = {
   posTabId: '',
   posLabel: '',
   posSort: '0',
+  belowCostReason: '',
 };
 
 const dec = (v: string | null) =>
@@ -104,6 +106,7 @@ export function productToForm(p: ProductDetail): ProductFormState {
     posTabId: p.posTabId ?? '',
     posLabel: p.posLabel ?? '',
     posSort: String(p.posSort),
+    belowCostReason: '',
   };
 }
 
@@ -132,6 +135,7 @@ export function productToPayload(f: ProductFormState): ProductCreate {
     posTabId: f.posTabId || null,
     posLabel: f.posLabel,
     posSort: Number(f.posSort) || 0,
+    ...(f.belowCostReason.trim() ? { belowCostReason: f.belowCostReason.trim() } : {}),
     ...(f.code ? { code: f.code } : {}),
   });
 }
@@ -161,6 +165,7 @@ const FIELD_LABELS: Record<string, string> = {
   posTabId: 'Onglet',
   posLabel: 'Libellé du bouton',
   posSort: 'Ordre',
+  belowCostReason: 'Motif de vente sous le prix d’achat',
 };
 
 /** « Prix de vente TTC : Montant invalide. » for each refused field, so the user knows where to look. */

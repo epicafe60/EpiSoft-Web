@@ -12,7 +12,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import type { Db } from '@episoft/db';
-import { setAppTimeZone, type RoleCode } from '@episoft/shared';
+import type { RoleCode } from '@episoft/shared';
 import type { Config } from './config';
 import { audit } from './lib/audit';
 import auth, { guardedRoles, isApiRequest } from './plugins/auth';
@@ -53,7 +53,7 @@ import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
 import { feedbackRoutes } from './modules/feedback/routes';
-import { loadSettings } from './modules/admin/settings-store';
+import { refreshTimeZone } from './modules/admin/settings-store';
 import { brandingRoutes } from './modules/branding/routes';
 import { emailTemplateRoutes } from './modules/admin/email-templates';
 import { pdfTemplateRoutes } from './modules/admin/pdf-templates';
@@ -84,7 +84,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   app.setSerializerCompiler(serializerCompiler);
 
   // The time zone of the shop is a setting: read here, and again whenever it is saved.
-  setAppTimeZone((await loadSettings(db))['app.timezone'].timeZone);
+  await refreshTimeZone(db);
   await app.register(errors, { db, config });
   await app.register(helmet, {
     // The SPA is served from the same origin; inline styles are needed by some UI components.

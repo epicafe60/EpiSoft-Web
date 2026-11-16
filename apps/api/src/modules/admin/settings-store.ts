@@ -5,8 +5,14 @@ import {
   SETTING_DEFAULTS,
   SETTING_KEYS,
   settingSchemas,
+  setAppTimeZone,
   type Settings,
 } from '@episoft/shared';
+
+/** Puts the time zone of the process back in line with the stored setting (start, save, undo). */
+export async function refreshTimeZone(db: DbOrTx): Promise<void> {
+  setAppTimeZone((await loadSettings(db))['app.timezone'].timeZone);
+}
 
 /** All settings, stored values over defaults. A stored value that no longer validates falls back. */
 export async function loadSettings(db: DbOrTx): Promise<Settings> {
