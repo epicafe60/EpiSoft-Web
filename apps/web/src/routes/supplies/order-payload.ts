@@ -11,7 +11,7 @@ export interface OrderFormLine {
 
 /**
  * R-CMD-02: a line left empty or at 0 is not recorded. A line with a quantity needs a valid
- * « PA HT unitaire » (it is carried over to the product sheet): an empty or invalid one is refused.
+ * « PA HT unitaire »: an empty or invalid one is refused.
  */
 export function orderLinesPayload(lines: OrderFormLine[]):
   | { ok: true; lines: { productId: string; qty: string; unitPriceExcl: string }[] }

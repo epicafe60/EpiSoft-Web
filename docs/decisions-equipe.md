@@ -18,7 +18,14 @@ L'outil ne cherche pas à anticiper tous les scénarios. La boutique a ouvert le
 
 ### Réception d'une commande
 
-Le prix d'achat de la fiche produit **n'est pas mis à jour automatiquement** à la réception : la vigilance des bénévoles est voulue, et une alerte de la machine la ferait baisser. L'équipe refait un test de réception pour décider si cela l'aiderait. À reprendre avec elle.
+Le prix d'achat de la fiche produit **n'est pas mis à jour automatiquement** à la réception : la vigilance des bénévoles est voulue, et une alerte de la machine la ferait baisser.
+
+**Précisé le 2026-11-15 par le propriétaire**, à la manière des outils du marché (Odoo, Dolibarr, Zoho) :
+
+- Modifier le prix unitaire dans une commande ne change que la ligne de commande (celle qui est imprimée) : jamais la fiche produit.
+- L'écran de réception montre, par ligne, le prix de la fiche, le prix commandé et le prix reçu, et met l'écart en évidence (montant et %). Une case « Mettre à jour la fiche produit », **décochée par défaut**, met la fiche à jour (HT, TVA et TTC cohérents avec le taux du produit) ; sans case cochée la fiche n'est pas touchée. Le serveur applique la même règle.
+- Le coût réel reste toujours sur la ligne de réception et sur le mouvement de stock, quelle que soit la case.
+- L'écran affiche l'effet du nouveau prix d'achat sur la marge.
 
 ### À ne pas construire pour l'instant
 
