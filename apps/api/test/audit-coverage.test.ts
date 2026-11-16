@@ -19,7 +19,7 @@ const NO_WRITE: Record<string, string> = {
 };
 
 /** Helpers that record the action themselves. */
-const AUDITING_HELPERS = ['closeSession(', 'processOps(', 'await run(tx, req'];
+const AUDITING_HELPERS = ['recordConsent(', 'closeSession(', 'processOps(', 'await run(tx, req'];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
