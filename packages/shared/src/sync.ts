@@ -138,6 +138,8 @@ export const syncPushSchema = z.object({
 export interface SyncWarning {
   code: string;
   message: string;
+  /** « blocking »: a rule of the association was broken by a sale that already happened. */
+  severity?: 'blocking';
 }
 
 export interface SyncResult {

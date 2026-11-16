@@ -32,6 +32,7 @@ import {
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { toShopDate } from '../../lib/dates';
 import { HttpProblem, badRequest, conflict, notFound } from '../../lib/problem';
 import { unsyncedTills } from '../pos/device-contact';
 import { recordMovement } from './ledger';
@@ -55,6 +56,12 @@ async function movedBetween(tx: Db | Tx, productId: string, from: Date, to: Date
       ),
     );
   return milli(row!.q);
+}
+
+/** The product, locked for the rest of the transaction: two movements cannot both read the same stock. */
+async function lockProduct(tx: Tx, id: string) {
+  const [p] = await tx.select().from(product).where(eq(product.id, id)).for('update');
+  return p;
 }
 
 export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
@@ -93,9 +100,16 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
   /** R-STK-03: loss, breakage, expiry or internal use. */
   app.post('/stock/losses', { ...appros, schema: { body: lossSchema } }, async (req) =>
     db.transaction(async (tx) => {
-      const p = await tx.query.product.findFirst({ where: eq(product.id, req.body.productId) });
+      const p = await lockProduct(tx, req.body.productId);
       if (!p) throw notFound('Produit introuvable.');
       if (p.kind !== 'GOODS') throw badRequest('Un service n’a pas de stock.');
+      if (milli(req.body.qty) > milli(p.stockQty))
+        throw badRequest('La perte dépasse le stock du produit.', [
+          {
+            path: 'qty',
+            message: `Le stock n’est que de ${p.stockQty} : une perte ne peut pas le rendre négatif.`,
+          },
+        ]);
       await recordMovement(tx, {
         productId: p.id,
         qtyMilli: -milli(req.body.qty),
@@ -117,8 +131,16 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
 
   app.post('/stock/corrections', { ...appros, schema: { body: correctionSchema } }, async (req) =>
     db.transaction(async (tx) => {
-      const p = await tx.query.product.findFirst({ where: eq(product.id, req.body.productId) });
+      const p = await lockProduct(tx, req.body.productId);
       if (!p) throw notFound('Produit introuvable.');
+      if (p.kind !== 'GOODS') throw badRequest('Un service n’a pas de stock.');
+      if (milli(req.body.qty) < 0 && milli(p.stockQty) + milli(req.body.qty) < 0)
+        throw badRequest('Cette correction rendrait le stock négatif.', [
+          {
+            path: 'qty',
+            message: `Le stock n’est que de ${p.stockQty} : la correction ne peut pas le passer sous zéro.`,
+          },
+        ]);
       await recordMovement(tx, {
         productId: p.id,
         qtyMilli: milli(req.body.qty),
@@ -148,9 +170,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       },
     },
     async (req) => {
-      const today = (
-        (await db.execute(sql`select current_date::text as today`)).rows[0] as { today: string }
-      ).today;
+      const today = toShopDate(new Date());
       const rows = await db
         .select({
           id: productBatch.id,
@@ -167,7 +187,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         .where(
           req.query.days === undefined
             ? undefined
-            : sql`${productBatch.bestBefore} <= current_date + ${req.query.days}::int`,
+            : sql`${productBatch.bestBefore} <= ${toShopDate(new Date())}::date + ${req.query.days}::int`,
         )
         .orderBy(asc(productBatch.bestBefore), asc(product.name));
       return rows.map((r) => ({

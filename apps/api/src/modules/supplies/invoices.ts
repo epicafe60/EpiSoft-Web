@@ -415,6 +415,13 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     { ...editors, schema: { ...idParams, body: invoicePaySchema } },
     async (req) =>
       db.transaction(async (tx) => {
+        const inv = await tx.query.supplierInvoice.findFirst({
+          where: eq(supplierInvoice.id, req.params.id),
+        });
+        if (inv && req.body.date < inv.date)
+          throw badRequest('La date de paiement précède la date de la facture.', [
+            { path: 'date', message: 'Le paiement ne peut pas précéder la facture.' },
+          ]);
         const r = await payInvoice(tx, {
           invoiceId: req.params.id,
           date: req.body.date,

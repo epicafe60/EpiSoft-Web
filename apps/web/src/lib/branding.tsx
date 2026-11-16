@@ -8,7 +8,9 @@ import {
   setAppTimeZone,
   type BrandingInfo,
 } from '@episoft/shared';
+import { useRouterState } from '@tanstack/react-router';
 import { api } from './api';
+import { documentTitle } from './page-title';
 
 // The name, the logo and the colour of the application, as the administrators set them. Public (the
 // sign-in page shows them), kept in the browser so that the till still shows them offline.
@@ -61,9 +63,12 @@ export function useBranding(): BrandingInfo {
 /** Applies the branding to the page: title, colour of the browser bar, icon, accent colour. */
 export function BrandingEffects() {
   const b = useBranding();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useEffect(() => {
+    document.title = documentTitle(pathname, b.appName);
+  }, [pathname, b.appName]);
   useEffect(() => {
     setAppTimeZone(b.timeZone);
-    document.title = b.appName;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', b.accentColor);
     if (b.customLogo) {
       const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');

@@ -174,7 +174,15 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
 
     const line = detail.lines[0];
     const r1 = await post(`/api/v1/purchase-orders/${o.id}/receipts`, {
-      lines: [{ orderLineId: line.id, productId: p1.id, qty: '4', unitPriceExcl: '5.2' }],
+      lines: [
+        {
+          orderLineId: line.id,
+          productId: p1.id,
+          qty: '4',
+          unitPriceExcl: '5.2',
+          updateProductPrice: true,
+        },
+      ],
       newSalePrices: { [p1.id]: '8,50' },
     });
     expect(r1.json().number).toMatch(/^RC-\d{4}-0001$/);
@@ -183,6 +191,7 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
     const [after] = await t.db.select().from(product).where(eq(product.id, p1.id));
     expect(after).toMatchObject({
       purchasePriceExcl: '5.2000',
+      purchaseVatAmount: '0.2860',
       purchasePriceIncl: '5.4860',
       salePrice: '8.50',
       labelPending: true,

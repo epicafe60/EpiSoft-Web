@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pastOrTodayDate } from './dates';
 import { MEMBER_STATUSES } from './api';
 import { parsePrice4, price4ToDecimal } from './supplies';
 import {
@@ -14,7 +15,7 @@ import {
 import { centsToDecimal, parseAmountToCents } from './money';
 import { isValidEan, parseQtyToMilli, milliToDecimal } from './pos';
 import { patchOf } from './patch';
-import { purchaseVatProblem } from './vat';
+import { purchaseVatProblem, vatOfExcl4 } from './vat';
 import { isValidEmail } from './text';
 
 // Back-office forms (members, households, catalogue). Shared by the web forms and the API.
@@ -44,8 +45,6 @@ const qtyInput = z
   .trim()
   .refine((s) => parseQtyToMilli(s) !== null, 'Quantité invalide (3 décimales au plus).')
   .transform((s) => milliToDecimal(parseQtyToMilli(s)!));
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.');
 
 /** A town added to the reference list (members and suppliers pick their commune from it). */
 export const communeCreateSchema = z.object({
@@ -99,30 +98,51 @@ export const householdPatchSchema = patchOf({
   referentMemberId: z.string().uuid(),
 }).extend({ updatedAt: z.string().datetime({ offset: true }) });
 
+/** Ceilings of a wallet movement: above them the entry is a typing mistake or needs a second person. */
+export const MAX_TOPUP_CENTS = 100_000; // 1 000 €
+export const MAX_CORRECTION_CENTS = 50_000; // 500 €
+/** A correction above this amount (absolute value) must be made by an administrator. */
+export const CORRECTION_ADMIN_THRESHOLD_CENTS = 10_000; // 100 €
+
+const cents = (s: string) => Math.abs(parseAmountToCents(s) ?? 0);
+
 export const walletTopupSchema = z.object({
-  amount: positiveAmountInput,
+  amount: positiveAmountInput.refine(
+    (s) => cents(s) <= MAX_TOPUP_CENTS,
+    'Montant trop élevé pour un rechargement (1 000 € au plus).',
+  ),
   method: z.enum(MEMBER_PAYMENT_METHODS),
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(300).optional(),
   emailReceipt: z.boolean().default(true),
 });
 
 /** R-CAG-08: past top-ups are corrected by a CORRECTION entry, with a reason. */
 export const walletCorrectionSchema = z.object({
-  amount: amountInput.refine((s) => s !== '0.00', 'Le montant ne peut pas être nul.'),
+  amount: amountInput
+    .refine((s) => s !== '0.00', 'Le montant ne peut pas être nul.')
+    .refine(
+      (s) => cents(s) <= MAX_CORRECTION_CENTS,
+      'Montant trop élevé pour une correction (500 € au plus).',
+    ),
   comment: z.string().trim().min(3, 'Indiquez le motif.').max(300),
 });
 
 export const membershipCreateSchema = z.object({
   typeId: z.string().uuid(),
   method: z.enum(MEMBER_PAYMENT_METHODS),
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   amount: amountInput.optional(),
+  /** Required (and administrators only) when the amount differs from the price of the type. */
+  reason: text(300).optional(),
 });
 
 export const membershipTypePatchSchema = z.object({
   label: z.string().trim().min(1).max(60),
-  price: amountInput,
+  price: amountInput.refine(
+    (s) => !s.startsWith('-') && cents(s) <= 100_000,
+    'Tarif invalide (entre 0 et 1 000 €).',
+  ),
   durationMonths: z.number().int().min(0).max(60),
   active: z.boolean(),
 });
@@ -149,14 +169,68 @@ export function purchasePricesProblem(prices: {
   purchasePriceExcl?: string | null;
   purchaseVatAmount?: string | null;
   purchasePriceIncl?: string | null;
-  vatRate: string;
+  /** The VAT rate of the product ("5.50"): the VAT amount must be HT x rate (1 cent). */
+  vatRate?: string | null;
 }): string | null {
   return purchaseVatProblem({
     excl4: prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null,
     vat4: prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null,
     incl4: prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null,
-    rate: prices.vatRate,
+    rate: prices.vatRate ?? null,
   });
+}
+
+/**
+ * Selling rules of a product sheet (art. L442-5 du Code de commerce: no resale at a loss). A
+ * product may not be sold for nothing, nor below its purchase price excluding VAT, unless a reason
+ * is given (perishable threatened with spoilage, end of series…): the exception is audited.
+ * Returns the field at fault and the message, or null.
+ */
+export function salePriceProblem(p: {
+  kind: string;
+  salePrice: string;
+  purchasePriceExcl?: string | null;
+  vatRate: string;
+  belowCostReason?: string | null;
+}): { path: string; message: string } | null {
+  const saleCents = parseAmountToCents(p.salePrice);
+  if (saleCents === null) return null; // reported by the field itself
+  if (p.kind === 'GOODS' && saleCents === 0)
+    return {
+      path: 'salePrice',
+      message: 'Le prix de vente d’une marchandise ne peut pas être nul.',
+    };
+  const excl = p.purchasePriceExcl ? parsePrice4(p.purchasePriceExcl) : null;
+  if (excl === null || excl === 0 || p.kind !== 'GOODS') return null;
+  const rateBp = Math.round(Number(p.vatRate) * 100);
+  const costInclCents = Math.floor((excl * (10_000 + rateBp)) / 10_000 / 100);
+  if (saleCents < costInclCents && !p.belowCostReason)
+    return {
+      path: 'salePrice',
+      message:
+        'Le prix de vente est inférieur au prix d’achat HT : la revente à perte est interdite (art. L442-5 du Code de commerce). Si c’est une exception (produit périssable menacé, fin de série), indiquez le motif.',
+    };
+  return null;
+}
+
+/**
+ * The three purchase amounts of a product sheet built from a PA HT received on a delivery, at the
+ * VAT rate of the product (R-PRD-04): VAT = TTC - HT, TTC = HT x (1 + rate), to 4 decimals.
+ * Null when the PA HT is not a valid price. The result always passes purchasePricesProblem.
+ */
+export function purchaseAmountsFromExcl(
+  excl: string,
+  vatRate: string,
+): { purchasePriceExcl: string; purchaseVatAmount: string; purchasePriceIncl: string } | null {
+  const excl4 = parsePrice4(excl);
+  if (excl4 === null || excl4 < 0) return null;
+  // R-TVA-02: the VAT amount comes from the single VAT calculation (vat.ts).
+  const vat4 = vatOfExcl4(excl4, vatRate);
+  return {
+    purchasePriceExcl: price4ToDecimal(excl4),
+    purchaseVatAmount: price4ToDecimal(vat4),
+    purchasePriceIncl: price4ToDecimal(excl4 + vat4),
+  };
 }
 
 export const productFields = {
@@ -189,6 +263,8 @@ export const productFields = {
   posTabId: z.string().uuid().nullable(),
   posLabel: text(40),
   posSort: z.number().int().min(0).max(9999),
+  /** Reason of an explicit, audited exception to the ban on selling below the purchase price. */
+  belowCostReason: text(300).optional(),
 };
 
 export const productCreateSchema = z
@@ -204,6 +280,8 @@ export const productCreateSchema = z
   .superRefine((v, ctx) => {
     const problem = purchasePricesProblem(v);
     if (problem) ctx.addIssue({ code: 'custom', path: ['purchasePriceIncl'], message: problem });
+    const sale = salePriceProblem(v);
+    if (sale) ctx.addIssue({ code: 'custom', path: [sale.path], message: sale.message });
   });
 export type ProductCreate = z.input<typeof productCreateSchema>;
 

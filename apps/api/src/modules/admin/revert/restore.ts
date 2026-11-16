@@ -1,7 +1,13 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '@episoft/db';
 import {
+  invoiceTotalsProblem,
+  isRealCalendarDate,
+  isSettingKey,
   orderSteps,
+  parseAmountToCents,
+  purchasePricesProblem,
+  settingSchemas,
   planRestore,
   rowId,
   type RestoreConflict,
@@ -9,6 +15,7 @@ import {
   type RestoreStep,
   type RowChange,
 } from '@episoft/shared';
+import { HttpProblem } from '../../../lib/problem';
 
 // R-ADM-06: the generic « put back the previous values » of an action, from the rows its
 // transaction changed (data_change). Table and column names come from the database catalogue and
@@ -226,6 +233,51 @@ export async function applyRestore(db: DbOrTx, steps: RestoreStep[]): Promise<vo
       await db.execute(sql`update ${tableRef(s.table)} set (${list}) = (
           select ${values} from jsonb_populate_record(null::${tableRef(s.table)}, ${JSON.stringify(s.set)}::jsonb) r)
         where ${keyWhere(s.key)}`);
+    }
+  }
+}
+
+/**
+ * An undo puts old values back: they must still obey today's rules (the same schemas and checks as
+ * a new entry), otherwise the undo is refused. Runs after the plan is applied, inside the same
+ * transaction: a refusal rolls everything back.
+ */
+export async function assertRestoredValid(db: DbOrTx, steps: RestoreStep[]): Promise<void> {
+  for (const s of steps) {
+    if (s.kind === 'delete') continue;
+    const row = await currentRow(db, s.table, s.key);
+    if (!row) continue;
+    const refuse = (what: string, why: string) =>
+      new HttpProblem(
+        400,
+        'Requête invalide',
+        `Annulation refusée : les valeurs d’avant ne respectent plus les règles actuelles (${what} : ${why}).`,
+      );
+    if (s.table === 'setting') {
+      const key = String(row.key);
+      if (!isSettingKey(key)) continue;
+      const parsed = settingSchemas[key].safeParse(row.value);
+      if (!parsed.success)
+        throw refuse(`paramètre ${key}`, parsed.error.issues[0]?.message ?? 'valeur invalide');
+    } else if (s.table === 'product') {
+      const str = (c: string) => (row[c] === null || row[c] === undefined ? null : String(row[c]));
+      const why = purchasePricesProblem({
+        purchasePriceExcl: str('purchase_price_excl'),
+        purchaseVatAmount: str('purchase_vat_amount'),
+        purchasePriceIncl: str('purchase_price_incl'),
+        vatRate: str('vat_rate'),
+      });
+      if (why) throw refuse(`produit ${str('code')}`, why);
+      const sale = parseAmountToCents(str('sale_price') ?? '');
+      if (sale === null || sale < 0)
+        throw refuse(`produit ${str('code')}`, 'le prix de vente est invalide.');
+    } else if (s.table === 'supplier_invoice') {
+      const str = (c: string) => String(row[c] ?? '');
+      const why = invoiceTotalsProblem(str('total_excl'), str('total_vat'), str('total_incl'));
+      if (why) throw refuse(`facture ${str('piece_ref')}`, why);
+      for (const c of ['date', 'due_date'])
+        if (row[c] != null && !isRealCalendarDate(String(row[c]).slice(0, 10)))
+          throw refuse(`facture ${str('piece_ref')}`, 'date invalide.');
     }
   }
 }

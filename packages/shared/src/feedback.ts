@@ -88,7 +88,7 @@ export type FeedbackContext = z.infer<typeof feedbackContextSchema>;
 const feedbackFields = {
   kind: z.enum(FEEDBACK_KINDS),
   module: z.enum(MODULE_KEYS),
-  /** The screen, as the person names it: pre-filled with the title of the page. */
+  /** The screen, as the person names it: pre-filled with the path of the page (as in the address bar). */
   screen: z.string().trim().max(120).default(''),
   title: z.string().trim().min(5, 'Donnez un titre d’au moins 5 caractères.').max(120),
   description: z

@@ -21,12 +21,14 @@ import {
   productCreateSchema,
   productPatchSchema,
   purchasePricesProblem,
+  salePriceProblem,
   contentMatchesType,
   SERVICE_SALE,
   withServiceSale,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { toShopDate } from '../../lib/dates';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { fold } from '../members/routes';
 
@@ -189,7 +191,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   );
 
   app.post('/products', { ...editors, schema: { body: productCreateSchema } }, async (req) => {
-    const { eans, code, ...asked } = req.body;
+    const { eans, code, belowCostReason, ...asked } = req.body;
     // A service is sold one at a time, in euros, whatever the form sent.
     const fields = withServiceSale(asked);
     return db.transaction(async (tx) => {
@@ -206,7 +208,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           code: finalCode,
           // R-PRD-06: a new product goes to the label queue.
           labelPending: fields.kind === 'GOODS',
-          createdOn: sql`current_date`,
+          createdOn: sql`${toShopDate(new Date())}::date`,
         })
         .returning();
       if (eans.length)
@@ -223,7 +225,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         action: 'product.create',
         entity: 'product',
         entityId: p!.id,
-        after: { ...p, eans },
+        after: { ...p, eans, ...(belowCostReason ? { belowCostReason } : {}) },
       });
       return { id: p!.id, code: p!.code };
     });
@@ -233,7 +235,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     '/products/:id',
     { ...editors, schema: { ...idParams, body: productPatchSchema } },
     async (req) => {
-      const { updatedAt, eans, ...fields } = req.body;
+      const { updatedAt, eans, belowCostReason, ...fields } = req.body;
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select()
@@ -275,8 +277,29 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
               fields.purchasePriceIncl !== undefined
                 ? fields.purchasePriceIncl
                 : before.purchasePriceIncl,
+            vatRate: fields.vatRate ?? before.vatRate,
           });
-          if (problem) throw badRequest(problem);
+          if (problem) throw badRequest(problem, [{ path: 'purchasePriceIncl', message: problem }]);
+        }
+        // Selling rules (no sale at 0 for goods, no resale at a loss): checked when the sale price,
+        // the cost, the rate or the kind move, on the values the product will have.
+        if (
+          fields.salePrice !== undefined ||
+          fields.purchasePriceExcl !== undefined ||
+          fields.vatRate !== undefined ||
+          fields.kind !== undefined
+        ) {
+          const sale = salePriceProblem({
+            kind: fields.kind ?? before.kind,
+            salePrice: fields.salePrice ?? before.salePrice,
+            purchasePriceExcl:
+              fields.purchasePriceExcl !== undefined
+                ? fields.purchasePriceExcl
+                : before.purchasePriceExcl,
+            vatRate: fields.vatRate ?? before.vatRate,
+            belowCostReason,
+          });
+          if (sale) throw badRequest(sale.message, [sale]);
         }
         const set: Partial<typeof product.$inferInsert> = { ...fields };
         // Still, or just made, a service: its sale terms are fixed.
@@ -326,6 +349,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           after: {
             ...Object.fromEntries(changed.map((k) => [k, (after as Record<string, unknown>)[k]])),
             ...(eans ? { eans } : {}),
+            ...(belowCostReason ? { belowCostReason } : {}),
           },
         });
         return { id: after!.id, updatedAt: after!.updatedAt.toISOString() };

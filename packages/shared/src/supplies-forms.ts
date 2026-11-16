@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { isoDate, pastOrTodayDate } from './dates';
 import { VAT_RATES } from './catalog';
 import { amountInput } from './forms';
 import { isValidEmail } from './text';
 import { parseAmountToCents } from './money';
 import {
   invoiceTotalsDecimal,
+  invoiceTotalsFromLines,
   invoiceVatLinesProblem,
   normalizeVatRate,
   type VatRegime,
@@ -21,8 +23,6 @@ const text = (max: number) =>
     .max(max)
     .transform((s) => (s === '' ? null : s))
     .nullable();
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.');
 
 /** Positive quantity with up to 3 decimals, normalised to "1.500". */
 export const qtyInput = z
@@ -95,7 +95,7 @@ export const orderLineSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   /** R-CMD-02: a line with quantity 0 is removed. */
   lines: z.array(orderLineSchema).max(500),
@@ -103,7 +103,7 @@ export const orderSchema = z.object({
 
 export const orderCreateSchema = z.object({
   supplierId: z.string().uuid(),
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   /** Omitted: prefilled with the supplier's active products and suggested quantities. */
   lines: z.array(orderLineSchema).max(500).optional(),
@@ -118,7 +118,7 @@ export const orderSendSchema = z.object({
 // --- Receipts (R-CMD-05/06) ----------------------------------------------------------------
 
 export const receiptSchema = z.object({
-  date: isoDate.optional(),
+  date: pastOrTodayDate.optional(),
   comment: text(1000).optional(),
   lines: z
     .array(
@@ -130,6 +130,11 @@ export const receiptSchema = z.object({
         unitPriceExcl: price4Input,
         /** R-STK-07: best-before date of the received batch, tracked on the stock page. */
         bestBefore: isoDate.nullish(),
+        /**
+         * Update the product sheet with this received price (PA HT, VAT, PA TTC). Absent or
+         * false: the sheet is never touched, the real cost stays on the receipt line only.
+         */
+        updateProductPrice: z.boolean().default(false),
       }),
     )
     .min(1, 'Aucune quantité reçue.')
@@ -226,11 +231,14 @@ export const invoiceVatLineSchema = z.object({
   vat: amountInput,
 });
 
+/** Ceiling of a supplier invoice total: above it, a typing mistake is far more likely than an invoice. */
+export const MAX_INVOICE_CENTS = 10_000_000; // 100 000 €
+
 export const invoiceSchema = z
   .object({
     supplierId: z.string().uuid(),
     pieceRef: z.string().trim().min(1, 'N° de pièce requis.').max(60),
-    date: isoDate,
+    date: pastOrTodayDate,
     dueDate: isoDate.optional(),
     /**
      * Required when the association is liable to VAT; optional otherwise (franchise, exemption: no
@@ -255,6 +263,23 @@ export const invoiceSchema = z
     }
     const problem = invoiceVatLinesProblem(v.vatLines);
     if (problem) ctx.addIssue({ code: 'custom', path: ['vatLines'], message: problem });
+    // The ceiling applies to the total derived from the lines (or the typed TTC without lines).
+    const incl =
+      v.vatLines.length > 0
+        ? invoiceTotalsFromLines(v.vatLines).inclCents
+        : (parseAmountToCents(v.totalIncl ?? '') ?? 0);
+    if (incl > MAX_INVOICE_CENTS)
+      ctx.addIssue({
+        code: 'custom',
+        path: [v.vatLines.length > 0 ? 'vatLines' : 'totalIncl'],
+        message: 'Montant trop élevé pour une facture (100 000 € au plus) : vérifiez la saisie.',
+      });
+    if (v.dueDate && v.dueDate < v.date)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dueDate'],
+        message: 'L’échéance ne peut pas précéder la date de la facture.',
+      });
   });
 
 export type InvoiceInput = z.infer<typeof invoiceSchema>;
@@ -303,7 +328,7 @@ export function resolveInvoiceAmounts(
 }
 
 export const invoicePaySchema = z.object({
-  date: isoDate,
+  date: pastOrTodayDate,
   method: z.enum(SUPPLIER_PAYMENT_METHODS),
 });
 

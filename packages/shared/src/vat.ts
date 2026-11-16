@@ -116,6 +116,11 @@ export function vatOfExclCents(exclCents: number, rate: string): number {
   return divRoundCents(exclCents * (rateToBp(rate) ?? 0), 10_000);
 }
 
+/** VAT of a purchase price excl. VAT in ten-thousandths of a euro (price4): round(HT x rate). */
+export function vatOfExcl4(excl4: number, rate: string): number {
+  return divRoundCents(excl4 * (rateToBp(rate) ?? 0), 10_000);
+}
+
 /** HT contained in an amount incl. VAT: round(TTC / (1 + rate)). */
 export function exclOfInclCents(inclCents: number, rate: string): number {
   return divRoundCents(inclCents * 10_000, 10_000 + (rateToBp(rate) ?? 0));
@@ -294,12 +299,13 @@ export function purchaseVatProblem(p: {
   excl4: number | null;
   vat4: number | null;
   incl4: number | null;
-  rate: string;
+  /** Absent: the amounts are only checked against each other. */
+  rate?: string | null;
 }): string | null {
   const { excl4, vat4, incl4 } = p;
   if (excl4 !== null && incl4 !== null && incl4 < excl4)
     return 'Le PA TTC ne peut pas être inférieur au PA HT.';
-  if (excl4 !== null && vat4 !== null) {
+  if (excl4 !== null && vat4 !== null && p.rate) {
     const expected = Math.round(((rateToBp(p.rate) ?? 0) * excl4) / 10_000);
     if (Math.abs(vat4 - expected) > PURCHASE_VAT_TOLERANCE_CENTS * 100)
       return `Le montant de TVA ne correspond pas au taux de ${formatVatRate(p.rate)} du produit (HT × taux = ${(expected / 10_000).toFixed(4)} €, à 1 centime près).`;

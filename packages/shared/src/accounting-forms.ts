@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDate } from './dates';
 import { RULE_MATCH_TYPES } from './bank';
 import { amountInput } from './forms';
 
@@ -11,8 +12,6 @@ const text = (max: number) =>
     .max(max)
     .transform((s) => (s === '' ? null : s))
     .nullable();
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date invalide.');
 
 export const ENTRY_MODES = ['CASH', 'CHEQUE', 'CARD', 'TRANSFER', 'DIRECT_DEBIT', 'OTHER'] as const;
 export type EntryModeCode = (typeof ENTRY_MODES)[number];
