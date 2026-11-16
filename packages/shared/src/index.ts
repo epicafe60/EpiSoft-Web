@@ -40,3 +40,7 @@ export * from './sync';
 export * from './text';
 export * from './till-pin';
 export * from './revert';
+export * from './cash-limit';
+export * from './stock-cost';
+export * from './credit-notes';
+export * from './fec-check';

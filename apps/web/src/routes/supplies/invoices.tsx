@@ -24,6 +24,7 @@ import { Select, Textarea } from '@/components/ui/inputs';
 import type { InvoiceDetail, InvoiceRow, SupplierDetail, SupplierRow } from '@/lib/types-supplies';
 import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
+import { InvoiceCorrections } from './credit-notes';
 
 const isDue = (d: string) => d <= todayIso();
 
@@ -31,7 +32,8 @@ const INVOICE_SORT = {
   due: (r: InvoiceRow) => r.dueDate,
   supplier: (r: InvoiceRow) => r.supplierName,
   piece: (r: InvoiceRow) => r.pieceRef,
-  status: (r: InvoiceRow) => (r.status === 'PAID' ? 'Réglée' : 'À régler'),
+  status: (r: InvoiceRow) =>
+    r.status === 'PAID' ? 'Réglée' : r.status === 'CANCELLED' ? 'Annulée' : 'À régler',
   excl: (r: InvoiceRow) => Number(r.totalExcl),
   vat: (r: InvoiceRow) => Number(r.totalVat),
   total: (r: InvoiceRow) => Number(r.totalIncl),
@@ -235,7 +237,8 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [paying, setPaying] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
-  const paid = invoice?.status === 'PAID';
+  const cancelled = invoice?.status === 'CANCELLED';
+  const paid = invoice?.status === 'PAID' || cancelled;
 
   // Due date proposed from the supplier's payment terms (R-FAC-01).
   useEffect(() => {
@@ -485,7 +488,12 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
               <CardTitle className="text-base">État</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-2 text-sm">
-              {paid ? (
+              {cancelled ? (
+                <p>
+                  <Badge variant="muted">Annulée</Badge> ({invoice.cancelReason}). Saisissez-la de
+                  nouveau si besoin.
+                </p>
+              ) : paid ? (
                 <p>
                   <Badge variant="success">Réglée</Badge> le {formatDate(invoice.paidAt)}
                   {invoice.paymentMethod
@@ -501,7 +509,14 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
                   {euro(invoice.difference)}
                 </p>
               ) : null}
+              {invoice.creditApplied && invoice.creditApplied !== '0.00' ? (
+                <p>
+                  Avoirs imputés : {euro(invoice.creditApplied)} · net à régler :{' '}
+                  {euro(invoice.netToPay ?? invoice.totalIncl)}
+                </p>
+              ) : null}
               <InvoiceEntries invoiceId={invoice.id} paid={paid} />
+              <InvoiceCorrections invoiceId={invoice.id} status={invoice.status} />
             </CardContent>
           </Card>
           <Card>
@@ -565,7 +580,7 @@ function PayDialog({
       open={open}
       onClose={onClose}
       title={`Règlement de ${invoice.pieceRef}`}
-      description={`Montant : ${euro(invoice.totalIncl)}`}
+      description={`Montant : ${euro(invoice.netToPay ?? invoice.totalIncl)}`}
     >
       <div className="grid gap-3">
         <Field label="Date">

@@ -12,6 +12,8 @@ import {
   sale,
   salePayment,
   supplier,
+  supplierCreditAllocation,
+  supplierCreditNote,
   supplierInvoice,
   type Tx,
 } from '@episoft/db';
@@ -20,6 +22,7 @@ import {
   buildInvoiceEntry,
   buildInvoicePaymentEntry,
   buildSessionEntry,
+  cashPaymentProblem,
   decimalToCents,
   regularizationLines,
   type PlannedLine,
@@ -28,7 +31,8 @@ import {
   type SupplierPaymentMethod,
 } from '@episoft/shared';
 import { toShopDate } from '../../lib/dates';
-import { conflict, notFound } from '../../lib/problem';
+import { badRequest, conflict, notFound } from '../../lib/problem';
+import { allocatedCents } from './credit-allocations';
 import {
   accountMap,
   createEntry,
@@ -210,7 +214,7 @@ export async function regularizeSessionEntry(
 
 // --- R-FAC-03: supplier invoices -------------------------------------------------------------------
 
-async function supplierAccountNumber(
+export async function supplierAccountNumber(
   tx: Tx,
   supplierId: string,
 ): Promise<{ number: string; name: string }> {
@@ -290,7 +294,7 @@ export async function syncInvoiceEntry(
 }
 
 /** Continuous lettering codes: AA, AB, … (R-FAC-04). */
-async function nextLetteringCode(tx: Tx): Promise<string> {
+export async function nextLetteringCode(tx: Tx): Promise<string> {
   const [row] = await tx
     .insert(numberCounter)
     .values({ key: 'lettering', value: 1 })
@@ -318,7 +322,7 @@ export async function payInvoice(
     bankAccountNumber?: string;
     label?: string;
   },
-): Promise<{ entryId: string; invoiceEntryId: string }> {
+): Promise<{ entryId: string | null; invoiceEntryId: string }> {
   const [inv] = await tx
     .select()
     .from(supplierInvoice)
@@ -326,45 +330,90 @@ export async function payInvoice(
     .for('update');
   if (!inv) throw notFound('Facture introuvable.');
   if (inv.status === 'PAID') throw conflict('Cette facture est déjà réglée.');
+  if (inv.status === 'CANCELLED')
+    throw conflict('Cette facture est annulée : elle ne se règle pas.');
   const invoiceEntryId = await syncInvoiceEntry(tx, inv.id, a.userId);
   const accounts = await accountMap(tx);
   const sup = await supplierAccountNumber(tx, inv.supplierId);
   const cash = a.method === 'CASH';
-  const planned = buildInvoicePaymentEntry({
-    supplierAccount: sup.number,
-    moneyAccount: cash ? accounts.cash : (a.bankAccountNumber ?? accounts.bank),
-    cents: decimalToCents(inv.totalIncl),
-    label: a.label ?? `Règlement facture ${inv.pieceRef} ${sup.name}`,
-  });
-  const entryId = await createEntry(tx, {
-    journalCode: cash ? 'CAI' : 'BNQ',
-    date: a.date,
-    pieceRef: inv.pieceRef,
-    label: a.label ?? `Règlement facture ${inv.pieceRef} ${sup.name}`,
-    mode: supplierModeToEntryMode(a.method),
-    lines: plannedToLines(planned),
-    source: { type: 'invoice_payment', id: inv.id },
-    userId: a.userId,
-    autoFiscalYear: true,
-  });
-  // Lettering of the supplier lines of both entries.
+  // Credit notes offset against the invoice reduce what is left to pay.
+  const credited = await allocatedCents(tx, inv.id);
+  const net = decimalToCents(inv.totalIncl) - credited;
+  if (net < 0) throw conflict('Les avoirs imputés dépassent le montant de la facture.');
+  // Legal cap of a payment in cash (art. D112-3 CMF), on the amount actually paid.
+  if (cash) {
+    const problem = cashPaymentProblem(net);
+    if (problem) throw badRequest(problem);
+  }
+  const label = a.label ?? `Règlement facture ${inv.pieceRef} ${sup.name}`;
+  let entryId: string | null = null;
+  if (net > 0) {
+    const planned = buildInvoicePaymentEntry({
+      supplierAccount: sup.number,
+      moneyAccount: cash ? accounts.cash : (a.bankAccountNumber ?? accounts.bank),
+      cents: net,
+      label,
+    });
+    // A payment that was reversed leaves its entry behind: each payment has its own source.
+    const [{ n } = { n: 0 }] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(entry)
+      .where(
+        sql`${entry.sourceType} = 'invoice_payment' and ${entry.sourceId} like ${inv.id + '%'}`,
+      );
+    entryId = await createEntry(tx, {
+      journalCode: cash ? 'CAI' : 'BNQ',
+      date: a.date,
+      pieceRef: inv.pieceRef,
+      label,
+      mode: supplierModeToEntryMode(a.method),
+      lines: plannedToLines(planned),
+      source: { type: 'invoice_payment', id: n === 0 ? inv.id : `${inv.id}:${n}` },
+      userId: a.userId,
+      autoFiscalYear: true,
+    });
+  }
+  // Lettering of the supplier lines of the entries: the invoice, the payment and, when a credit
+  // note was offset in full against this invoice alone, the credit note.
   const code = await nextLetteringCode(tx);
   const [supplierAccount] = await tx
     .select({ id: account.id })
     .from(account)
     .where(eq(account.number, sup.number));
+  const group: string[] = [invoiceEntryId];
+  if (entryId) group.push(entryId);
+  const allocations = await tx
+    .select({
+      amount: supplierCreditAllocation.amount,
+      total: supplierCreditNote.totalIncl,
+      entryId: supplierCreditNote.entryId,
+    })
+    .from(supplierCreditAllocation)
+    .innerJoin(supplierCreditNote, eq(supplierCreditNote.id, supplierCreditAllocation.creditNoteId))
+    .where(eq(supplierCreditAllocation.invoiceId, inv.id));
+  for (const al of allocations)
+    if (al.entryId && decimalToCents(al.amount) === decimalToCents(al.total))
+      group.push(al.entryId);
   await tx
     .update(entryLine)
     .set({ letteringCode: code, letteredOn: a.date })
     .where(
       and(
         eq(entryLine.accountId, supplierAccount!.id),
-        sql`${entryLine.entryId} in (${invoiceEntryId}, ${entryId})`,
+        sql`${entryLine.entryId} in (${sql.join(
+          group.map((g) => sql`${g}::uuid`),
+          sql`, `,
+        )})`,
       ),
     );
   await tx
     .update(supplierInvoice)
-    .set({ status: 'PAID', paidAt: a.date, paymentMethod: a.method, paymentEntryId: entryId })
+    .set({
+      status: 'PAID',
+      paidAt: a.date,
+      paymentMethod: net > 0 ? a.method : null,
+      paymentEntryId: entryId,
+    })
     .where(eq(supplierInvoice.id, inv.id));
   return { entryId, invoiceEntryId };
 }

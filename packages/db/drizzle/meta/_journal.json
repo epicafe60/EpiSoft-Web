@@ -281,6 +281,20 @@
       "when": 1794757797646,
       "tag": "0039_invoice_free_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794778040428,
+      "tag": "0040_lot_d_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794778050998,
+      "tag": "0041_lot_d_guards",
+      "breakpoints": true
     }
   ]
 }

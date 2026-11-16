@@ -135,7 +135,7 @@ export interface InvoiceRow {
   totalExcl: string;
   totalVat: string;
   totalIncl: string;
-  status: 'TO_PAY' | 'PAID';
+  status: 'TO_PAY' | 'PAID' | 'CANCELLED';
   paymentMethod: SupplierPaymentMethod | null;
   paidAt: string | null;
   hasDocument: boolean;
@@ -150,9 +150,13 @@ export interface InvoiceDetail {
   totalExcl: string;
   totalVat: string;
   totalIncl: string;
-  status: 'TO_PAY' | 'PAID';
+  status: 'TO_PAY' | 'PAID' | 'CANCELLED';
   paymentMethod: SupplierPaymentMethod | null;
   paidAt: string | null;
+  cancelReason?: string | null;
+  /** Credit notes offset against the invoice and what is left to pay. */
+  creditApplied?: string;
+  netToPay?: string;
   documentMediaId: string | null;
   comment: string | null;
   receipts: { id: string; number: string; date: string }[];

@@ -93,7 +93,7 @@ describe('reports (R-CPT-16, R-CPT-17)', () => {
   it('refuses the FEC while drafts remain, then exports validated entries (R-CPT-19)', async () => {
     const fy = await setupYear();
     await book('2026-02-10', '512001', '707000', '1000', false);
-    expect((await get(`/api/v1/reports/fec/${fy}`)).statusCode).toBe(400);
+    expect((await get(`/api/v1/reports/fec/${fy}`)).statusCode).toBe(409);
     await post('/api/v1/entries/validate', { from: '2026-01-01', to: '2026-12-31' });
     const fec = await get(`/api/v1/reports/fec/${fy}`);
     expect(fec.statusCode).toBe(200);
@@ -169,7 +169,7 @@ describe('year-end closing (R-CPT-18)', () => {
     await post(`/api/v1/fiscal-years/${fy}/close`, { confirm: true });
     const before = await t.db.select().from(entry);
     expect(before.length).toBe(3); // sale, result, carry-forward
-    const res = await post(`/api/v1/fiscal-years/${fy}/reopen`);
+    const res = await post(`/api/v1/fiscal-years/${fy}/reopen`, { reason: 'erreur de stock' });
     expect(res.statusCode).toBe(200);
     expect(res.json().removed).toBe(2);
     expect(await t.db.select().from(entry)).toHaveLength(1);
@@ -180,6 +180,89 @@ describe('year-end closing (R-CPT-18)', () => {
 
     const plain = await createUser(t.db, { roles: ['COMPTA'] });
     h = await login(t.app, plain.username!);
-    expect((await post(`/api/v1/fiscal-years/${fy}/reopen`)).statusCode).toBe(403);
+    expect(
+      (await post(`/api/v1/fiscal-years/${fy}/reopen`, { reason: 'essai sans droit' })).statusCode,
+    ).toBe(403);
+  });
+});
+
+describe('inalterability of the closed years (lot D)', () => {
+  it('requires a motif to reopen, keeps the numbering continuous, and refuses once approved', async () => {
+    const fy = await setupYear();
+    await book('2026-02-10', '512001', '707000', '1000');
+    await post(`/api/v1/fiscal-years/${fy}/close`, { confirm: true });
+
+    expect((await post(`/api/v1/fiscal-years/${fy}/reopen`, {})).statusCode).toBe(400);
+    expect(
+      (await post(`/api/v1/fiscal-years/${fy}/reopen`, { reason: 'stock mal compté' })).statusCode,
+    ).toBe(200);
+    await post(`/api/v1/fiscal-years/${fy}/close`, { confirm: true });
+
+    // Closing, reopening and closing again leaves no hole in the numbering of any journal.
+    const check = (await get(`/api/v1/reports/fec/${fy}/check`)).json();
+    expect(check.anomalies.filter((a: { severity: string }) => a.severity === 'error')).toEqual([]);
+    expect(check.ok).toBe(true);
+
+    // Approval: closed year only, after the end of the year, date and reference of the minutes.
+    const early = await post(`/api/v1/fiscal-years/${fy}/approve`, {
+      date: '2026-06-01',
+      reference: 'PV AG 2027',
+    });
+    expect(early.statusCode).toBe(409);
+    const noRef = await post(`/api/v1/fiscal-years/${fy}/approve`, {
+      date: '2027-03-20',
+      reference: '',
+    });
+    expect(noRef.statusCode).toBe(400);
+    const ok = await post(`/api/v1/fiscal-years/${fy}/approve`, {
+      date: '2027-03-20',
+      reference: 'PV de l’AG du 20 mars 2027',
+    });
+    expect(ok.statusCode).toBe(200);
+    const twice = await post(`/api/v1/fiscal-years/${fy}/approve`, {
+      date: '2027-03-21',
+      reference: 'bis',
+    });
+    expect(twice.statusCode).toBe(409);
+
+    const refused = await post(`/api/v1/fiscal-years/${fy}/reopen`, {
+      reason: 'on voudrait corriger',
+    });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().detail).toContain('assemblée générale');
+    const years = (await get('/api/v1/fiscal-years')).json() as { id: string; status: string }[];
+    expect(years.find((y) => y.id === fy)!.status).toBe('CLOSED');
+
+    // Even straight in the database the approved year cannot be reopened.
+    await expect(
+      t.db.execute(sql`update app.fiscal_year set status = 'OPEN' where id = ${fy}`),
+    ).rejects.toThrow();
+    // No entry can be added to it either.
+    const late = await post('/api/v1/entries', {
+      journalId: await journalId('OD'),
+      date: '2026-12-01',
+      pieceRef: null,
+      label: 'Tardive',
+      mode: null,
+      lines: [
+        { accountId: (await acct('512001')).id, label: '', debit: '1', credit: '' },
+        { accountId: (await acct('707000')).id, label: '', debit: '', credit: '1' },
+      ],
+    });
+    expect(late.statusCode).toBe(409);
+  });
+
+  it('reopens only the latest closed year', async () => {
+    const fy = await setupYear();
+    await book('2026-02-10', '512001', '707000', '1000');
+    await post(`/api/v1/fiscal-years/${fy}/close`, { confirm: true });
+    const years = (await get('/api/v1/fiscal-years')).json() as { id: string }[];
+    const next = years.find((y) => y.id !== fy)!;
+    await book('2027-02-10', '512001', '707000', '500');
+    const closed = await post(`/api/v1/fiscal-years/${next.id}/close`, { confirm: true });
+    expect(closed.statusCode).toBe(200);
+    const res = await post(`/api/v1/fiscal-years/${fy}/reopen`, { reason: 'retour en arrière' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().detail).toContain('dernier exercice clôturé');
   });
 });

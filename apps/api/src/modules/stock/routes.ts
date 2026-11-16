@@ -262,7 +262,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
       .orderBy(supplier.name, product.name),
   );
 
-  /** R-STK-06: stock value at a date, at the purchase price HT or TTC of that date. */
+  /** R-STK-06: stock value at a date at the weighted average cost (CMUP), HT or TTC. */
   const valuation = (date: string, basis: 'excl' | 'incl') => stockValuation(db, date, basis);
   const valuationQuery = z.object({
     date: z.string().date(),
@@ -287,7 +287,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
         { header: 'Produit', key: 'name', width: 40 },
         { header: 'Rayon', key: 'category', width: 24 },
         { header: 'Quantité', key: 'qty', width: 10 },
-        { header: `PA ${v.basis === 'excl' ? 'HT' : 'TTC'}`, key: 'price', width: 10 },
+        { header: `CMUP ${v.basis === 'excl' ? 'HT' : 'TTC'}`, key: 'price', width: 12 },
         { header: 'Valeur', key: 'value', width: 12, style: { numFmt: '#,##0.00 €' } },
       ];
       ws.getRow(1).font = { bold: true };
@@ -299,6 +299,7 @@ export const stockRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
           value: Number(r.value),
         });
       ws.addRow({ name: `Total au ${v.date}`, value: Number(v.total) }).font = { bold: true };
+      ws.addRow({ name: `Méthode de valorisation : ${v.methodLabel}` });
       const buf = await wb.xlsx.writeBuffer();
       return reply
         .header('content-disposition', `attachment; filename="valorisation-${v.date}.xlsx"`)

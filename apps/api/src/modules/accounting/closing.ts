@@ -11,6 +11,8 @@ import {
   centsToDecimal,
   closingSchema,
   decimalToCents,
+  fiscalYearApproveSchema,
+  fiscalYearReopenSchema,
   nextYearStart,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -313,53 +315,105 @@ export const closingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   );
 
   /**
-   * Reopening is exceptional (ADMIN, audited): the closing entries are removed so the year can
-   * be corrected and closed again. Refused once the next year holds other entries.
+   * Reopening is exceptional (ADMIN, audited, motif required) and only possible for the latest
+   * closed year, as long as the general assembly has not approved its accounts: an approved year
+   * is inalterable (art. L123-22 Code de commerce), corrections go to the current year. The closing
+   * entries are removed so the year can be corrected and closed again.
    */
-  app.post('/fiscal-years/:id/reopen', { ...admin, schema: idParams }, async (req) =>
-    db.transaction(async (tx) => {
-      const [fy] = await tx
-        .select()
-        .from(fiscalYear)
-        .where(eq(fiscalYear.id, req.params.id))
-        .for('update');
-      if (!fy) throw notFound('Exercice introuvable.');
-      if (fy.status !== 'CLOSED') throw conflict('Cet exercice n’est pas clôturé.');
-      const [later] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(entry)
-        .innerJoin(fiscalYear, eq(fiscalYear.id, entry.fiscalYearId))
-        .where(
-          and(
-            gt(fiscalYear.startDate, fy.endDate),
-            sql`${entry.sourceType} is distinct from 'closing_ran'`,
-          ),
-        );
-      if (later!.n > 0)
-        throw conflict('L’exercice suivant contient déjà des écritures : rouvrez-le d’abord.');
-      const [nextClosed] = await tx
-        .select({ id: fiscalYear.id })
-        .from(fiscalYear)
-        .where(and(gt(fiscalYear.startDate, fy.endDate), eq(fiscalYear.status, 'CLOSED')));
-      if (nextClosed) throw conflict('Un exercice postérieur est clôturé.');
+  app.post(
+    '/fiscal-years/:id/reopen',
+    { ...admin, schema: { ...idParams, body: fiscalYearReopenSchema } },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const [fy] = await tx
+          .select()
+          .from(fiscalYear)
+          .where(eq(fiscalYear.id, req.params.id))
+          .for('update');
+        if (!fy) throw notFound('Exercice introuvable.');
+        if (fy.status !== 'CLOSED') throw conflict('Cet exercice n’est pas clôturé.');
+        if (fy.approvedAt)
+          throw conflict(
+            `Les comptes de l’exercice ${fy.label} ont été approuvés par l’assemblée générale : il ne peut plus être rouvert. Passez les corrections dans l’exercice en cours.`,
+          );
+        const [laterClosed] = await tx
+          .select({ label: fiscalYear.label })
+          .from(fiscalYear)
+          .where(and(gt(fiscalYear.startDate, fy.endDate), eq(fiscalYear.status, 'CLOSED')));
+        if (laterClosed)
+          throw conflict(
+            `Seul le dernier exercice clôturé peut être rouvert : ${laterClosed.label} est clôturé après celui-ci.`,
+          );
+        const [later] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(entry)
+          .innerJoin(fiscalYear, eq(fiscalYear.id, entry.fiscalYearId))
+          .where(
+            and(
+              gt(fiscalYear.startDate, fy.endDate),
+              sql`${entry.sourceType} is distinct from 'closing_ran'`,
+            ),
+          );
+        if (later!.n > 0)
+          throw conflict('L’exercice suivant contient déjà des écritures : rouvrez-le d’abord.');
 
-      // The closing entries are validated: the application's role cannot delete them. The database
-      // does it, for a closed year only, with the rights of its owner (migration 0031).
-      const { rows } = await tx.execute<{ removed: number }>(
-        sql`select app.remove_closing_entries(${fy.id}::uuid) as removed`,
-      );
-      const removed = rows[0]!.removed;
-      await tx
-        .update(fiscalYear)
-        .set({ status: 'OPEN', closedAt: null, closedBy: null })
-        .where(eq(fiscalYear.id, fy.id));
-      await audit(tx, req, {
-        action: 'fiscal_year.reopen',
-        entity: 'fiscal_year',
-        entityId: fy.id,
-        after: { removedEntries: removed },
-      });
-      return { removed };
-    }),
+        // The closing entries are validated: the application's role cannot delete them. The database
+        // does it, for a closed and not approved year only, with the rights of its owner (migration
+        // 0031, 0041). It also sets the numbering counters back, so no number is left missing.
+        const { rows } = await tx.execute<{ removed: number }>(
+          sql`select app.remove_closing_entries(${fy.id}::uuid) as removed`,
+        );
+        const removed = rows[0]!.removed;
+        await tx
+          .update(fiscalYear)
+          .set({ status: 'OPEN', closedAt: null, closedBy: null })
+          .where(eq(fiscalYear.id, fy.id));
+        await audit(tx, req, {
+          action: 'fiscal_year.reopen',
+          entity: 'fiscal_year',
+          entityId: fy.id,
+          after: { removedEntries: removed, reason: req.body.reason },
+        });
+        return { removed };
+      }),
+  );
+
+  /**
+   * Approval of the accounts by the general assembly: date and reference of the minutes. From then
+   * on the year can never be reopened (a trigger of the database refuses it too).
+   */
+  app.post(
+    '/fiscal-years/:id/approve',
+    { ...compta, schema: { ...idParams, body: fiscalYearApproveSchema } },
+    async (req) =>
+      db.transaction(async (tx) => {
+        const [fy] = await tx
+          .select()
+          .from(fiscalYear)
+          .where(eq(fiscalYear.id, req.params.id))
+          .for('update');
+        if (!fy) throw notFound('Exercice introuvable.');
+        if (fy.status !== 'CLOSED')
+          throw conflict('Seul un exercice clôturé peut être approuvé par l’assemblée générale.');
+        if (fy.approvedAt) throw conflict('Les comptes de cet exercice sont déjà approuvés.');
+        if (req.body.date <= fy.endDate)
+          throw conflict('L’assemblée générale se tient après la fin de l’exercice.');
+        await tx
+          .update(fiscalYear)
+          .set({
+            approvedOn: req.body.date,
+            approvedAt: new Date(),
+            approvedBy: req.user!.id,
+            approvalReference: req.body.reference,
+          })
+          .where(eq(fiscalYear.id, fy.id));
+        await audit(tx, req, {
+          action: 'fiscal_year.approve',
+          entity: 'fiscal_year',
+          entityId: fy.id,
+          after: { date: req.body.date, reference: req.body.reference },
+        });
+        return { ok: true };
+      }),
   );
 };

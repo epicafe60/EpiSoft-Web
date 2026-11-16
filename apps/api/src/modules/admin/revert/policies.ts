@@ -176,6 +176,9 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
     'Un exercice clôturé se rouvre depuis l’écran de clôture.',
     '/compta/cloture',
   ),
+  'fiscal_year.approve': none(
+    'L’approbation des comptes par l’assemblée générale est définitive : l’exercice ne peut plus être rouvert.',
+  ),
   'fiscal_year.reopen': via(
     'Un exercice rouvert se clôture depuis l’écran de clôture.',
     '/compta/cloture',
@@ -305,6 +308,18 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'invoice.update': restore,
   'invoice.document': none('L’ancien document n’est pas conservé : joignez-le de nouveau.'),
   'invoice.pay': restore,
+  'invoice.cancel': none(
+    'Une annulation est une écriture comptable définitive : saisissez de nouveau la facture.',
+  ),
+  'invoice.payment_reverse': none(
+    'Un règlement annulé est contre-passé : enregistrez le règlement de nouveau depuis la facture.',
+  ),
+  'credit_note.create': none('Un avoir se corrige en l’annulant, avec un motif (Appros › Avoirs).'),
+  'credit_note.apply': none(
+    'Retirez l’imputation depuis l’avoir tant que la facture n’est pas réglée.',
+  ),
+  'credit_note.unapply': none('Imputez de nouveau l’avoir sur la facture.'),
+  'credit_note.cancel': none('Une annulation est définitive : saisissez de nouveau l’avoir.'),
   'stock.loss': {
     kind: 'compensate',
     label: 'Enregistrer le mouvement de stock inverse',
