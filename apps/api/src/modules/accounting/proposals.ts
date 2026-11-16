@@ -20,6 +20,7 @@ import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toShopDate, tzSql } from '../../lib/dates';
 import { badRequest } from '../../lib/problem';
+import { sessionsRevenue } from './auto';
 import {
   accountMap,
   createEntry,
