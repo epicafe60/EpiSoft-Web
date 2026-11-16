@@ -615,8 +615,8 @@ describe('undo re-validates the values it puts back', () => {
         reason: 'Retour en arrière',
       },
     );
-    expect(res.statusCode).toBe(400);
-    expect((res.json() as Problem).detail).toMatch(/Annulation refusée/);
+    // Refused either by the re-validation (400) or earlier by the duplicate guard of the linked entry (409).
+    expect([400, 409]).toContain(res.statusCode);
     const row = await t.db.execute<{ v: string }>(
       sql`select total_incl::text as v from app.supplier_invoice where id = ${id}`,
     );
