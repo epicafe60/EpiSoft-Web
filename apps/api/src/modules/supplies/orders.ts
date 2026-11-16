@@ -31,8 +31,9 @@ import {
   orderTotals,
   parsePrice4,
   parseQtyToMilli,
-  price4ToDecimal,
+  purchaseAmountsFromExcl,
   purchasePriceFlag,
+  purchasePricesProblem,
   receiptCorrectionSchema,
   receiptLotProblem,
   receiptSchema,
@@ -155,67 +156,6 @@ export async function lastOrderedQty(
     );
   for (const r of rows) if (!last.has(r.productId)) last.set(r.productId, r.qty);
   return last;
-}
-
-/**
- * The purchase price typed in an order is the product's: when it differs from the product sheet,
- * the sheet follows (price history, audit with before/after). Only the price excluding VAT is
- * carried over; VAT and TTC amounts are keyed in on the product sheet.
- */
-/**
- * A new PA HT typed on an order or a receipt: the VAT amount and the PA TTC of the sheet follow,
- * at the rate of the product, so that the three amounts stay consistent (R-PRD-04).
- */
-function purchaseAmountsFor(unitPriceExcl: string, vatRate: string) {
-  const excl4 = parsePrice4(unitPriceExcl)!;
-  const incl4 = inclFromExcl4(excl4, vatRate);
-  return {
-    purchasePriceExcl: unitPriceExcl,
-    purchaseVatAmount: price4ToDecimal(incl4 - excl4),
-    purchasePriceIncl: price4ToDecimal(incl4),
-  };
-}
-
-async function propagatePurchasePrices(
-  tx: Tx,
-  req: Parameters<typeof audit>[1],
-  lines: { productId: string; qty: string; unitPriceExcl: string }[],
-) {
-  for (const l of lines) {
-    if (!(parseQtyToMilli(l.qty)! > 0)) continue;
-    const [p] = await tx.select().from(product).where(eq(product.id, l.productId));
-    if (!p) continue;
-    if (parsePrice4(l.unitPriceExcl) === parsePrice4(p.purchasePriceExcl ?? '0')) continue;
-    const [after] = await tx
-      .update(product)
-      .set(purchaseAmountsFor(l.unitPriceExcl, p.vatRate))
-      .where(eq(product.id, p.id))
-      .returning();
-    await tx.insert(priceHistory).values({
-      productId: p.id,
-      purchasePriceExcl: after!.purchasePriceExcl,
-      purchasePriceIncl: after!.purchasePriceIncl,
-      salePrice: after!.salePrice,
-      source: 'FORM',
-      by: req.user!.id,
-    });
-    await audit(tx, req, {
-      action: 'product.update',
-      entity: 'product',
-      entityId: p.id,
-      before: {
-        purchasePriceExcl: p.purchasePriceExcl,
-        purchaseVatAmount: p.purchaseVatAmount,
-        purchasePriceIncl: p.purchasePriceIncl,
-      },
-      after: {
-        purchasePriceExcl: after!.purchasePriceExcl,
-        purchaseVatAmount: after!.purchaseVatAmount,
-        purchasePriceIncl: after!.purchasePriceIncl,
-        name: p.name,
-      },
-    });
-  }
 }
 
 export async function orderDetail(db: Db | Tx, id: string) {
@@ -363,6 +303,8 @@ export interface ReceiptInput {
     unitPriceExcl: string;
     bestBefore?: string | null;
     lotNumber?: string | null;
+    /** Only a line that asks for it updates the product sheet (PA HT, VAT, PA TTC). */
+    updateProductPrice?: boolean;
   }[];
   closeOrder: boolean;
   newSalePrices: Record<string, string>;
@@ -370,12 +312,15 @@ export interface ReceiptInput {
 
 /**
  * R-CMD-05: a receipt and, in the same transaction, the PURCHASE_IN movements (stock is
- * incremented, never overwritten), the purchase prices and the accepted selling prices.
+ * incremented, never overwritten) and the accepted selling prices. The product sheet purchase
+ * price changes only on the lines that carry `updateProductPrice` (the real cost always stays on
+ * the receipt line and the movement unit cost).
  */
 export async function recordReceipt(
   tx: Tx,
   input: ReceiptInput,
   by: string,
+  req?: Parameters<typeof audit>[1],
 ): Promise<{ id: string; number: string; warnings: string[] }> {
   const thresholds = (await loadSettings(tx))['controls.thresholds'];
   const warnings: string[] = [];
@@ -483,16 +428,28 @@ export async function recordReceipt(
         by,
       });
     }
-    // Purchase price and accepted selling price (R-PRD-05 history, R-PRD-06 labels).
-    const excl = parsePrice4(l.unitPriceExcl)!;
+    // Accepted selling price, and the purchase price of the sheet only when the line asks for it
+    // (R-PRD-05 history, R-PRD-06 labels). The three amounts stay coherent with the VAT rate.
     const newSale = input.newSalePrices[p.id];
-    const paChanged = excl !== parsePrice4(p.purchasePriceExcl ?? '0');
     const pvChanged = newSale !== undefined && newSale !== p.salePrice;
+    const amounts = l.updateProductPrice
+      ? purchaseAmountsFromExcl(l.unitPriceExcl, p.vatRate)
+      : null;
+    if (l.updateProductPrice) {
+      const problem = amounts ? purchasePricesProblem(amounts) : 'Prix d’achat invalide.';
+      if (problem)
+        throw badRequest(problem, [{ path: `lines.${i}.unitPriceExcl`, message: problem }]);
+    }
+    const paChanged =
+      amounts !== null &&
+      (amounts.purchasePriceExcl !== p.purchasePriceExcl ||
+        amounts.purchaseVatAmount !== p.purchaseVatAmount ||
+        amounts.purchasePriceIncl !== p.purchasePriceIncl);
     if (paChanged || pvChanged) {
       const [after] = await tx
         .update(product)
         .set({
-          ...purchaseAmountsFor(l.unitPriceExcl, p.vatRate),
+          ...(paChanged ? amounts : {}),
           ...(pvChanged ? { salePrice: newSale, labelPending: true } : {}),
         })
         .where(eq(product.id, p.id))
@@ -505,6 +462,26 @@ export async function recordReceipt(
         source: 'RECEIPT',
         by,
       });
+      if (req)
+        await audit(tx, req, {
+          action: 'product.update',
+          entity: 'product',
+          entityId: p.id,
+          before: {
+            purchasePriceExcl: p.purchasePriceExcl,
+            purchaseVatAmount: p.purchaseVatAmount,
+            purchasePriceIncl: p.purchasePriceIncl,
+            salePrice: p.salePrice,
+          },
+          after: {
+            purchasePriceExcl: after!.purchasePriceExcl,
+            purchaseVatAmount: after!.purchaseVatAmount,
+            purchasePriceIncl: after!.purchasePriceIncl,
+            salePrice: after!.salePrice,
+            name: p.name,
+            receipt: number,
+          },
+        });
     }
   }
   if (input.orderId) {
@@ -710,7 +687,6 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             })
             .where(eq(purchaseOrder.id, o.id));
         await writeLines(tx, o.id, req.body.lines);
-        await propagatePurchasePrices(tx, req, req.body.lines);
         await audit(tx, req, {
           action: 'order.update',
           entity: 'purchase_order',
@@ -853,6 +829,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             newSalePrices: req.body.newSalePrices,
           },
           req.user!.id,
+          req,
         );
         await audit(tx, req, {
           action: 'receipt.create',
@@ -906,6 +883,7 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             newSalePrices: req.body.newSalePrices,
           },
           req.user!.id,
+          req,
         );
         await audit(tx, req, {
           action: 'receipt.create',
@@ -981,15 +959,14 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
                 qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${milliToDecimal(deltaMilli)}::numeric`,
               })
               .where(eq(purchaseOrderLine.id, l.orderLineId));
-          // The purchase price of the product follows if nothing changed it since the receipt.
+          // The sheet price follows (three coherent amounts) only if it still carries the receipt price.
           if (
             priceChanged &&
             parsePrice4(p.purchasePriceExcl ?? '0') === parsePrice4(l.unitPriceExcl)
           ) {
-            const incl = price4ToDecimal(inclFromExcl4(parsePrice4(c.unitPriceExcl)!, p.vatRate));
             const [after] = await tx
               .update(product)
-              .set({ purchasePriceExcl: c.unitPriceExcl, purchasePriceIncl: incl })
+              .set(purchaseAmountsFromExcl(c.unitPriceExcl, p.vatRate)!)
               .where(eq(product.id, p.id))
               .returning();
             await tx.insert(priceHistory).values({
