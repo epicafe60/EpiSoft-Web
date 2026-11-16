@@ -429,13 +429,14 @@ describe('RGPD: consents and legal pages', () => {
     const none = await t.db.execute(
       sql`select count(*)::int as n from app.consent where member_id = ${m.id}`,
     );
-    expect((none.rows[0] as { n: number }).n).toBe(1);
+    // The grant the sheet already held, recorded first, then the withdrawal.
+    expect((none.rows[0] as { n: number }).n).toBe(2);
     expect((await put({ purpose: 'DATA_PROCESSING', granted: false })).statusCode).toBe(400);
     expect((await put({ purpose: 'NOTIFICATIONS', granted: true })).statusCode).toBe(400);
     const exp = (
       await t.app.inject({ method: 'GET', url: '/api/v1/me/export', headers: h })
     ).json() as { consents: unknown[] };
-    expect(exp.consents).toHaveLength(1);
+    expect(exp.consents).toHaveLength(2);
   });
 
   it('keeps consents as evidence: the application role cannot rewrite one', async () => {

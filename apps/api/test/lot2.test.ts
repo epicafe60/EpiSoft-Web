@@ -430,8 +430,17 @@ describe('catalogue administration (R-PRD-06, R-PRD-08)', () => {
     // (organic) dots, in both formats.
     await t.db
       .update(product)
-      .set({ qualities: ['LOCAL', 'ORGANIC'] })
+      .set({ qualities: ['LOCAL', 'ORGANIC'], localJustification: 'Ferme Durand, 5 km' })
       .where(eq(product.id, p1.id));
+    // « Bio » is printed only for a supplier whose certificate is valid.
+    await t.db
+      .update(supplier)
+      .set({
+        organicCertNumber: 'FR-BIO-01-1',
+        organicCertBody: 'Ecocert',
+        organicCertExpiry: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+      })
+      .where(eq(supplier.id, s.id));
     for (const perPage of [24, 40])
       for (const body of [{ productIds: [p1.id, p2.id] }, { productIds: [p1.id], perPage }]) {
         const res = await post('/api/v1/products/labels/pdf', body);
