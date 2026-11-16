@@ -231,6 +231,9 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'preorder.status': restore,
   // Members
   'member.create': restore,
+  'consent.record': none('Un consentement est une preuve datée : pour le changer, enregistrez un nouveau choix (le retrait est un nouvel enregistrement).'),
+  'lot.create': restore,
+  'lot.recall_view': none(CANNOT_UNSEND),
   'member.update': restore,
   'member.roles': restore,
   'member.qr_regenerate': none('L’ancien badge n’est pas conservé : régénérez-en un si besoin.'),

@@ -1,6 +1,8 @@
 import { and, desc, eq, gt, isNull, lt, notLike, sql } from 'drizzle-orm';
 import type { Db } from '@episoft/db';
-import { DEFAULT_THRESHOLDS, type Thresholds } from '@episoft/shared';
+import { DEFAULT_THRESHOLDS, legalGaps, type Thresholds } from '@episoft/shared';
+import { toShopDate } from '../../lib/dates';
+import { loadSettings } from './settings-store';
 import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
 import { REFUSAL_PREFIX } from '../../plugins/errors';
 import { backupRun, emailOutbox, integrityRun, syncRejection, errorLog } from '@episoft/db';
@@ -145,6 +147,61 @@ export async function computeAttention(
       where status = 'NEW' and date < current_date - 30`),
     label: 'Ligne(s) bancaire(s) à rapprocher depuis plus d’un mois.',
     link: '/compta/banque',
+  });
+
+  // Compliance: product information (règlement UE 1169/2011), « bio » and « local » claims
+  // (règlement UE 2018/848, DGCCRF), public legal pages (LCEN, RGPD).
+  add({
+    code: 'FOOD_INFO_MISSING',
+    severity: 'error',
+    count: await count(sql`select count(*)::int as n from app.product
+      where is_food and kind = 'GOODS' and status <> 'INACTIVE'
+        and (allergens_decision is null or length(trim(coalesce(ingredients, ''))) < 2)`),
+    label:
+      'Produit(s) alimentaire(s) sans décision sur les allergènes ou sans ingrédients : non proposés en ligne, étiquette refusée.',
+    link: '/catalogue',
+  });
+  const today = toShopDate(now);
+  add({
+    code: 'ORGANIC_CERT_INVALID',
+    severity: 'error',
+    count: await count(sql`select count(*)::int as n from app.product p
+      left join app.supplier s on s.id = p.supplier_id
+      where 'ORGANIC' = any(p.qualities) and p.status <> 'INACTIVE'
+        and (s.id is null or s.organic_cert_number is null or s.organic_cert_body is null
+             or s.organic_cert_expiry is null or s.organic_cert_expiry < ${today}::date)`),
+    label:
+      'Produit(s) « bio » dont le fournisseur n’a pas de certificat bio valide : la mention bio ne doit plus être employée.',
+    link: '/appros/fournisseurs',
+  });
+  add({
+    code: 'ORGANIC_CERT_EXPIRING',
+    severity: 'warning',
+    count: await count(sql`select count(distinct s.id)::int as n from app.supplier s
+      join app.product p on p.supplier_id = s.id
+      where 'ORGANIC' = any(p.qualities) and p.status <> 'INACTIVE'
+        and s.organic_cert_expiry >= ${today}::date
+        and s.organic_cert_expiry < ${today}::date + 30`),
+    label: 'Certificat(s) bio de fournisseur qui expirent dans moins de 30 jours.',
+    link: '/appros/fournisseurs',
+  });
+  add({
+    code: 'LOCAL_UNJUSTIFIED',
+    severity: 'warning',
+    count: await count(sql`select count(*)::int as n from app.product
+      where 'LOCAL' = any(qualities) and status <> 'INACTIVE'
+        and length(trim(coalesce(local_justification, ''))) < 8`),
+    label: 'Produit(s) « local » sans justification (producteur, distance).',
+    link: '/catalogue',
+  });
+  const legalSettings = await loadSettings(db);
+  const gaps = legalGaps(legalSettings['association.identity'], legalSettings['legal.texts']);
+  add({
+    code: 'LEGAL_PAGES_INCOMPLETE',
+    severity: 'warning',
+    count: gaps.length,
+    label: `Mentions légales incomplètes : il manque ${gaps.join(', ')}.`,
+    link: '/admin/parametres',
   });
 
   const [errs] = await db

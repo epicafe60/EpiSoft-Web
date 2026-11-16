@@ -485,6 +485,8 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         errors: 0,
         stockCorrections: 0,
         balanceCorrections: 0,
+        /** Food products created without their allergen decision or ingredients. */
+        incompleteFood: 0,
       };
       for (const [name, id] of Object.entries(supplierMap)) {
         await tx
@@ -505,6 +507,9 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           }
           const supplierId = v.supplierName ? (supplierIds.get(v.supplierName) ?? null) : null;
           if (r.action === 'create') {
+            const foodIncomplete =
+              v.isFood && (!v.allergensDecision || (v.ingredients ?? '').length < 2);
+            if (foodIncomplete) result.incompleteFood++;
             const vat = v.vatRate === null ? '0' : String(v.vatRate);
             const [created] = await tx
               .insert(product)
@@ -526,6 +531,14 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
                     : price4ToDecimal(inclFromExcl4(v.purchaseExcl4, vat) - v.purchaseExcl4),
                 salePrice: centsToDecimal(v.salePriceCents ?? 0),
                 labelPending: true,
+                isFood: v.isFood,
+                ingredients: v.ingredients,
+                allergensDecision: v.allergensDecision,
+                allergens: v.allergens,
+                origin: v.origin,
+                // A food product whose allergens or ingredients are missing is not offered online
+                // until a volunteer completes it (règlement UE 1169/2011).
+                shopVisible: !foodIncomplete,
               })
               .returning();
             if (v.ean)

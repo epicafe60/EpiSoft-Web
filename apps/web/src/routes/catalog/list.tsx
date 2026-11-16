@@ -4,6 +4,8 @@ import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Tag } from 'lucide-react';
 import {
+  allergenSentence,
+  foodInfoProblems,
   formatQty,
   parseQtyToMilli,
   PRODUCT_STATUS_LABELS,
@@ -158,6 +160,7 @@ export function ProductsPage() {
               <SortTh state={sort} sortKey="category" className="hidden md:table-cell">
                 Rayon
               </SortTh>
+              <th className="hidden lg:table-cell">Allergènes et origine</th>
               <SortTh state={sort} sortKey="price" className="text-right">
                 Prix
               </SortTh>
@@ -169,13 +172,13 @@ export function ProductsPage() {
           <tbody>
             {isPending ? (
               <tr>
-                <td colSpan={5} className="text-muted-foreground">
+                <td colSpan={6} className="text-muted-foreground">
                   Chargement…
                 </td>
               </tr>
             ) : data?.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-muted-foreground">
+                <td colSpan={6} className="text-muted-foreground">
                   Aucun produit.
                 </td>
               </tr>
@@ -210,11 +213,22 @@ export function ProductsPage() {
                             ) : null}
                             {p.kind === 'SERVICE' ? <Badge variant="muted">Service</Badge> : null}
                             {p.labelPending ? <Badge>Étiquette</Badge> : null}
+                            {foodInfoProblems(p).length ? (
+                              <Badge variant="destructive">Infos à compléter</Badge>
+                            ) : null}
+                            {p.qualities.includes('ORGANIC') && p.organic !== 'VALID' ? (
+                              <Badge variant="destructive">Bio non justifié</Badge>
+                            ) : null}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="hidden text-muted-foreground md:table-cell">{p.categoryName}</td>
+                    <td className="hidden max-w-64 text-xs text-muted-foreground lg:table-cell">
+                      {[p.isFood ? allergenSentence(p) : null, p.origin ? `Origine : ${p.origin}` : null]
+                        .filter(Boolean)
+                        .join(' ')}
+                    </td>
                     <td className="whitespace-nowrap text-right tabular-nums">
                       {euro(p.salePrice)}
                       {p.saleMode !== 'UNIT' && p.unit ? (

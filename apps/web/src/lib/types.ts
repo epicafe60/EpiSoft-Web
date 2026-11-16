@@ -1,4 +1,6 @@
 import type {
+  Allergen,
+  OriginFamily,
   MemberPaymentMethod,
   MemberPaymentPurpose,
   MemberStatus,
@@ -183,6 +185,16 @@ export interface ProductListItem {
   categoryName: string | null;
   supplierName: string | null;
   imageId: string | null;
+  qualities: Quality[];
+  unitQty: string | null;
+  isFood: boolean;
+  ingredients: string | null;
+  allergensDecision: 'NONE' | 'LISTED' | null;
+  allergens: Allergen[];
+  allergenTraces: Allergen[];
+  origin: string | null;
+  localJustification: string | null;
+  organic: 'NO_SUPPLIER' | 'MISSING' | 'EXPIRED' | 'VALID';
 }
 
 export interface ProductDetail {
@@ -215,6 +227,15 @@ export interface ProductDetail {
   imageId: string | null;
   eans: string[];
   hasSales: boolean;
+  isFood: boolean;
+  ingredients: string | null;
+  allergensDecision: 'NONE' | 'LISTED' | null;
+  allergens: Allergen[];
+  allergenTraces: Allergen[];
+  origin: string | null;
+  originFamily: OriginFamily | null;
+  localJustification: string | null;
+  organic: 'NO_SUPPLIER' | 'MISSING' | 'EXPIRED' | 'VALID';
   priceHistory: {
     id: string;
     at: string;

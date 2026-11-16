@@ -439,6 +439,10 @@ export const supplier = app.table('supplier', {
   /** Paid « à réception fin de mois »: due at the end of the month the invoice is entered. */
   payAtMonthEnd: boolean('pay_at_month_end').notNull().default(false),
   deliveryDay: text('delivery_day'),
+  /** « Bio » claim (règlement UE 2018/848): the supplier's organic certificate. */
+  organicCertNumber: text('organic_cert_number'),
+  organicCertBody: text('organic_cert_body'),
+  organicCertExpiry: date('organic_cert_expiry'),
   legacyFnrcode: text('legacy_fnrcode').unique(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -499,6 +503,25 @@ export const product = app.table(
     posTabId: uuid('pos_tab_id').references(() => posTab.id, { onDelete: 'set null' }),
     posSort: integer('pos_sort').notNull().default(0),
     posLabel: text('pos_label'),
+    /** Food: allergens, ingredients and origin must be filled in (règlement UE 1169/2011). */
+    isFood: boolean('is_food').notNull().default(false),
+    ingredients: text('ingredients'),
+    /** null: not decided yet; NONE: « aucun allergène déclaré » chosen explicitly; LISTED: see `allergens`. */
+    allergensDecision: text('allergens_decision'),
+    allergens: text('allergens')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** « Peut contenir des traces de »: same codes as `allergens`. */
+    allergenTraces: text('allergen_traces')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    origin: text('origin'),
+    /** Family for which the origin is mandatory (fruit and vegetables, honey, meat…). */
+    originFamily: text('origin_family'),
+    /** Why the product can be called « local » (producer, place, distance). */
+    localJustification: text('local_justification'),
     imageId: uuid('image_id').references(() => media.id, { onDelete: 'set null' }),
     createdOn: date('created_on'),
     createdAt: createdAt(),
@@ -1547,6 +1570,57 @@ export const productBatch = app.table(
     index('product_batch_date_idx').on(t.bestBefore),
     check('product_batch_qty', sql`${t.qty} > 0`),
   ],
+);
+
+/**
+ * Traceability (règlement CE 178/2002, art. 18): the supplier lot received, with its best-before
+ * date. What was sold from it is not recorded at the till; it is estimated by FEFO (see
+ * packages/shared/src/traceability.ts).
+ */
+export const productLot = app.table(
+  'product_lot',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    supplierId: uuid('supplier_id').references(() => supplier.id),
+    receiptId: uuid('receipt_id').references(() => goodsReceipt.id),
+    receiptLineId: uuid('receipt_line_id').references(() => goodsReceiptLine.id),
+    lotNumber: text('lot_number').notNull(),
+    /** DLC or DDM; null for what carries none (fresh fruit and vegetables). */
+    bestBefore: date('best_before'),
+    qty: qty('qty').notNull(),
+    receivedOn: date('received_on').notNull(),
+    createdAt: createdAt(),
+    by: uuid('by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('product_lot_product_idx').on(t.productId, t.receivedOn),
+    index('product_lot_number_idx').on(t.lotNumber),
+    check('product_lot_qty', sql`${t.qty} > 0`),
+  ],
+);
+
+/**
+ * RGPD: what a member agreed to or refused, with the date, the version of the text shown and the
+ * way it was collected. Append-only: a withdrawal is a new row, the current choice is the latest.
+ */
+export const consent = app.table(
+  'consent',
+  {
+    id: id(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    granted: boolean('granted').notNull(),
+    textVersion: text('text_version').notNull(),
+    channel: text('channel').notNull(),
+    at: tz('at').notNull().defaultNow(),
+    recordedBy: uuid('recorded_by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [index('consent_member_idx').on(t.memberId, t.purpose, t.at)],
 );
 
 /** R-CPT-20: yearly budget of an expense or income account, compared with the books in the reports. */

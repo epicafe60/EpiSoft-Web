@@ -3,6 +3,7 @@ import { parseAmountToCents, centsToDecimal } from './money';
 import { DEFAULT_ACCOUNTS } from './accounting';
 import { DEFAULT_THRESHOLDS } from './controls';
 import { brandingSchema, DEFAULT_BRANDING } from './branding';
+import { DEFAULT_LEGAL_TEXTS, legalTextsSchema } from './legal';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from './timezone';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
@@ -53,6 +54,8 @@ export const settingSchemas = {
     email: optionalText(200),
     phone: optionalText(30),
   }),
+  /** The two public pages (mentions légales, politique de confidentialité): texts written by the association. */
+  'legal.texts': legalTextsSchema,
   'pos.defaultFloat': z.object({ amount }),
   // Q4 (open): default is no overdraft (0 €). Flagged in spec §11.3.
   'wallet.overdraftLimit': z.object({
@@ -181,6 +184,7 @@ export const SETTING_DEFAULTS: Settings = {
     email: null,
     phone: null,
   },
+  'legal.texts': { ...DEFAULT_LEGAL_TEXTS },
   'pos.defaultFloat': { amount: '0.00' },
   'wallet.overdraftLimit': { amount: '0.00' },
   'pos.sellToNonMembers': { enabled: true },

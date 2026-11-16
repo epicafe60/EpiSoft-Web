@@ -9,7 +9,7 @@ import {
   supplierInvoice,
   type Db,
 } from '@episoft/db';
-import { nextSupplierCode, patchOf, supplierSchema } from '@episoft/shared';
+import { nextSupplierCode, organicCertProblem, patchOf, supplierSchema } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { badRequest, conflict, notFound } from '../../lib/problem';
@@ -136,6 +136,8 @@ export const supplierRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
 
   app.post('/suppliers', { ...editors, schema: { body: supplierSchema } }, async (req) => {
     const { region, code, ...fields } = req.body;
+    const certProblem = organicCertProblem(fields);
+    if (certProblem) throw badRequest(certProblem);
     return db.transaction(async (tx) => {
       const codes = (await tx.select({ code: supplier.code }).from(supplier)).map((s) => s.code);
       const finalCode = code ?? (region ? nextSupplierCode(codes, region) : null);
@@ -186,6 +188,19 @@ export const supplierRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         if (before.updatedAt.toISOString() !== new Date(updatedAt).toISOString()) {
           throw conflict('La fiche a été modifiée entre-temps. Rechargez-la avant d’enregistrer.');
         }
+        const certProblem = organicCertProblem({
+          organicCertNumber:
+            fields.organicCertNumber !== undefined
+              ? fields.organicCertNumber
+              : before.organicCertNumber,
+          organicCertBody:
+            fields.organicCertBody !== undefined ? fields.organicCertBody : before.organicCertBody,
+          organicCertExpiry:
+            fields.organicCertExpiry !== undefined
+              ? fields.organicCertExpiry
+              : before.organicCertExpiry,
+        });
+        if (certProblem) throw badRequest(certProblem);
         if (fields.code && fields.code !== before.code) {
           const dup = await tx.query.supplier.findFirst({ where: eq(supplier.code, fields.code) });
           if (dup) throw conflict(`Le code ${fields.code} est déjà utilisé.`);
