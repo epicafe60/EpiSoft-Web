@@ -200,14 +200,14 @@ const SECTIONS: Section[] = [
         question: 'Je prépare une commande fournisseur',
         answer: [
           'La commande démarre à zéro sur toutes les références du fournisseur : tapez la quantité voulue dans « Qté Commande ». « Stock », « Mini » et « Quantité dernière commande » (celle de la commande précédente à ce fournisseur) sont là pour vous guider. Une ligne laissée à zéro n’est pas commandée.',
-          '« PA HT unitaire en € » se modifie dans la commande : à l’enregistrement, si le prix a changé, il est aussi mis à jour dans la fiche du produit. La TVA et le prix TTC de la fiche ne bougent pas : ajustez-les dans la fiche si besoin.',
+          '« PA HT unitaire en € » se modifie dans la commande : ce prix est celui de la ligne et du bon de commande imprimé. La fiche du produit ne change jamais à l’enregistrement d’une commande.',
         ],
       },
       {
         question: 'À la réception, l’application signale un prix d’achat qui change',
         answer: [
-          'Le prix d’achat reçu remplace l’ancien (et sert au calcul de la marge). Une ligne en rouge indique « ancien prix → nouveau prix ».',
-          'Comparez avec le bon de livraison ou la facture. Si le prix est juste, cochez « J’ai vérifié » : pensez alors à ajuster le prix de vente. Sinon, corrigez le prix avant de valider.',
+          'Pour chaque ligne, l’écran montre le prix de la fiche, le prix commandé et le prix reçu, avec l’écart en euros et en pourcentage. Le prix reçu sert au coût réel du stock et de la marge, mais la fiche produit n’est pas modifiée toute seule.',
+          'Comparez avec le bon de livraison ou la facture. Si le nouveau prix doit devenir le prix habituel, cochez « Mettre à jour la fiche produit » sur la ligne (HT, TVA et TTC sont recalculés au taux du produit) et pensez à ajuster le prix de vente. Sinon, laissez décoché ; si le prix est faux, corrigez-le avant de valider.',
         ],
       },
       {
