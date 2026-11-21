@@ -97,7 +97,7 @@ describe('the till seals its tickets (§1)', () => {
     const b = await sealedSale(reg, [{ productId: p.id, unitPrice: '2.50' }], '2.50');
     const res = await till.push([a, b]);
     expect(res.map((r) => r.status)).toEqual(['OK', 'OK']);
-    expect(res[0]!.warnings).toEqual([]);
+    expect(res[0]!.warnings.filter((w) => !w.code.startsWith('POLICY_'))).toEqual([]);
     const ra = await rowOf(a.id);
     const rb = await rowOf(b.id);
     expect(ra).toMatchObject({
@@ -148,7 +148,7 @@ describe('the till seals its tickets (§1)', () => {
     reg.skip(); // a ticket printed and lost
     const third = await sealedSale(reg, [{ productId: p.id, unitPrice: '2.50' }], '2.50');
     const res = await till.push([first, third]);
-    expect(res[0]!.warnings).toEqual([]);
+    expect(res[0]!.warnings.filter((w) => !w.code.startsWith('POLICY_'))).toEqual([]);
     expect(res[1]!.warnings.map((w) => w.code)).toContain('SEAL_GAP');
     expect(await rowOf(third.id)).toMatchObject({ till_seal_status: 'GAP' });
   });

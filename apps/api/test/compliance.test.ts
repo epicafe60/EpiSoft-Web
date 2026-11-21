@@ -517,6 +517,8 @@ describe('RGPD: consents and legal pages', () => {
       'supplier_credit_note',
       'supplier_credit_allocation',
       'vat_regime_change',
+      'period_closing',
+      'ticket_reprint',
       'price_history',
       'stock_movement',
       'inventory_session',
