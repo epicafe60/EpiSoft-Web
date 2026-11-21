@@ -358,12 +358,13 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
                   <Label htmlFor="is-food" className="font-normal">
                     Produit alimentaire
                     <span className="block text-xs text-muted-foreground">
-                      Allergènes, ingrédients et quantité nette obligatoires (règlement UE
-                      1169/2011) ; le lot et la date limite sont demandés à la réception.
+                      {refs.data?.foodInfo
+                        ? 'Allergènes, ingrédients et quantité nette obligatoires (règlement UE 1169/2011) ; le lot et la date limite sont demandés à la réception.'
+                        : 'Le lot et la date limite sont demandés à la réception. Les allergènes et les ingrédients s’activent dans Administration › Paramètres.'}
                     </span>
                   </Label>
                 </div>
-                {form.isFood ? (
+                {form.isFood && refs.data?.foodInfo ? (
                   <>
                     <fieldset className="grid gap-2" aria-describedby="allergens-hint">
                       <legend className="mb-1 text-sm font-medium">Allergènes</legend>

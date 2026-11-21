@@ -77,6 +77,9 @@ function SettingCard<K extends SettingKey>({
         settingKey === 'app.timezone'
       )
         await queryClient.invalidateQueries({ queryKey: ['branding'] });
+      // The product sheet and the list read this option with the catalogue references.
+      if (settingKey === 'catalog.foodInfo')
+        await queryClient.invalidateQueries({ queryKey: ['catalog-refs'] });
     },
   });
   const errors = save.error instanceof ApiError ? save.error.fieldErrors() : {};
@@ -597,6 +600,26 @@ export function SettingsPage() {
                 onChange={(e) => set({ enabled: e.target.checked })}
               />
               <Label htmlFor="shop-on">Activer la boutique en ligne</Label>
+            </div>
+          )}
+        </SettingCard>
+
+        <SettingCard
+          settingKey="catalog.foodInfo"
+          title="Information du consommateur sur les produits alimentaires"
+          description="Option. Activée, la fiche produit demande les allergènes, les ingrédients, la quantité nette et l’origine (règlement UE 1169/2011) : un produit alimentaire incomplet est refusé, n’a pas d’étiquette et n’est pas proposé en ligne, et ces informations sont imprimées sur l’étiquette et affichées dans la boutique. Désactivée, rien de cela n’est demandé ni affiché ; les informations déjà saisies sont conservées. Le lot et la date limite à la réception restent demandés."
+          initial={data['catalog.foodInfo']}
+        >
+          {(v, set) => (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="food-info-on"
+                checked={v.enabled}
+                onChange={(e) => set({ enabled: e.target.checked })}
+              />
+              <Label htmlFor="food-info-on">
+                Demander et afficher les allergènes et les ingrédients
+              </Label>
             </div>
           )}
         </SettingCard>

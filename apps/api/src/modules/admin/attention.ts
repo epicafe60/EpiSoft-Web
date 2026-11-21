@@ -170,9 +170,12 @@ export async function computeAttention(
   add({
     code: 'FOOD_INFO_MISSING',
     severity: 'error',
-    count: await count(sql`select count(*)::int as n from app.product
+    // Only when the association asks for this information (Administration › Paramètres).
+    count: (await loadSettings(db))['catalog.foodInfo'].enabled
+      ? await count(sql`select count(*)::int as n from app.product
       where is_food and kind = 'GOODS' and status <> 'INACTIVE'
-        and (allergens_decision is null or length(trim(coalesce(ingredients, ''))) < 2)`),
+        and (allergens_decision is null or length(trim(coalesce(ingredients, ''))) < 2)`)
+      : 0,
     label:
       'Produit(s) alimentaire(s) sans décision sur les allergènes ou sans ingrédients : non proposés en ligne, étiquette refusée.',
     link: '/catalogue',

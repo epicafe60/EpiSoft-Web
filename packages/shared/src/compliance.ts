@@ -122,13 +122,19 @@ export interface FoodProblem {
  * its ingredients, its net quantity when it is sold by the piece, and its origin when the family
  * requires one. A product called « local » carries the reason why.
  */
-export function foodInfoProblems(p: FoodInfo): FoodProblem[] {
+/**
+ * `foodInfo: false` (the association did not switch the option on, Administration › Paramètres)
+ * leaves out the allergens, the ingredients, the net quantity and the origin: the claims (« local »)
+ * and the coherence of the sheet are still checked.
+ */
+export function foodInfoProblems(p: FoodInfo, opts: { foodInfo?: boolean } = {}): FoodProblem[] {
+  const foodInfo = opts.foodInfo !== false;
   const out: FoodProblem[] = [];
   const add = (path: string, message: string) => out.push({ path, message });
   if (p.kind === 'SERVICE' && p.isFood)
     add('isFood', 'Un service n’est pas un produit alimentaire.');
   const food = !!p.isFood && p.kind !== 'SERVICE';
-  if (food) {
+  if (food && foodInfo) {
     const allergens = p.allergens ?? [];
     if (!p.allergensDecision)
       add(
@@ -157,7 +163,7 @@ export function foodInfoProblems(p: FoodInfo): FoodProblem[] {
         'origin',
         `Origine obligatoire pour cette famille de produits (${ORIGIN_FAMILY_LABELS[p.originFamily as OriginFamily] ?? p.originFamily}) : indiquez le pays ou la région.`,
       );
-  } else if (p.kind !== 'SERVICE') {
+  } else if (foodInfo && p.kind !== 'SERVICE') {
     if (p.originFamily)
       add('originFamily', 'Une famille d’origine obligatoire ne concerne que l’alimentaire.');
   }
@@ -170,8 +176,8 @@ export function foodInfoProblems(p: FoodInfo): FoodProblem[] {
 }
 
 /** The first problem as a sentence, or null. */
-export const foodInfoProblem = (p: FoodInfo): string | null =>
-  foodInfoProblems(p)[0]?.message ?? null;
+export const foodInfoProblem = (p: FoodInfo, opts: { foodInfo?: boolean } = {}): string | null =>
+  foodInfoProblems(p, opts)[0]?.message ?? null;
 
 /** The fields of a product sheet whose change makes the food information worth checking again. */
 export const FOOD_INFO_TRIGGERS = [

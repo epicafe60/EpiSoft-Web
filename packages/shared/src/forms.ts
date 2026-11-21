@@ -288,7 +288,7 @@ export const productCreateSchema = z
   .superRefine((v, ctx) => {
     const problem = purchasePricesProblem(v);
     if (problem) ctx.addIssue({ code: 'custom', path: ['purchasePriceIncl'], message: problem });
-    for (const f of foodInfoProblems(v))
+    for (const f of foodInfoProblems(v, { foodInfo: false }))
       ctx.addIssue({ code: 'custom', path: [f.path], message: f.message });
     const sale = salePriceProblem(v);
     if (sale) ctx.addIssue({ code: 'custom', path: [sale.path], message: sale.message });

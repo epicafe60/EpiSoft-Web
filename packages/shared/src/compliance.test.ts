@@ -102,10 +102,24 @@ describe('the product form schema', () => {
   it('still accepts a non-food product with nothing about food', () => {
     expect(productCreateSchema.safeParse(form).success).toBe(true);
   });
-  it('refuses a food product without allergen decision, in French', () => {
-    const r = productCreateSchema.safeParse({ ...form, isFood: true, ingredients: 'Blé' });
-    expect(r.success).toBe(false);
-    expect(JSON.stringify(r.error!.issues)).toMatch(/Allergènes/);
+  it('leaves the allergens to the server: it applies them only when the option is on', () => {
+    const food = { ...form, isFood: true, ingredients: 'Blé' };
+    // The schema alone does not refuse a food product without allergen decision.
+    expect(productCreateSchema.safeParse(food).success).toBe(true);
+    // Option on (the default of the rule): refused, in French.
+    expect(foodInfoProblems(food as never).map((p) => p.path)).toContain('allergensDecision');
+    expect(foodInfoProblems(food as never)[0]!.message).toMatch(/Allergènes/);
+    // Option off: no allergen, ingredient, net quantity or origin asked.
+    expect(
+      foodInfoProblems({ ...food, ingredients: null, unitQty: null } as never, { foodInfo: false }),
+    ).toEqual([]);
+  });
+  it('still checks the claim « local » whatever the option', () => {
+    const local = { ...form, qualities: ['LOCAL'], localJustification: '' };
+    expect(productCreateSchema.safeParse(local).success).toBe(false);
+    expect(foodInfoProblems(local as never, { foodInfo: false }).map((p) => p.path)).toEqual([
+      'localJustification',
+    ]);
   });
   it('accepts a complete food product', () => {
     expect(

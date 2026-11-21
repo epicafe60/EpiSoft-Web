@@ -137,3 +137,32 @@ test('a cashier is sent back home from the shelves, the invoices and the setting
     await expect(page).toHaveURL(/\/$/); // sent back to the home page
   }
 });
+
+test('the information on food is an option: off by default, then asked on the product sheet once switched on', async ({
+  page,
+}) => {
+  await query(`delete from app.setting where key = 'catalog.foodInfo'`);
+  await login(page, USERS.admin);
+
+  // Off: the sheet only offers the food mark, no allergens.
+  await page.goto('/catalogue/nouveau');
+  await page.getByLabel('Produit alimentaire').check();
+  await expect(page.getByText('Allergènes', { exact: true })).toHaveCount(0);
+
+  // Switched on in the administration.
+  await page.goto('/admin/parametres');
+  const box = page.getByLabel('Demander et afficher les allergènes et les ingrédients');
+  await expect(box).not.toBeChecked();
+  const card = page.locator('form', { has: box });
+  await box.check();
+  await card.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(card.getByRole('status')).toHaveText('Enregistré.');
+
+  // On: the allergens are asked.
+  await page.goto('/catalogue/nouveau');
+  await page.getByLabel('Produit alimentaire').check();
+  await expect(page.getByText('Allergènes', { exact: true })).toBeVisible();
+
+  // Back to the default for the other scenarios.
+  await query(`delete from app.setting where key = 'catalog.foodInfo'`);
+});

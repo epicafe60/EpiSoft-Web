@@ -32,6 +32,7 @@ import { audit } from '../../lib/audit';
 import { toShopDate } from '../../lib/dates';
 import { queueTemplatedEmail } from '../../lib/email-render';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/problem';
+import { foodInfoEnabled } from '../catalog/food-info';
 import { shopOpen } from '../../lib/shop-gate';
 import { nextNumber } from '../pos/numbers';
 
@@ -61,17 +62,21 @@ export async function reservedByProduct(
 }
 
 /** Products a customer can put in the cart: sold on order, active, goods. */
-const ORDERABLE = and(
-  inArray(product.status, ['ACTIVE', 'ON_ORDER']),
-  inArray(product.saleCondition, ['ON_ORDER', 'BOTH']),
-  eq(product.kind, 'GOODS'),
-  // Excluded from the shop: the product itself, or its whole shelf.
-  eq(product.shopVisible, true),
-  // Information owed to the customer before the order (règlement UE 1169/2011, art. 14): a food
-  // product whose allergens or ingredients are not filled in is not offered online.
-  sql`(not ${product.isFood} or (${product.allergensDecision} is not null and length(trim(coalesce(${product.ingredients}, ''))) > 1))`,
-  sql`(${product.categoryId} is null or exists (select 1 from app.category c where c.id = ${product.categoryId} and c.shop_visible))`,
-);
+/** `foodInfo`: the option is on, a food product without its information is not offered. */
+const orderable = (foodInfo: boolean) =>
+  and(
+    inArray(product.status, ['ACTIVE', 'ON_ORDER']),
+    inArray(product.saleCondition, ['ON_ORDER', 'BOTH']),
+    eq(product.kind, 'GOODS'),
+    // Excluded from the shop: the product itself, or its whole shelf.
+    eq(product.shopVisible, true),
+    // Information owed to the customer before the order (règlement UE 1169/2011, art. 14): a food
+    // product whose allergens or ingredients are not filled in is not offered online.
+    foodInfo
+      ? sql`(not ${product.isFood} or (${product.allergensDecision} is not null and length(trim(coalesce(${product.ingredients}, ''))) > 1))`
+      : undefined,
+    sql`(${product.categoryId} is null or exists (select 1 from app.category c where c.id = ${product.categoryId} and c.shop_visible))`,
+  );
 
 async function detail(db: DbOrTx, id: string) {
   const o = await db.query.preorder.findFirst({ where: eq(preorder.id, id) });
@@ -131,6 +136,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
     },
     async (req) => {
       const { q, categoryId } = req.query;
+      const foodInfo = await foodInfoEnabled(db);
       const like = q ? `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%` : null;
       return db
         .select({
@@ -161,7 +167,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
         .leftJoin(supplier, eq(supplier.id, product.supplierId))
         .where(
           and(
-            ORDERABLE,
+            orderable(foodInfo),
             categoryId ? eq(product.categoryId, categoryId) : undefined,
             like ? sql`${product.name} ilike ${like}` : undefined,
           ),
@@ -181,7 +187,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
                   today,
                 ) === 'VALID',
             ),
-            allergenText: allergenSentence(r),
+            allergenText: foodInfo ? allergenSentence(r) : null,
           }));
         });
     },
@@ -214,7 +220,7 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
           .from(product)
           .where(
             and(
-              ORDERABLE,
+              orderable(await foodInfoEnabled(tx)),
               inArray(
                 product.id,
                 lines.map((l) => l.productId),
