@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { fiscalJournal, periodClosing, type Db } from '@episoft/db';
-import { verifyArchive, type FiscalArchive } from '@episoft/shared';
+import { pendingClosings, verifyArchive, type FiscalArchive } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit, auditSystem } from '../../lib/audit';
 import { toShopDate } from '../../lib/dates';
@@ -30,6 +30,36 @@ export const fiscalRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       .from(periodClosing)
       .orderBy(desc(periodClosing.periodStart), desc(periodClosing.kind));
     return rows.map((c) => ({ ...c, closedAt: c.closedAt.toISOString() }));
+  });
+
+  /**
+   * What is left to close, and what can be closed now: the rules of the closings, as the screen
+   * shows them (packages/shared closings-pending.ts).
+   */
+  app.get('/fiscal/closings/pending', treasury, async () => {
+    const today = toShopDate(new Date());
+    const days = await db
+      .select({ day: sale.accountingDay, tickets: sql<number>`count(*)::int` })
+      .from(sale)
+      .groupBy(sale.accountingDay);
+    const closings = await db
+      .select({ kind: periodClosing.kind, start: periodClosing.periodStart })
+      .from(periodClosing);
+    const open = await db
+      .select({ openedAt: cashSession.openedAt })
+      .from(cashSession)
+      .where(eq(cashSession.status, 'OPEN'));
+    const startsOf = (kind: string) => closings.filter((c) => c.kind === kind).map((c) => c.start);
+    return {
+      today,
+      openSessions: open.length,
+      items: pendingClosings({
+        today,
+        salesByDay: days,
+        closed: { DAY: startsOf('DAY'), MONTH: startsOf('MONTH'), YEAR: startsOf('YEAR') },
+        openSessionDays: open.map((o) => toShopDate(o.openedAt)),
+      }),
+    };
   });
 
   /** « Z »: closes a day, a month or a year. Final: there is no way back. */

@@ -10,6 +10,7 @@ const TABS = [
   { to: '/compta/budget', label: 'Budget' },
   { to: '/compta/plan', label: 'Plan comptable' },
   { to: '/compta/cloture', label: 'Clôture' },
+  { to: '/compta/clotures-z', label: 'Clôtures Z' },
 ] as const;
 
 export function AccountingLayout() {

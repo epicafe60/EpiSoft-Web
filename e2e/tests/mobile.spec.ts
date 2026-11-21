@@ -69,6 +69,7 @@ const STAFF_PAGES = [
   '/compta/plan',
   '/compta/budget',
   '/compta/cloture',
+  '/compta/clotures-z',
 ];
 
 test('staff screens do not overflow a phone screen', async ({ page }) => {
