@@ -14,6 +14,7 @@ const TABS = [
   { to: '/admin/courriels', label: 'Courriels' },
   { to: '/admin/documents', label: 'Documents PDF' },
   { to: '/admin/controles', label: 'Contrôles' },
+  { to: '/admin/registre', label: 'Registre RGPD' },
   { to: '/admin/base', label: 'Base de données' },
 ] as const;
 

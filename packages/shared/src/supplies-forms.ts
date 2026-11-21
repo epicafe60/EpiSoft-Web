@@ -1,3 +1,4 @@
+import { organicCertFields } from './compliance';
 import { z } from 'zod';
 import { isoDate, pastOrTodayDate } from './dates';
 import { VAT_RATES } from './catalog';
@@ -83,6 +84,8 @@ export const supplierSchema = z.object({
   /** « À réception fin de mois »: the invoices are due at the end of the month they are entered. */
   payAtMonthEnd: z.boolean().default(false),
   deliveryDay: text(30),
+  /** « Bio »: certificate of the supplier (règlement UE 2018/848), all three or none (organicCertProblem). */
+  ...organicCertFields,
 });
 export type SupplierInput = z.input<typeof supplierSchema>;
 
@@ -130,6 +133,8 @@ export const receiptSchema = z.object({
         unitPriceExcl: price4Input,
         /** R-STK-07: best-before date of the received batch, tracked on the stock page. */
         bestBefore: isoDate.nullish(),
+        /** Règlement CE 178/2002: the supplier's lot number, printed on the pack (compulsory for food). */
+        lotNumber: z.string().trim().max(60).nullish(),
         /**
          * Update the product sheet with this received price (PA HT, VAT, PA TTC). Absent or
          * false: the sheet is never touched, the real cost stays on the receipt line only.

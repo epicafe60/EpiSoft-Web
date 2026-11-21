@@ -646,9 +646,9 @@ describe('the other things to watch', () => {
     expect(codes).toContain('SESSION_OLD');
   });
 
-  it('is empty when all is well, except the missing backup', async () => {
+  it('is empty when all is well, except the missing backup and the legal pages not written yet', async () => {
     const codes = (await attention()).map((i) => i.code);
-    expect(codes).toEqual(['BACKUP_LATE']);
+    expect(codes).toEqual(['BACKUP_LATE', 'LEGAL_PAGES_INCOMPLETE']);
   });
 });
 

@@ -12,6 +12,8 @@ import { Badge, Card, CardContent, CardHeader, CardTitle, Table } from '@/compon
 import { Alert } from '@/components/ui/form';
 import { QueryError } from '../errors';
 import { PageHeader } from '../shell';
+import { ConsentsCard } from '../members/consents-card';
+import { LegalLinks } from '../legal';
 import { PushToggle } from './push-toggle';
 import { TicketDialog } from './ticket-dialog';
 import { NoMatchRow, SortTh, useSort } from '@/components/ui/sortable';
@@ -76,6 +78,8 @@ export function MyHouseholdPage() {
       <a href="/api/v1/me/export" className="w-fit text-sm text-primary hover:underline" download>
         Télécharger mes données (RGPD)
       </a>
+      <ConsentsCard self />
+      <LegalLinks />
       {error ? <QueryError error={error} /> : null}
       {data && !h ? <Alert variant="info">Aucun foyer n'est rattaché à votre compte.</Alert> : null}
       {h ? (

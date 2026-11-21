@@ -7,11 +7,14 @@ import {
   preorder,
   preorderLine,
   product,
+  supplier,
   type Db,
   type DbOrTx,
 } from '@episoft/db';
 import {
   OPEN_PREORDER_STATUSES,
+  allergenSentence,
+  organicState,
   PREORDER_STATUSES,
   canTransition,
   decimalToCents,
@@ -64,6 +67,9 @@ const ORDERABLE = and(
   eq(product.kind, 'GOODS'),
   // Excluded from the shop: the product itself, or its whole shelf.
   eq(product.shopVisible, true),
+  // Information owed to the customer before the order (règlement UE 1169/2011, art. 14): a food
+  // product whose allergens or ingredients are not filled in is not offered online.
+  sql`(not ${product.isFood} or (${product.allergensDecision} is not null and length(trim(coalesce(${product.ingredients}, ''))) > 1))`,
   sql`(${product.categoryId} is null or exists (select 1 from app.category c where c.id = ${product.categoryId} and c.shop_visible))`,
 );
 
@@ -137,9 +143,22 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
           categoryId: product.categoryId,
           categoryName: category.name,
           imageId: product.imageId,
+          isFood: product.isFood,
+          ingredients: product.ingredients,
+          allergensDecision: product.allergensDecision,
+          allergens: product.allergens,
+          allergenTraces: product.allergenTraces,
+          origin: product.origin,
+          qualities: product.qualities,
+          localJustification: product.localJustification,
+          organicNumber: supplier.organicCertNumber,
+          organicBody: supplier.organicCertBody,
+          organicExpiry: supplier.organicCertExpiry,
+          unitQty: product.unitQty,
         })
         .from(product)
         .leftJoin(category, eq(category.id, product.categoryId))
+        .leftJoin(supplier, eq(supplier.id, product.supplierId))
         .where(
           and(
             ORDERABLE,
@@ -148,7 +167,23 @@ export const preorderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> =
           ),
         )
         .orderBy(asc(category.name), asc(product.name))
-        .limit(500);
+        .limit(500)
+        .then((rows) => {
+          const today = toShopDate(new Date());
+          return rows.map(({ organicNumber, organicBody, organicExpiry, qualities, ...r }) => ({
+            ...r,
+            // « Bio » is shown only while the supplier's certificate is valid.
+            qualities: qualities.filter(
+              (x) =>
+                x !== 'ORGANIC' ||
+                organicState(
+                  { number: organicNumber, body: organicBody, expiry: organicExpiry },
+                  today,
+                ) === 'VALID',
+            ),
+            allergenText: allergenSentence(r),
+          }));
+        });
     },
   );
 

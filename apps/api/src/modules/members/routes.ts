@@ -37,6 +37,7 @@ import {
   sha256Hex,
   walletCorrectionSchema,
   walletTopupSchema,
+  type ConsentPurpose,
   type PaymentMethod,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -45,6 +46,7 @@ import { toShopDate, tzSql } from '../../lib/dates';
 import { anonymizeMember } from './anonymize';
 import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { consentHistory, recordConsent } from '../compliance/consents';
 import { loadSettings } from '../admin/settings-store';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
 import { sendTopupReceipt } from '../pos/sync-service';
@@ -358,7 +360,11 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   });
 
   app.post('/members', { ...adherents, schema: { body: memberCreateSchema } }, async (req) => {
-    const { householdId, newsletter, imageConsent, ...fields } = req.body;
+    const { householdId, newsletter, imageConsent, privacyNoticeGiven, ...fields } = req.body;
+    if (!privacyNoticeGiven)
+      throw badRequest(
+        'Confirmez que la personne a pris connaissance de la politique de confidentialité (case à cocher).',
+      );
     const token = newQrToken();
     const created = await db.transaction(async (tx) => {
       await assertUniqueContacts(tx, fields.username, fields.email, null);
@@ -388,6 +394,20 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         entityId: m!.id,
         after: { ...fields, householdId: hid },
       });
+      // RGPD: what the person agreed to, with the date and the way it was collected.
+      const asked: [ConsentPurpose, boolean][] = [
+        ['DATA_PROCESSING', true],
+        ['NEWSLETTER', !!newsletter],
+        ['IMAGE_RIGHTS', !!imageConsent],
+        ['EMAIL_RECEIPTS', !fields.ticketEmailOptOut],
+      ];
+      for (const [purpose, granted] of asked)
+        await recordConsent(tx, req, {
+          memberId: m!.id,
+          purpose,
+          granted,
+          channel: 'STAFF_FORM',
+        });
       return m!;
     });
     // The badge token is shown once, to print the badge (R-MBR-05).
@@ -440,6 +460,22 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .where(eq(member.id, before.id))
           .returning();
         const changed = Object.keys(set) as (keyof typeof before)[];
+        const nowAsked: [ConsentPurpose, boolean | undefined][] = [
+          ['NEWSLETTER', newsletter],
+          ['IMAGE_RIGHTS', imageConsent],
+          [
+            'EMAIL_RECEIPTS',
+            fields.ticketEmailOptOut === undefined ? undefined : !fields.ticketEmailOptOut,
+          ],
+        ];
+        for (const [purpose, granted] of nowAsked)
+          if (granted !== undefined)
+            await recordConsent(tx, req, {
+              memberId: before.id,
+              purpose,
+              granted,
+              channel: 'STAFF_FORM',
+            });
         await audit(tx, req, {
           action: 'member.update',
           entity: 'member',
@@ -493,6 +529,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       .where(eq(loginLog.memberId, m.id))
       .orderBy(desc(loginLog.at));
     const hh = m.householdId ? await householdDetail(db, m.householdId) : null;
+    const consents = await consentHistory(db, m.id);
     await audit(db, req, { action: 'member.export', entity: 'member', entityId: m.id });
     void reply.header('content-disposition', `attachment; filename="membre-${m.number}.json"`);
     return {
@@ -502,6 +539,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       household: hh,
       sales,
       logins,
+      consents,
     };
   });
 

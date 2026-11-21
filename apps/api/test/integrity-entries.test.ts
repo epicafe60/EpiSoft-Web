@@ -28,6 +28,7 @@ const refused = (res: { statusCode: number; json: () => unknown }, status = 400)
 const pathsOf = (p: Problem) => (p.errors ?? []).map((e) => e.path);
 
 const newMember = {
+  privacyNoticeGiven: true,
   lastName: 'Dupont',
   firstName: 'Marie',
   street: null,

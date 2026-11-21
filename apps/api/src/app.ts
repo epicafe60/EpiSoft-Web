@@ -59,6 +59,9 @@ import { brandingRoutes } from './modules/branding/routes';
 import { emailTemplateRoutes } from './modules/admin/email-templates';
 import { pdfTemplateRoutes } from './modules/admin/pdf-templates';
 import { tableExportRoutes } from './modules/xlsx/table';
+import { consentRoutes } from './modules/compliance/consents';
+import { legalRoutes } from './modules/compliance/legal';
+import { traceabilityRoutes } from './modules/stock/traceability';
 
 export interface RouteAccess {
   method: string;
@@ -197,6 +200,9 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(emailTemplateRoutes, { db, config });
       await api.register(pdfTemplateRoutes, { db, config });
       await api.register(tableExportRoutes, { db, config });
+      await api.register(consentRoutes, { db, config });
+      await api.register(legalRoutes, { db, config });
+      await api.register(traceabilityRoutes, { db, config });
     },
     { prefix: '/api/v1' },
   );

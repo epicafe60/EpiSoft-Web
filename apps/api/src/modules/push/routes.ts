@@ -6,6 +6,7 @@ import { MAX_PUSH_DEVICES, pushEndpointAllowed } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { pushEnabled } from '../../lib/push';
+import { recordConsent } from '../compliance/consents';
 
 const subscription = z.object({
   // S07: only the push services of the browsers (the server calls this address).
@@ -64,12 +65,19 @@ export const pushRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
             extra.map((r) => r.id),
           ),
         );
-      if (changed.length)
+      if (changed.length) {
         await audit(tx, req, {
           action: 'push.subscribe',
           entity: 'member',
           entityId: req.user!.id,
         });
+        await recordConsent(tx, req, {
+          memberId: req.user!.id,
+          purpose: 'NOTIFICATIONS',
+          granted: true,
+          channel: 'PUSH',
+        });
+      }
     });
     return { ok: true };
   });
@@ -88,12 +96,25 @@ export const pushRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
             ),
           )
           .returning({ id: pushSubscription.id });
-        if (removed.length)
+        if (removed.length) {
           await audit(tx, req, {
             action: 'push.unsubscribe',
             entity: 'member',
             entityId: req.user!.id,
           });
+          const [left] = await tx
+            .select({ id: pushSubscription.id })
+            .from(pushSubscription)
+            .where(eq(pushSubscription.memberId, req.user!.id))
+            .limit(1);
+          if (!left)
+            await recordConsent(tx, req, {
+              memberId: req.user!.id,
+              purpose: 'NOTIFICATIONS',
+              granted: false,
+              channel: 'PUSH',
+            });
+        }
       });
       return { ok: true };
     },

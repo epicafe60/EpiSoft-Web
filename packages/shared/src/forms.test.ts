@@ -70,6 +70,7 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     supplierId: null,
     supplierRef: '',
     qualities: ['LOCAL'],
+    localJustification: 'Ferme Durand, Montjavoult, 5 km',
     vatRate: '5.50',
     status: 'ACTIVE',
     purchasePriceExcl: '1,2',

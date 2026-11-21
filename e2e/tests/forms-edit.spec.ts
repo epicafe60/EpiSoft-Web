@@ -14,6 +14,7 @@ test('a member is created; a postcode that is not 5 digits is refused first', as
   await page.getByLabel('Nom', { exact: true }).fill(last);
   await page.getByLabel('Prénom', { exact: true }).fill('Camille');
   await page.getByLabel('Code postal').fill('6024');
+  await page.getByLabel('La personne a pris connaissance de la politique de confidentialité').check();
   await page.getByRole('button', { name: 'Créer le membre' }).click();
   await expect(page.getByText('Code postal à 5 chiffres.')).toBeVisible();
   await page.getByLabel('Code postal').fill('60240');

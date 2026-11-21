@@ -8,6 +8,7 @@ const TABS = [
   { to: '/appros/factures', label: 'Factures' },
   { to: '/appros/avoirs', label: 'Avoirs' },
   { to: '/appros/stock', label: 'Stock' },
+  { to: '/appros/tracabilite', label: 'Traçabilité' },
   { to: '/appros/inventaires', label: 'Inventaires' },
 ] as const;
 

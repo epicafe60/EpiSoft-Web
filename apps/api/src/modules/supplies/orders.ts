@@ -11,6 +11,7 @@ import {
   priceHistory,
   product,
   productBatch,
+  productLot,
   purchaseOrder,
   purchaseOrderLine,
   supplier,
@@ -35,6 +36,7 @@ import {
   purchasePriceFlag,
   purchasePricesProblem,
   receiptCorrectionSchema,
+  receiptLotProblem,
   receiptSchema,
   suggestedOrderQtyMilli,
   formatQty,
@@ -301,6 +303,7 @@ export interface ReceiptInput {
     qty: string;
     unitPriceExcl: string;
     bestBefore?: string | null;
+    lotNumber?: string | null;
     /** Only a line that asks for it updates the product sheet (PA HT, VAT, PA TTC). */
     updateProductPrice?: boolean;
   }[];
@@ -398,15 +401,36 @@ export async function recordReceipt(
         .set({ qtyReceived: sql`${purchaseOrderLine.qtyReceived} + ${l.qty}::numeric` })
         .where(eq(purchaseOrderLine.id, l.orderLineId));
     }
-    await tx.insert(goodsReceiptLine).values({
-      receiptId: r!.id,
-      lineNo: i + 1,
-      productId: p.id,
-      qty: l.qty,
-      unitPriceExcl: l.unitPriceExcl,
-      vatRate: p.vatRate,
-      orderLineId: l.orderLineId,
+    // Règlement CE 178/2002: a food product comes in with its supplier lot number and its date.
+    const lotProblem = receiptLotProblem(p, {
+      lotNumber: l.lotNumber ?? null,
+      bestBefore: l.bestBefore ?? null,
     });
+    if (lotProblem) throw badRequest(lotProblem);
+    const [line] = await tx
+      .insert(goodsReceiptLine)
+      .values({
+        receiptId: r!.id,
+        lineNo: i + 1,
+        productId: p.id,
+        qty: l.qty,
+        unitPriceExcl: l.unitPriceExcl,
+        vatRate: p.vatRate,
+        orderLineId: l.orderLineId,
+      })
+      .returning({ id: goodsReceiptLine.id });
+    if (p.kind === 'GOODS' && l.lotNumber?.trim())
+      await tx.insert(productLot).values({
+        productId: p.id,
+        supplierId: input.supplierId,
+        receiptId: r!.id,
+        receiptLineId: line!.id,
+        lotNumber: l.lotNumber.trim(),
+        bestBefore: l.bestBefore ?? null,
+        qty: l.qty,
+        receivedOn: input.date,
+        by,
+      });
     if (p.kind === 'GOODS' && l.bestBefore)
       await tx.insert(productBatch).values({
         productId: p.id,
@@ -947,6 +971,12 @@ export const orderRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
             .update(goodsReceiptLine)
             .set({ qty: c.qty, unitPriceExcl: c.unitPriceExcl })
             .where(eq(goodsReceiptLine.id, l.id));
+          // The lot of this line follows the corrected quantity (traceability).
+          if (deltaMilli !== 0 && parseQtyToMilli(c.qty)! > 0)
+            await tx
+              .update(productLot)
+              .set({ qty: c.qty })
+              .where(eq(productLot.receiptLineId, l.id));
           if (p.kind === 'GOODS' && deltaMilli !== 0)
             await recordMovement(tx, {
               productId: p.id,

@@ -31,6 +31,7 @@ const fullProduct = (extra: object = {}) => ({
   supplierId: null,
   supplierRef: 'LV500',
   qualities: ['LOCAL'],
+  localJustification: 'Producteur voisin, à 12 km de la boutique',
   vatRate: '5.50',
   status: 'ACTIVE',
   purchasePriceExcl: '2.10',

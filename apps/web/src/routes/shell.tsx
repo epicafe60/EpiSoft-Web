@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LegalLinks } from './legal';
 import { Link, Outlet, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -266,6 +267,7 @@ export function AppShell() {
         <div className="mx-auto max-w-6xl">
           <ImpersonationBanner />
           {lockedBy ? <TillLocked cashierId={lockedBy} /> : <Outlet />}
+          <LegalLinks className="mt-10 border-t pt-4" />
         </div>
       </main>
     </div>

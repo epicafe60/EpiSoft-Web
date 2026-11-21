@@ -23,6 +23,7 @@ import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import type { Commune, MemberDetail } from '@/lib/types';
+import { ConsentsCard } from './consents-card';
 import { PageHeader } from '../shell';
 import { QueryError } from '../errors';
 import { BadgeDialog } from './badge';
@@ -80,6 +81,7 @@ function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: 
           {
             ...toPayload(form),
             householdId: newHousehold ? null : (household?.id ?? null),
+            privacyNoticeGiven: privacyNotice,
           },
         );
       }
@@ -143,6 +145,7 @@ function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: 
     enabled: deferred.firstName.length >= 2 || deferred.phone.length >= 8,
   });
   const emailHint = form.email.trim() ? suggestEmailDomain(form.email.trim()) : null;
+  const [privacyNotice, setPrivacyNotice] = useState(false);
   const anonymize = useMutation({
     mutationFn: () => api.post(`/members/${member!.id}/anonymize`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['member', member!.id] }),
@@ -150,6 +153,13 @@ function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: 
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (!member && !privacyNotice) {
+      setErrors({
+        privacyNoticeGiven:
+          'Confirmez que la personne a pris connaissance de la politique de confidentialité.',
+      });
+      return;
+    }
     const parsed = memberCreateSchema.safeParse({ ...toPayload(form), householdId: null });
     if (!parsed.success) {
       setErrors(Object.fromEntries(parsed.error.issues.map((i) => [i.path.join('.'), i.message])));
@@ -372,6 +382,31 @@ function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: 
                   </Label>
                 </div>
               </div>
+              {!member ? (
+                <div className="grid gap-1">
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="privacy-notice"
+                      checked={privacyNotice}
+                      onChange={(e) => setPrivacyNotice(e.target.checked)}
+                    />
+                    <Label htmlFor="privacy-notice" className="font-normal">
+                      La personne a pris connaissance de la politique de confidentialité
+                      <span className="block text-xs text-muted-foreground">
+                        Obligatoire pour créer la fiche (information RGPD, art. 13).{' '}
+                        <Link to="/confidentialite" target="_blank" className="underline">
+                          Lire la politique
+                        </Link>
+                      </span>
+                    </Label>
+                  </div>
+                  {errors.privacyNoticeGiven ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {errors.privacyNoticeGiven}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {member?.imageConsentAt ? (
                 <p className="text-xs text-muted-foreground">
                   Droit à l’image accordé le {formatDateTime(member.imageConsentAt)}.
@@ -384,6 +419,8 @@ function MemberForm({ member, notice }: { member: MemberDetail | null; notice?: 
               ) : null}
             </CardContent>
           </Card>
+
+          {member ? <ConsentsCard memberId={member.id} /> : null}
 
           <Card>
             <CardHeader>

@@ -17,6 +17,7 @@ import {
 import type { Config } from '../../config';
 import { toShopDate } from '../../lib/dates';
 import { notFound } from '../../lib/problem';
+import { consentHistory } from '../compliance/consents';
 
 /** Self-service: a member sees their own household, never anyone else's. */
 export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = async (
@@ -234,6 +235,7 @@ export const selfRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
         })),
         reviews,
         logins,
+        consents: await consentHistory(db, me.id),
       };
     },
   );

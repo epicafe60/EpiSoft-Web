@@ -86,6 +86,10 @@ export const AUDIT_SENTENCES = {
   'member.qr_regenerate': () => 'a régénéré le badge d’un adhérent',
   'member.anonymize': () => 'a anonymisé et archivé un adhérent',
   'member.export': () => 'a exporté les données d’un adhérent',
+  'consent.record': (a) =>
+    `a ${a?.granted ? 'enregistré un consentement' : 'enregistré un retrait de consentement'}${named(a, 'label')}`,
+  'lot.create': (a) => `a enregistré un lot fournisseur${named(a, 'lotNumber')}`,
+  'lot.recall_view': (a) => `a consulté la liste de rappel d’un lot${named(a, 'lotNumber')}`,
   'household.update': () => 'a modifié un foyer',
   'password.link': () => 'a envoyé un lien de mot de passe',
   'password.reset': () => 'a changé son mot de passe',

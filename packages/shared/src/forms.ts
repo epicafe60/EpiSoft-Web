@@ -15,6 +15,7 @@ import {
 import { centsToDecimal, parseAmountToCents } from './money';
 import { isValidEan, parseQtyToMilli, milliToDecimal } from './pos';
 import { patchOf } from './patch';
+import { foodInfoFields, foodInfoProblems } from './compliance';
 import { purchaseVatProblem, vatOfExcl4 } from './vat';
 import { isValidEmail } from './text';
 
@@ -82,6 +83,11 @@ export const memberCreateSchema = z.object({
   ...memberFields,
   /** Existing household, or null to create a new one with this member as referent (R-MBR-02). */
   householdId: z.string().uuid().nullable(),
+  /**
+   * RGPD art. 13: the person was told how their data are used (the privacy policy). Recorded as a
+   * dated consent record; a card is not created without it.
+   */
+  privacyNoticeGiven: z.boolean().default(false),
 });
 export type MemberCreate = z.input<typeof memberCreateSchema>;
 
@@ -263,6 +269,8 @@ export const productFields = {
   posTabId: z.string().uuid().nullable(),
   posLabel: text(40),
   posSort: z.number().int().min(0).max(9999),
+  // Food information, allergens, origin and claims (règlement UE 1169/2011): see compliance.ts.
+  ...foodInfoFields,
   /** Reason of an explicit, audited exception to the ban on selling below the purchase price. */
   belowCostReason: text(300).optional(),
 };
@@ -280,6 +288,8 @@ export const productCreateSchema = z
   .superRefine((v, ctx) => {
     const problem = purchasePricesProblem(v);
     if (problem) ctx.addIssue({ code: 'custom', path: ['purchasePriceIncl'], message: problem });
+    for (const f of foodInfoProblems(v))
+      ctx.addIssue({ code: 'custom', path: [f.path], message: f.message });
     const sale = salePriceProblem(v);
     if (sale) ctx.addIssue({ code: 'custom', path: [sale.path], message: sale.message });
   });

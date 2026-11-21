@@ -15,12 +15,17 @@ import {
   price4ToDecimal,
   pricePerKgOrLitreCents,
   universeSchema,
+  allergenSentence,
+  foodInfoProblems,
+  organicState,
+  organicClaimProblem,
   QUALITY_LABELS,
   type Quality,
   type Unit,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { toShopDate } from '../../lib/dates';
 import { eur, pdfText, render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
@@ -244,12 +249,55 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
           unitQty: product.unitQty,
           saleMode: product.saleMode,
           qualities: product.qualities,
+          kind: product.kind,
+          isFood: product.isFood,
+          ingredients: product.ingredients,
+          allergensDecision: product.allergensDecision,
+          allergens: product.allergens,
+          allergenTraces: product.allergenTraces,
+          origin: product.origin,
+          originFamily: product.originFamily,
+          localJustification: product.localJustification,
           supplierName: supplier.name,
+          organicNumber: supplier.organicCertNumber,
+          organicBody: supplier.organicCertBody,
+          organicExpiry: supplier.organicCertExpiry,
         })
         .from(product)
         .leftJoin(supplier, eq(supplier.id, product.supplierId))
         .where(inArray(product.id, req.body.productIds))
         .orderBy(product.name);
+      // A label states what the law requires of the product: no label for a food product whose
+      // allergens, ingredients or origin are missing, nor for a « bio » claim nothing backs.
+      const today = toShopDate(new Date());
+      const refused: string[] = [];
+      for (const p of prods) {
+        const food = foodInfoProblems(p)[0];
+        if (food) refused.push(`${p.name} : ${food.message}`);
+        else if ((p.qualities as Quality[]).includes('ORGANIC')) {
+          const bio = organicClaimProblem(
+            p.supplierName
+              ? {
+                  name: p.supplierName,
+                  number: p.organicNumber,
+                  body: p.organicBody,
+                  expiry: p.organicExpiry,
+                }
+              : null,
+            today,
+          );
+          if (bio) refused.push(`${p.name} : ${bio}`);
+        }
+      }
+      if (refused.length)
+        throw badRequest(
+          [
+            `Étiquettes non imprimées, ${refused.length} produit(s) à compléter :`,
+            ...refused.slice(0, 8),
+            ...(refused.length > 8 ? ['…'] : []),
+          ].join(' '),
+          refused.map((m) => ({ path: 'productIds', message: m })),
+        );
       const cols = perPage === 24 ? 3 : 4;
       const rowsPerPage = perPage === 24 ? 8 : 10;
       const pdf = await render(
@@ -297,6 +345,14 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             // Legal mentions where the barcode used to be: price per kg/L (only when the
             // product has a weight or volume) and supplier (nothing without one).
             const legal: string[] = [];
+            // Allergens first, never cut: they are what the law requires on a loose or relabelled product.
+            const allergens = p.isFood ? allergenSentence(p) : null;
+            if (allergens) legal.push(allergens);
+            if (p.origin) legal.push(`Origine : ${p.origin}`);
+            if (p.qualities.includes('LOCAL') && p.localJustification)
+              legal.push(`Local : ${p.localJustification}`);
+            if (p.qualities.includes('ORGANIC') && p.organicNumber)
+              legal.push(`Bio : ${p.organicBody} ${p.organicNumber}`);
             if (perUnit !== null && p.saleMode === 'UNIT')
               legal.push(
                 `Prix au ${p.unit === 'G' || p.unit === 'KG' ? 'kg' : 'litre'} : ${eur(centsToDecimal(perUnit))}`,
@@ -305,21 +361,36 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             // Local and organic have their dot; the other mention (seasonal) is written.
             if ((p.qualities as Quality[]).includes('SEASONAL'))
               legal.push(QUALITY_LABELS.SEASONAL);
-            legal.forEach((line, n) =>
-              doc
-                .font('Helvetica')
-                .fontSize(perPage === 24 ? 7.5 : 6.5)
-                .text(pdfText(line), x + pad, y + h * 0.62 + n * (perPage === 24 ? 11 : 9.5), {
-                  width: w - 2 * pad,
-                  height: perPage === 24 ? 9 : 8,
-                  lineBreak: false,
-                  ellipsis: true,
-                }),
-            );
+            // The lines wrap; the font shrinks until everything fits in the label.
+            const top = y + h * 0.6;
+            const room = y + h - 4 - top;
+            let size = perPage === 24 ? 7.5 : 6.5;
+            const measure = (fs: number) => {
+              doc.font('Helvetica').fontSize(fs);
+              return legal.reduce(
+                (n, line) => n + doc.heightOfString(pdfText(line), { width: w - 2 * pad }) + 1.5,
+                0,
+              );
+            };
+            while (size > 4.5 && measure(size) > room) size -= 0.5;
+            doc.font('Helvetica').fontSize(size);
+            let ly = top;
+            for (const line of legal) {
+              const text = pdfText(line);
+              doc.text(text, x + pad, ly, { width: w - 2 * pad });
+              ly += doc.heightOfString(text, { width: w - 2 * pad }) + 1.5;
+            }
             // R-EVO-07: red dot for a local product, green dot for an organic one.
             const dots: string[] = [];
             if ((p.qualities as Quality[]).includes('LOCAL')) dots.push('#d62828');
-            if ((p.qualities as Quality[]).includes('ORGANIC')) dots.push('#2a9d3f');
+            if (
+              (p.qualities as Quality[]).includes('ORGANIC') &&
+              organicState(
+                { number: p.organicNumber, body: p.organicBody, expiry: p.organicExpiry },
+                today,
+              ) === 'VALID'
+            )
+              dots.push('#2a9d3f');
             dots.forEach((color, d) =>
               doc
                 .circle(x + w - pad - 5 - d * 14, y + pad + 5, 5)

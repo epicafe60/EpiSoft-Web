@@ -1,5 +1,7 @@
 // R-IMP-01..04 — pure helpers of the import wizard: CSV parsing, column mapping, row normalisation.
 
+import { parseAllergenList, type Allergen, type AllergenDecision } from './compliance';
+
 export const IMPORT_KINDS = ['products', 'members'] as const;
 export type ImportKind = (typeof IMPORT_KINDS)[number];
 
@@ -101,6 +103,18 @@ export const PRODUCT_IMPORT_FIELDS: ImportField[] = [
   { key: 'salePrice', label: 'Prix de vente', synonyms: ['prix de vente', 'prix vente', 'pv'] },
   { key: 'stock', label: 'Stock', synonyms: ['stock', 'quantite'] },
   { key: 'description', label: 'Description', synonyms: ['description'] },
+  {
+    key: 'food',
+    label: 'Alimentaire (oui/non)',
+    synonyms: ['alimentaire', 'aliment', 'produit alimentaire'],
+  },
+  { key: 'ingredients', label: 'Ingrédients', synonyms: ['ingredients', 'composition'] },
+  {
+    key: 'allergens',
+    label: 'Allergènes (ou « aucun »)',
+    synonyms: ['allergenes', 'allergene', 'allergenes declares'],
+  },
+  { key: 'origin', label: 'Origine', synonyms: ['origine', 'pays d origine', 'provenance'] },
 ];
 
 export const MEMBER_IMPORT_FIELDS: ImportField[] = [
@@ -190,6 +204,12 @@ export interface ProductImport {
   /** Stock in thousandths, or null. */
   stockMilli: number | null;
   description: string | null;
+  /** Food information (règlement UE 1169/2011). A file that says nothing is taken as food to complete. */
+  isFood: boolean;
+  ingredients: string | null;
+  allergensDecision: AllergenDecision | null;
+  allergens: Allergen[];
+  origin: string | null;
 }
 
 export interface RowIssue {
@@ -211,6 +231,13 @@ export function normalizeProduct(r: ImportRecord): { value?: ProductImport; erro
   if (r.salePrice && sale === null) return { error: 'Prix de vente invalide.' };
   if (r.purchasePrice && purchase === null) return { error: "Prix d'achat invalide." };
   if (sale !== null && sale < 0) return { error: 'Prix de vente négatif.' };
+  const foodText = (r.food ?? '').trim().toLowerCase();
+  if (foodText && !['oui', 'non', 'o', 'n', '1', '0', 'yes', 'no'].includes(foodText))
+    return { error: 'Colonne « alimentaire » : répondez oui ou non.' };
+  const isFood = !['non', 'n', '0', 'no'].includes(foodText);
+  const allergens = parseAllergenList(r.allergens ?? '');
+  if (allergens.unknown.length)
+    return { error: `Allergène inconnu : ${allergens.unknown.join(', ')}.` };
   return {
     value: {
       code,
@@ -223,6 +250,11 @@ export function normalizeProduct(r: ImportRecord): { value?: ProductImport; erro
       vatRate: vat,
       stockMilli: stock === null ? null : Math.round(stock * 1000),
       description: (r.description ?? '').trim() || null,
+      isFood,
+      ingredients: (r.ingredients ?? '').trim() || null,
+      allergensDecision: isFood ? allergens.decision : null,
+      allergens: isFood ? allergens.allergens : [],
+      origin: (r.origin ?? '').trim() || null,
     },
   };
 }

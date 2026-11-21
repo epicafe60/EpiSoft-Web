@@ -7,6 +7,7 @@ const line = (over: Partial<ReceiveFormLine> = {}): ReceiveFormLine => ({
   qty: '2',
   unitPriceExcl: '1.2',
   bestBefore: '',
+  lotNumber: '',
   newSalePrice: '',
   updateProductPrice: false,
   ...over,

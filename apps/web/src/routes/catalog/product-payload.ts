@@ -1,5 +1,8 @@
 import {
   withServiceSale,
+  type Allergen,
+  type AllergenDecision,
+  type OriginFamily,
   type ProductCreate,
   type ProductKind,
   type ProductStatus,
@@ -38,6 +41,14 @@ export interface ProductFormState {
   posTabId: string;
   posLabel: string;
   posSort: string;
+  isFood: boolean;
+  ingredients: string;
+  allergensDecision: AllergenDecision | '';
+  allergens: Allergen[];
+  allergenTraces: Allergen[];
+  origin: string;
+  originFamily: OriginFamily | '';
+  localJustification: string;
   belowCostReason: string;
 }
 
@@ -66,6 +77,14 @@ export const EMPTY_PRODUCT_FORM: ProductFormState = {
   posTabId: '',
   posLabel: '',
   posSort: '0',
+  isFood: false,
+  ingredients: '',
+  allergensDecision: '',
+  allergens: [],
+  allergenTraces: [],
+  origin: '',
+  originFamily: '',
+  localJustification: '',
   belowCostReason: '',
 };
 
@@ -106,6 +125,14 @@ export function productToForm(p: ProductDetail): ProductFormState {
     posTabId: p.posTabId ?? '',
     posLabel: p.posLabel ?? '',
     posSort: String(p.posSort),
+    isFood: p.isFood,
+    ingredients: p.ingredients ?? '',
+    allergensDecision: p.allergensDecision ?? '',
+    allergens: p.allergens,
+    allergenTraces: p.allergenTraces,
+    origin: p.origin ?? '',
+    originFamily: p.originFamily ?? '',
+    localJustification: p.localJustification ?? '',
     belowCostReason: '',
   };
 }
@@ -135,6 +162,15 @@ export function productToPayload(f: ProductFormState): ProductCreate {
     posTabId: f.posTabId || null,
     posLabel: f.posLabel,
     posSort: Number(f.posSort) || 0,
+    // What is not food carries no allergen, ingredient or origin information.
+    isFood: f.isFood && f.kind !== 'SERVICE',
+    ingredients: f.isFood ? f.ingredients : '',
+    allergensDecision: f.isFood && f.allergensDecision ? f.allergensDecision : null,
+    allergens: f.isFood && f.allergensDecision === 'LISTED' ? f.allergens : [],
+    allergenTraces: f.isFood ? f.allergenTraces : [],
+    origin: f.isFood ? f.origin : '',
+    originFamily: f.isFood && f.originFamily ? f.originFamily : null,
+    localJustification: f.qualities.includes('LOCAL') ? f.localJustification : '',
     ...(f.belowCostReason.trim() ? { belowCostReason: f.belowCostReason.trim() } : {}),
     ...(f.code ? { code: f.code } : {}),
   });
@@ -165,6 +201,14 @@ const FIELD_LABELS: Record<string, string> = {
   posTabId: 'Onglet',
   posLabel: 'Libellé du bouton',
   posSort: 'Ordre',
+  isFood: 'Produit alimentaire',
+  ingredients: 'Ingrédients',
+  allergensDecision: 'Allergènes',
+  allergens: 'Allergènes',
+  allergenTraces: 'Traces',
+  origin: 'Origine',
+  originFamily: 'Famille d’origine obligatoire',
+  localJustification: 'Justification « local »',
   belowCostReason: 'Motif de vente sous le prix d’achat',
 };
 

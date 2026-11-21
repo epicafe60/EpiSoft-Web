@@ -8,6 +8,8 @@ export interface ReceiveFormLine {
   qty: string;
   unitPriceExcl: string;
   bestBefore: string;
+  /** Supplier lot number (compulsory for food). */
+  lotNumber: string;
   newSalePrice: string;
   /** « Mettre à jour la fiche produit »: unchecked by default, never implied. */
   updateProductPrice: boolean;
@@ -28,6 +30,7 @@ export function receiptPayload(lines: ReceiveFormLine[], date: string, closeOrde
       qty: l.qty,
       unitPriceExcl: l.unitPriceExcl,
       bestBefore: l.bestBefore || null,
+      lotNumber: l.lotNumber.trim() || null,
       updateProductPrice: l.updateProductPrice === true,
     })),
     newSalePrices: Object.fromEntries(
