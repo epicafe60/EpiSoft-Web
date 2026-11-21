@@ -45,6 +45,7 @@ const TITLES: [RegExp, string][] = [
   [/^\/compta\/plan/, 'Plan comptable'],
   [/^\/compta\/propositions/, 'Propositions d’écritures'],
   [/^\/compta\/budget/, 'Budget'],
+  [/^\/compta\/clotures-z/, 'Clôtures Z et archive fiscale'],
   [/^\/compta\/cloture/, 'Clôture de l’exercice'],
   [/^\/compta/, 'Comptabilité'],
   [/^\/admin\/parametres/, 'Paramètres'],

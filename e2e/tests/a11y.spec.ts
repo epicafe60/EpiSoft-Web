@@ -46,6 +46,7 @@ test('staff screens are accessible', async ({ page }) => {
     ['/surveillance', /Surveillance/],
     ['/surveillance/sauvegardes', /Surveillance/],
     ['/surveillance/activite', /Surveillance/],
+    ['/compta/clotures-z', /Comptabilité/],
   ] as const) {
     await page.goto(path);
     await page.getByRole('heading', { name: heading }).first().waitFor();

@@ -268,6 +268,32 @@ describe('period closings (§3)', () => {
     await expectIntegrity(t.db);
   });
 
+  it('lists what is left to close and what can be closed now, with what to do first', async () => {
+    await soldAndClosedDay();
+    // The drawer is still open: the day is listed, not ready, and says why.
+    const early = (await api('GET', '/fiscal/closings/pending')).json();
+    expect(early.openSessions).toBe(1);
+    expect(early.items).toHaveLength(1);
+    expect(early.items[0]).toMatchObject({ kind: 'DAY', tickets: 2, ready: false });
+    expect(early.items[0].reason).toMatch(/session de caisse/);
+
+    await forceClose();
+    const ready = (await api('GET', '/fiscal/closings/pending')).json();
+    expect(ready.items[0]).toMatchObject({ kind: 'DAY', ready: true, reason: null });
+
+    // Closed from the list, the day leaves it (the month is not over yet).
+    const z = await api('POST', '/fiscal/closings', { kind: 'DAY', start: ready.items[0].start });
+    expect(z.statusCode).toBe(200);
+    expect((await api('GET', '/fiscal/closings/pending')).json().items).toEqual([]);
+
+    // The closings are for the administrators and the accountants.
+    const asCashier = await t.app.inject({
+      url: '/api/v1/fiscal/closings/pending',
+      headers: till.cashier,
+    });
+    expect(asCashier.statusCode).toBe(403);
+  });
+
   it('puts a late ticket on the first open day and never into the closed one', async () => {
     const { p, reg } = await soldAndClosedDay();
     await forceClose();

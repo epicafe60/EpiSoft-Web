@@ -67,6 +67,7 @@ import { MyHouseholdPage } from './routes/shop/household';
 import { ReviewsModerationPage } from './routes/catalog/reviews';
 import { ReportsPage } from './routes/compta/reports';
 import { ClosingPage as YearClosingPage } from './routes/compta/closing';
+import { ZClosingsPage } from './routes/compta/z-closings';
 import { TillLayout } from './till/layout';
 import { TillGate } from './till/gate';
 import { SalePage } from './till/sale';
@@ -428,6 +429,11 @@ const yearClosingRoute = createRoute({
   path: '/cloture',
   component: YearClosingPage,
 });
+const zClosingsRoute = createRoute({
+  getParentRoute: () => accountingRoute,
+  path: '/clotures-z',
+  component: ZClosingsPage,
+});
 
 // --- Till (§4.4, §4.5, §5.3): full screen, usable offline ---
 const tillRoute = createRoute({
@@ -657,6 +663,7 @@ const routeTree = rootRoute.addChildren([
       proposalsRoute,
       planRoute,
       yearClosingRoute,
+      zClosingsRoute,
     ]),
     helpRoute,
     feedbackRoute,
