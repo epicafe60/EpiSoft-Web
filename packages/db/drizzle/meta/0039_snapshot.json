@@ -6288,6 +6288,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "purchase_vat_amount": {
+          "name": "purchase_vat_amount",
+          "type": "numeric(12, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "sale_price": {
           "name": "sale_price",
           "type": "numeric(12, 2)",
@@ -8502,6 +8508,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "pay_at_month_end": {
+          "name": "pay_at_month_end",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},

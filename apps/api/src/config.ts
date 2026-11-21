@@ -45,6 +45,12 @@ const envSchema = z.object({
    * database (in /etc/episoft/): whoever rewrites the database cannot sign what they rewrote.
    */
   FISCAL_SEAL_KEY: z.string().min(32).optional(),
+  /**
+   * Where the purge puts the compressed copy of what it removes (ADR 0017), for the
+   * administrators to download. Holds personal data: outside the web root, readable by the
+   * application only. Default: `archives` next to where the server is started.
+   */
+  ARCHIVE_DIR: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

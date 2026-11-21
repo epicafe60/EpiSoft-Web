@@ -21,12 +21,19 @@ import {
   productCreateSchema,
   productPatchSchema,
   purchasePricesProblem,
+  salePriceProblem,
   contentMatchesType,
   SERVICE_SALE,
   withServiceSale,
+  FOOD_INFO_TRIGGERS,
+  foodInfoProblems,
+  organicClaimProblem,
+  organicState,
+  type FoodInfo,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
+import { toShopDate } from '../../lib/dates';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { fold } from '../members/routes';
 
@@ -111,6 +118,18 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           categoryName: category.name,
           supplierName: supplier.name,
           imageId: product.imageId,
+          qualities: product.qualities,
+          unitQty: product.unitQty,
+          isFood: product.isFood,
+          ingredients: product.ingredients,
+          allergensDecision: product.allergensDecision,
+          allergens: product.allergens,
+          allergenTraces: product.allergenTraces,
+          origin: product.origin,
+          localJustification: product.localJustification,
+          organicNumber: supplier.organicCertNumber,
+          organicBody: supplier.organicCertBody,
+          organicExpiry: supplier.organicCertExpiry,
         })
         .from(product)
         .leftJoin(category, eq(category.id, product.categoryId))
@@ -118,7 +137,14 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         .where(and(...f))
         .orderBy(asc(product.code))
         .limit(req.query.limit);
-      return rows;
+      const today = toShopDate(new Date());
+      return rows.map(({ organicNumber, organicBody, organicExpiry, ...r }) => ({
+        ...r,
+        organic: organicState(
+          { number: organicNumber, body: organicBody, expiry: organicExpiry },
+          today,
+        ),
+      }));
     },
   );
 
@@ -139,8 +165,21 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       .select({ n: sql<number>`count(*)::int` })
       .from(saleLine)
       .where(eq(saleLine.productId, p.id));
+    const [sup] = p.supplierId
+      ? await db.select().from(supplier).where(eq(supplier.id, p.supplierId))
+      : [];
     return {
       ...p,
+      organic: organicState(
+        sup
+          ? {
+              number: sup.organicCertNumber,
+              body: sup.organicCertBody,
+              expiry: sup.organicCertExpiry,
+            }
+          : null,
+        toShopDate(new Date()),
+      ),
       eans: eans.map((e) => e.ean),
       hasSales: sold!.n > 0,
       priceHistory: prices.map((h) => ({ ...h, at: h.at.toISOString() })),
@@ -189,7 +228,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
   );
 
   app.post('/products', { ...editors, schema: { body: productCreateSchema } }, async (req) => {
-    const { eans, code, ...asked } = req.body;
+    const { eans, code, belowCostReason, ...asked } = req.body;
     // A service is sold one at a time, in euros, whatever the form sent.
     const fields = withServiceSale(asked);
     return db.transaction(async (tx) => {
@@ -199,6 +238,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       if (await tx.query.product.findFirst({ where: eq(product.code, finalCode) }))
         throw conflict(`Le code ${finalCode} est déjà utilisé.`);
       await assertFreeEans(tx, eans, null);
+      await assertClaims(tx, fields, true);
       const [p] = await tx
         .insert(product)
         .values({
@@ -206,7 +246,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           code: finalCode,
           // R-PRD-06: a new product goes to the label queue.
           labelPending: fields.kind === 'GOODS',
-          createdOn: sql`current_date`,
+          createdOn: sql`${toShopDate(new Date())}::date`,
         })
         .returning();
       if (eans.length)
@@ -223,7 +263,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         action: 'product.create',
         entity: 'product',
         entityId: p!.id,
-        after: { ...p, eans },
+        after: { ...p, eans, ...(belowCostReason ? { belowCostReason } : {}) },
       });
       return { id: p!.id, code: p!.code };
     });
@@ -233,7 +273,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     '/products/:id',
     { ...editors, schema: { ...idParams, body: productPatchSchema } },
     async (req) => {
-      const { updatedAt, eans, ...fields } = req.body;
+      const { updatedAt, eans, belowCostReason, ...fields } = req.body;
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select()
@@ -258,7 +298,8 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         if (
           fields.purchasePriceExcl !== undefined ||
           fields.purchaseVatAmount !== undefined ||
-          fields.purchasePriceIncl !== undefined
+          fields.purchasePriceIncl !== undefined ||
+          fields.vatRate !== undefined
         ) {
           const problem = purchasePricesProblem({
             purchasePriceExcl:
@@ -273,8 +314,37 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
               fields.purchasePriceIncl !== undefined
                 ? fields.purchasePriceIncl
                 : before.purchasePriceIncl,
+            vatRate: fields.vatRate ?? before.vatRate,
           });
-          if (problem) throw badRequest(problem);
+          if (problem) throw badRequest(problem, [{ path: 'purchasePriceIncl', message: problem }]);
+        }
+        // Selling rules (no sale at 0 for goods, no resale at a loss): checked when the sale price,
+        // the cost, the rate or the kind move, on the values the product will have.
+        if (
+          fields.salePrice !== undefined ||
+          fields.purchasePriceExcl !== undefined ||
+          fields.vatRate !== undefined ||
+          fields.kind !== undefined
+        ) {
+          const sale = salePriceProblem({
+            kind: fields.kind ?? before.kind,
+            salePrice: fields.salePrice ?? before.salePrice,
+            purchasePriceExcl:
+              fields.purchasePriceExcl !== undefined
+                ? fields.purchasePriceExcl
+                : before.purchasePriceExcl,
+            vatRate: fields.vatRate ?? before.vatRate,
+            belowCostReason,
+          });
+          if (sale) throw badRequest(sale.message, [sale]);
+        }
+        // Food information and claims: checked on the product as it will be, as soon as one of
+        // the fields they depend on is touched (a price change alone does not reopen them).
+        if ((FOOD_INFO_TRIGGERS as readonly string[]).some((k) => k in fields)) {
+          const merged = { ...before, ...fields } as typeof before;
+          const claimChanged = 'qualities' in fields || 'supplierId' in fields;
+          const kind = merged.kind;
+          await assertClaims(tx, { ...merged, kind }, claimChanged);
         }
         const set: Partial<typeof product.$inferInsert> = { ...fields };
         // Still, or just made, a service: its sale terms are fixed.
@@ -324,6 +394,7 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           after: {
             ...Object.fromEntries(changed.map((k) => [k, (after as Record<string, unknown>)[k]])),
             ...(eans ? { eans } : {}),
+            ...(belowCostReason ? { belowCostReason } : {}),
           },
         });
         return { id: after!.id, updatedAt: after!.updatedAt.toISOString() };
@@ -416,6 +487,40 @@ async function nextProductCode(db: Db | Tx, categoryId: string): Promise<string>
   const next = row?.max ? Number(row.max.slice(3)) + 1 : 1;
   if (next > 999) throw conflict(`Le rayon ${prefix} est plein (999 produits).`);
   return `${prefix}${String(next).padStart(3, '0')}`;
+}
+
+/**
+ * Règlement UE 1169/2011 (allergens, ingredients, origin), 2018/848 (« bio »: the supplier's
+ * certificate is valid) and the justification of « local ». Refuses with the sentence to show.
+ */
+async function assertClaims(
+  tx: Tx,
+  p: FoodInfo & { supplierId?: string | null },
+  checkOrganic: boolean,
+) {
+  const problems = foodInfoProblems(p);
+  if (problems.length)
+    throw badRequest(
+      problems[0]!.message,
+      problems.map((x) => ({ path: x.path, message: x.message })),
+    );
+  if (checkOrganic && p.qualities?.includes('ORGANIC')) {
+    const [s] = p.supplierId
+      ? await tx.select().from(supplier).where(eq(supplier.id, p.supplierId))
+      : [];
+    const msg = organicClaimProblem(
+      s
+        ? {
+            name: s.name,
+            number: s.organicCertNumber,
+            body: s.organicCertBody,
+            expiry: s.organicCertExpiry,
+          }
+        : null,
+      toShopDate(new Date()),
+    );
+    if (msg) throw badRequest(msg, [{ path: 'qualities', message: msg }]);
+  }
 }
 
 async function assertFreeEans(tx: Tx, eans: string[], selfId: string | null) {

@@ -231,26 +231,6 @@ export async function verifyJournalChain(
 
 // --- Cash payment ceiling -------------------------------------------------------------
 
-/**
- * Art. D112-3 du code monétaire et financier: a payment in cash cannot exceed 1 000 € when the
- * payer is a consumer resident in France (15 000 € for a non-resident). The till refuses a cash
- * payment above it; the back office refuses a supplier payment in cash above it (lot D).
- */
-export const CASH_PAYMENT_LIMIT_CENTS = 100_000;
-export const CASH_PAYMENT_LIMIT_NON_RESIDENT_CENTS = 1_500_000;
-export const CASH_PAYMENT_LIMIT_REFERENCE = 'art. D112-3 du code monétaire et financier';
-
-/** A reason to refuse a cash payment of this amount, or null. */
-export function cashPaymentProblem(
-  cashCents: number,
-  opts: { resident?: boolean } = {},
-): string | null {
-  const limit =
-    opts.resident === false ? CASH_PAYMENT_LIMIT_NON_RESIDENT_CENTS : CASH_PAYMENT_LIMIT_CENTS;
-  if (cashCents <= limit) return null;
-  return `Un paiement en espèces ne peut dépasser ${centsToDecimal(limit)} € (${CASH_PAYMENT_LIMIT_REFERENCE}) : réglez le surplus par un autre moyen.`;
-}
-
 // --- Credit notes (partial returns) ---------------------------------------------------
 
 /**

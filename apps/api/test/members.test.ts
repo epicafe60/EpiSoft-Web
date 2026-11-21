@@ -48,6 +48,7 @@ const newMember = {
   newsletter: true,
   username: null,
   householdId: null,
+  privacyNoticeGiven: true,
 };
 
 const post = (url: string, payload: unknown) =>

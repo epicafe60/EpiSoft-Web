@@ -303,9 +303,10 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         supplierId: s.id,
         pieceRef: 'F-1',
         date: '2026-03-10',
-        totalExcl: '240',
-        totalVat: '15,64',
-        totalIncl: '255,64',
+        vatLines: [
+          { rate: '5.50', excl: '223.17', vat: '12.27' },
+          { rate: '20.00', excl: '16.83', vat: '3.37' },
+        ],
         paymentMethod: 'TRANSFER',
         comment: '',
         receiptIds: [],
@@ -333,7 +334,9 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         l.credit,
       ]),
     ).toEqual([
-      ['607000', '255.64', '0.00'],
+      ['607000', '240.00', '0.00'],
+      ['445660', '12.27', '0.00'],
+      ['445660', '3.37', '0.00'],
       [sup, '0.00', '255.64'],
     ]);
     expect((await t.db.select().from(account).where(eq(account.number, sup)))[0]!.label).toBe(
@@ -345,9 +348,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       supplierId: s.id,
       pieceRef: 'F-1',
       date: '2026-03-10',
-      totalExcl: '250',
-      totalVat: '0',
-      totalIncl: '250',
+      vatLines: [{ rate: '0.00', excl: '250', vat: '0' }],
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [],
@@ -391,19 +392,17 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
     ).toMatchObject({ status: 'PAID', paymentEntryId: pay.entryId });
   });
 
-  it('refuses totals that do not add up, and keeps the entry balanced on the TTC', async () => {
+  it('refuses a VAT that does not match its rate, and keeps the entry balanced (R-TVA-03)', async () => {
     await year2026();
     const s = (await post('/api/v1/suppliers', supplierForm)).json();
-    // HT 100 + VAT 5.50 is not TTC 105.49: refused.
+    // 5.5 % of 100 is 5.50: a VAT of 5.53 is more than 2 cents off, refused.
     expect(
       (
         await post('/api/v1/supplier-invoices', {
           supplierId: s.id,
           pieceRef: 'F-BAD',
           date: '2026-03-10',
-          totalExcl: '100',
-          totalVat: '5,50',
-          totalIncl: '105,49',
+          vatLines: [{ rate: '5.50', excl: '100', vat: '5,53' }],
           paymentMethod: 'TRANSFER',
           comment: '',
           receiptIds: [],
@@ -414,9 +413,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       supplierId: s.id,
       pieceRef: 'F-FREE',
       date: '2026-03-10',
-      totalExcl: '100',
-      totalVat: '5,50',
-      totalIncl: '105,50',
+      vatLines: [{ rate: '5.50', excl: '100', vat: '5,50' }],
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [],
@@ -446,15 +443,13 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
         })
       ).statusCode,
     ).toBe(200);
-    // The TTC is required.
+    // Neither a breakdown nor a total: refused.
     expect(
       (
         await post('/api/v1/supplier-invoices', {
           supplierId: s.id,
           pieceRef: 'F-NO-TTC',
           date: '2026-03-10',
-          totalExcl: '1',
-          totalVat: '0',
           paymentMethod: null,
           comment: '',
           receiptIds: [],
@@ -470,9 +465,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       supplierId: s.id,
       pieceRef: 'F-ROLE',
       date: '2026-03-10',
-      totalExcl: '10',
-      totalVat: '0',
-      totalIncl: '10',
+      vatLines: [{ rate: '0.00', excl: '10', vat: '0' }],
       paymentMethod: null,
       comment: '',
       receiptIds: [],
@@ -493,9 +486,10 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       supplierId: s.id,
       pieceRef: 'F-1',
       date: '2026-03-10',
-      totalExcl: '240',
-      totalVat: '15,64',
-      totalIncl: '255,64',
+      vatLines: [
+        { rate: '5.50', excl: '223.17', vat: '12.27' },
+        { rate: '20.00', excl: '16.83', vat: '3.37' },
+      ],
       paymentMethod: 'TRANSFER',
       receiptIds: [],
     };
@@ -506,9 +500,7 @@ describe('supplier invoices → entries (R-FAC-03, R-FAC-04)', () => {
       (
         await put(`/api/v1/supplier-invoices/${inv.id}`, {
           ...same,
-          totalExcl: '300',
-          totalVat: '0',
-          totalIncl: '300',
+          vatLines: [{ rate: '0.00', excl: '300', vat: '0' }],
           comment: '',
         })
       ).statusCode,

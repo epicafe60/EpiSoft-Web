@@ -5,6 +5,12 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ImageUp } from 'lucide-react';
 import {
+  ALLERGEN_DECISION_LABELS,
+  ALLERGEN_DECISIONS,
+  ALLERGEN_LABELS,
+  ALLERGENS,
+  ORIGIN_FAMILIES,
+  ORIGIN_FAMILY_LABELS,
   formatQty,
   parseQtyToMilli,
   pricePerKgOrLitreCents,
@@ -336,6 +342,187 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
             </CardContent>
           </Card>
 
+          {!isService ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Information du consommateur</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="is-food"
+                    disabled={readOnly}
+                    checked={form.isFood}
+                    onChange={(e) => set('isFood', e.target.checked)}
+                  />
+                  <Label htmlFor="is-food" className="font-normal">
+                    Produit alimentaire
+                    <span className="block text-xs text-muted-foreground">
+                      Allergènes, ingrédients et quantité nette obligatoires (règlement UE
+                      1169/2011) ; le lot et la date limite sont demandés à la réception.
+                    </span>
+                  </Label>
+                </div>
+                {form.isFood ? (
+                  <>
+                    <fieldset className="grid gap-2" aria-describedby="allergens-hint">
+                      <legend className="mb-1 text-sm font-medium">Allergènes</legend>
+                      <p id="allergens-hint" className="text-xs text-muted-foreground">
+                        Le choix est obligatoire : « Aucun allergène déclaré » se choisit, il n’est
+                        pas la valeur par défaut.
+                      </p>
+                      <div className="flex flex-wrap gap-4">
+                        {ALLERGEN_DECISIONS.map((d) => (
+                          <div key={d} className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              id={`ad-${d}`}
+                              name="allergens-decision"
+                              disabled={readOnly}
+                              checked={form.allergensDecision === d}
+                              onChange={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  allergensDecision: d,
+                                  allergens: d === 'NONE' ? [] : f.allergens,
+                                }))
+                              }
+                            />
+                            <Label htmlFor={`ad-${d}`} className="font-normal">
+                              {ALLERGEN_DECISION_LABELS[d]}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      {errors.allergensDecision ? (
+                        <p role="alert" className="text-sm text-destructive">
+                          {errors.allergensDecision}
+                        </p>
+                      ) : null}
+                      {form.allergensDecision === 'LISTED' ? (
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          {ALLERGENS.map((a) => (
+                            <div key={a} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`al-${a}`}
+                                disabled={readOnly}
+                                checked={form.allergens.includes(a)}
+                                onChange={(e) =>
+                                  set(
+                                    'allergens',
+                                    e.target.checked
+                                      ? [...form.allergens, a]
+                                      : form.allergens.filter((x) => x !== a),
+                                  )
+                                }
+                              />
+                              <Label htmlFor={`al-${a}`} className="font-normal">
+                                {ALLERGEN_LABELS[a]}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {errors.allergens ? (
+                        <p role="alert" className="text-sm text-destructive">
+                          {errors.allergens}
+                        </p>
+                      ) : null}
+                    </fieldset>
+                    <details className="rounded border p-3">
+                      <summary className="cursor-pointer text-sm font-medium">
+                        Peut contenir des traces de ({form.allergenTraces.length})
+                      </summary>
+                      <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                        {ALLERGENS.map((a) => (
+                          <div key={a} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`tr-${a}`}
+                              disabled={readOnly}
+                              checked={form.allergenTraces.includes(a)}
+                              onChange={(e) =>
+                                set(
+                                  'allergenTraces',
+                                  e.target.checked
+                                    ? [...form.allergenTraces, a]
+                                    : form.allergenTraces.filter((x) => x !== a),
+                                )
+                              }
+                            />
+                            <Label htmlFor={`tr-${a}`} className="font-normal">
+                              {ALLERGEN_LABELS[a]}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                    <Field
+                      label="Ingrédients"
+                      error={errors.ingredients}
+                      hint="Dans l’ordre de l’emballage. Un seul ingrédient : son nom."
+                    >
+                      {(p) => (
+                        <Textarea
+                          {...p}
+                          disabled={readOnly}
+                          value={form.ingredients}
+                          onChange={(e) => set('ingredients', e.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {select(
+                        'originFamily',
+                        'Origine obligatoire pour',
+                        ORIGIN_FAMILIES.map((f) => [f, ORIGIN_FAMILY_LABELS[f]]),
+                        true,
+                      )}
+                      {text(
+                        'origin',
+                        'Origine (pays ou région)',
+                        {},
+                        'Obligatoire pour les fruits et légumes, le miel, la viande, le poisson, les œufs…',
+                      )}
+                    </div>
+                  </>
+                ) : null}
+                {form.qualities.includes('LOCAL') ? (
+                  <Field
+                    label="Pourquoi « local » ?"
+                    error={errors.localJustification}
+                    hint="Producteur et distance ou lieu, par exemple « Ferme Durand, Montjavoult, 5 km »."
+                  >
+                    {(p) => (
+                      <Input
+                        {...p}
+                        disabled={readOnly}
+                        value={form.localJustification}
+                        onChange={(e) => set('localJustification', e.target.value)}
+                      />
+                    )}
+                  </Field>
+                ) : null}
+                {form.qualities.includes('ORGANIC') ? (
+                  <p className="text-sm text-muted-foreground">
+                    « Bio » exige un certificat bio valide sur la fiche du fournisseur (numéro,
+                    organisme, date de fin de validité).
+                    {product && product.organic !== 'VALID' ? (
+                      <span className="text-destructive">
+                        {' '}
+                        Ce n’est pas le cas aujourd’hui : la mention est refusée.
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                {errors.qualities ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {errors.qualities}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Vente et prix</CardTitle>
@@ -396,6 +583,16 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
                   ? `Taux de marque : ${margin.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % (Q2, définition à valider).`
                   : ''}
               </p>
+              {errors.salePrice && /revente à perte/.test(errors.salePrice) ? (
+                <div className="grid gap-2">
+                  {text(
+                    'belowCostReason',
+                    'Motif de vente sous le prix d’achat',
+                    {},
+                    'Exception exceptionnelle (produit périssable menacé, fin de série) : le motif est conservé dans le journal.',
+                  )}
+                </div>
+              ) : null}
               {belowCost ? (
                 <Alert>
                   Le prix de vente est inférieur au prix d’achat TTC : chaque vente fera perdre de

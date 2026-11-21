@@ -38,6 +38,7 @@ describe('the new-product form produces a payload the schema accepts', () => {
           minStock: '2',
           eans: '3168930167983, 4006381333931',
           qualities: ['LOCAL', 'ORGANIC'],
+          localJustification: 'Ferme Durand, Montjavoult, 5 km',
           supplierRef: 'REF-7',
           posLabel: 'Miel',
           posSort: '3',

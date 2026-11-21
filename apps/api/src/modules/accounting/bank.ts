@@ -41,6 +41,7 @@ import {
   statementGapCents,
   suggestRules,
   validateRegex,
+  isoDate,
 } from '@episoft/shared';
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
@@ -48,6 +49,7 @@ import { headerFileName } from '../../lib/files';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { sendTopupReceipt } from '../pos/sync-service';
 import { lockedBalanceCents } from '../pos/wallet';
+import { allocatedCents } from './credit-allocations';
 import { createDeposit, payInvoice } from './auto';
 import { accountBalanceAt, accountMap, createEntry, plannedToLines } from './service';
 
@@ -482,7 +484,9 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
             .from(supplierInvoice)
             .where(eq(supplierInvoice.id, item.invoiceId));
           if (!inv) throw notFound('Facture introuvable.');
-          if (decimalToCents(inv.totalIncl) !== -cents)
+          // The credit notes offset against the invoice reduce what the bank has to pay.
+          const net = decimalToCents(inv.totalIncl) - (await allocatedCents(tx, inv.id));
+          if (net !== -cents)
             throw conflict('Le montant de la facture ne correspond pas à la ligne bancaire.');
           const paid = await payInvoice(tx, {
             invoiceId: inv.id,
@@ -491,7 +495,7 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
             userId: req.user!.id,
             bankAccountNumber: bank.number,
           });
-          bankEntryLineId = await bankSide(paid.entryId);
+          bankEntryLineId = await bankSide(paid.entryId!);
         } else if (item.action === 'HOUSEHOLD') {
           if (!item.householdId) throw badRequest('Foyer manquant.');
           if (cents <= 0) throw badRequest('Seul un virement reçu peut alimenter une cagnotte.');
@@ -751,7 +755,7 @@ export const bankRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = asy
       schema: {
         querystring: z.object({
           bankAccountId: z.string().uuid(),
-          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          date: isoDate,
         }),
       },
     },

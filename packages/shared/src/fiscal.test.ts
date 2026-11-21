@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { cashPaymentProblem, CASH_PAYMENT_LIMIT_CENTS } from './cash-limit';
 import {
   ARCHIVE_SECTIONS,
   buildArchive,
   canonicalJson,
-  cashPaymentProblem,
-  CASH_PAYMENT_LIMIT_CENTS,
   computePeriodTotals,
   GENESIS_HASH,
   hmacSha256Hex,

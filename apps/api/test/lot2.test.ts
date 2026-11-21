@@ -174,7 +174,15 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
 
     const line = detail.lines[0];
     const r1 = await post(`/api/v1/purchase-orders/${o.id}/receipts`, {
-      lines: [{ orderLineId: line.id, productId: p1.id, qty: '4', unitPriceExcl: '5.2' }],
+      lines: [
+        {
+          orderLineId: line.id,
+          productId: p1.id,
+          qty: '4',
+          unitPriceExcl: '5.2',
+          updateProductPrice: true,
+        },
+      ],
       newSalePrices: { [p1.id]: '8,50' },
     });
     expect(r1.json().number).toMatch(/^RC-\d{4}-0001$/);
@@ -183,6 +191,7 @@ describe('order → receipt cycle (R-CMD-01..06)', () => {
     const [after] = await t.db.select().from(product).where(eq(product.id, p1.id));
     expect(after).toMatchObject({
       purchasePriceExcl: '5.2000',
+      purchaseVatAmount: '0.2860',
       purchasePriceIncl: '5.4860',
       salePrice: '8.50',
       labelPending: true,
@@ -335,9 +344,7 @@ describe('invoices (R-FAC-01, R-FAC-02, R-FAC-05)', () => {
       supplierId: s.id,
       pieceRef: 'F-001',
       date,
-      totalExcl: '50',
-      totalVat: '2,75',
-      totalIncl: '52,75',
+      vatLines: [{ rate: '5.50', excl: '50', vat: '2,75' }],
       paymentMethod: 'TRANSFER',
       comment: '',
       receiptIds: [r.id],
@@ -430,8 +437,17 @@ describe('catalogue administration (R-PRD-06, R-PRD-08)', () => {
     // (organic) dots, in both formats.
     await t.db
       .update(product)
-      .set({ qualities: ['LOCAL', 'ORGANIC'] })
+      .set({ qualities: ['LOCAL', 'ORGANIC'], localJustification: 'Ferme Durand, 5 km' })
       .where(eq(product.id, p1.id));
+    // « Bio » is printed only for a supplier whose certificate is valid.
+    await t.db
+      .update(supplier)
+      .set({
+        organicCertNumber: 'FR-BIO-01-1',
+        organicCertBody: 'Ecocert',
+        organicCertExpiry: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+      })
+      .where(eq(supplier.id, s.id));
     for (const perPage of [24, 40])
       for (const body of [{ productIds: [p1.id, p2.id] }, { productIds: [p1.id], perPage }]) {
         const res = await post('/api/v1/products/labels/pdf', body);
@@ -446,9 +462,7 @@ describe('a supplier paid « à réception fin de mois » (R-FAC-01)', () => {
     supplierId,
     pieceRef,
     date,
-    totalExcl: '50',
-    totalVat: '2,75',
-    totalIncl: '52,75',
+    vatLines: [{ rate: '5.50', excl: '50', vat: '2,75' }],
     paymentMethod: 'TRANSFER',
     comment: '',
     receiptIds: [],

@@ -4,7 +4,9 @@ import {
   memberPatchSchema,
   productCreateSchema,
   productPatchSchema,
+  purchaseAmountsFromExcl,
   purchasePriceIncl,
+  purchasePricesProblem,
   walletCorrectionSchema,
 } from './forms';
 
@@ -68,6 +70,7 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     supplierId: null,
     supplierRef: '',
     qualities: ['LOCAL'],
+    localJustification: 'Ferme Durand, Montjavoult, 5 km',
     vatRate: '5.50',
     status: 'ACTIVE',
     purchasePriceExcl: '1,2',
@@ -114,15 +117,27 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     expect(
       bad({ purchasePriceExcl: '1,20', purchaseVatAmount: '0,066', purchasePriceIncl: '1,27' }),
     ).toBe(false);
-    // TTC below HT, VAT above 20 %.
+    // TTC below HT, VAT amount that is not HT x the rate of the product (R-TVA-02).
     expect(bad({ purchasePriceExcl: '1,20', purchasePriceIncl: '1' })).toBe(false);
     expect(
       bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,5', purchasePriceIncl: '1,5' }),
     ).toBe(false);
-    // 20 % exactly is fine; HT alone is fine.
     expect(
       bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(false);
+    // 20 % on a product at 20 % is fine; HT alone is fine.
+    expect(
+      bad({
+        vatRate: '20.00',
+        purchasePriceExcl: '1',
+        purchaseVatAmount: '0,2',
+        purchasePriceIncl: '1,2',
+      }),
     ).toBe(true);
+    // R-PRD-04: the VAT amount must match the rate of the product (one cent apart).
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(false);
     expect(bad({ purchasePriceExcl: '1' })).toBe(true);
   });
 
@@ -159,5 +174,24 @@ describe('messages written by zod itself', () => {
     const text = JSON.stringify(r.success ? [] : r.error.issues.map((i) => i.message));
     expect(text).not.toMatch(/Too big|expected string/);
     expect(text).toMatch(/caract/i);
+  });
+});
+
+describe('purchaseAmountsFromExcl (R-PRD-04)', () => {
+  it('builds HT, VAT and TTC at the rate of the product, always coherent', () => {
+    expect(purchaseAmountsFromExcl('5.4', '5.50')).toEqual({
+      purchasePriceExcl: '5.4000',
+      purchaseVatAmount: '0.2970',
+      purchasePriceIncl: '5.6970',
+    });
+    for (const rate of ['0', '2.10', '5.50', '10', '20'])
+      for (const excl of ['0', '0.0001', '1.2345', '99.9999']) {
+        const a = purchaseAmountsFromExcl(excl, rate)!;
+        expect(purchasePricesProblem(a)).toBeNull();
+      }
+  });
+  it('is null for an invalid price', () => {
+    expect(purchaseAmountsFromExcl('abc', '20')).toBeNull();
+    expect(purchaseAmountsFromExcl('-1', '20')).toBeNull();
   });
 });

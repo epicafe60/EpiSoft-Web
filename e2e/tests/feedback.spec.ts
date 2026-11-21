@@ -19,6 +19,8 @@ test('a bug is reported from a screen, handled by an administrator and answered'
   await author.getByRole('button', { name: 'Signaler un problème' }).first().click();
   const dialog = author.getByRole('dialog');
   await expect(dialog.getByLabel('Module')).toHaveValue('membres');
+  // The screen is the page as it is in the address bar, not the title of the tab.
+  await expect(dialog.getByLabel('Écran concerné')).toHaveValue('/membres');
   await dialog.getByLabel('Titre').fill(title);
   // A bug without steps is refused under its field.
   await dialog
@@ -32,10 +34,18 @@ test('a bug is reported from a screen, handled by an administrator and answered'
   await dialog.getByRole('button', { name: 'Envoyer' }).click();
   await expect(dialog.getByText(/est enregistré/)).toBeVisible();
 
-  const rows = await query<{ number: number; module: string; kind: string; status: string }>(
-    `select number, module, kind, status from app.feedback_ticket where title = '${title}'`,
+  const rows = await query<{
+    number: number;
+    module: string;
+    kind: string;
+    status: string;
+    screen: string;
+  }>(
+    `select number, module, kind, status, screen from app.feedback_ticket where title = '${title}'`,
   );
-  expect(rows).toMatchObject([{ module: 'membres', kind: 'BUG', status: 'NEW' }]);
+  expect(rows).toMatchObject([
+    { module: 'membres', kind: 'BUG', status: 'NEW', screen: '/membres' },
+  ]);
 
   // « À surveiller » on the administrator's home page counts it until someone looks at it.
   await author.goto('/');

@@ -439,6 +439,10 @@ export const supplier = app.table('supplier', {
   /** Paid « à réception fin de mois »: due at the end of the month the invoice is entered. */
   payAtMonthEnd: boolean('pay_at_month_end').notNull().default(false),
   deliveryDay: text('delivery_day'),
+  /** « Bio » claim (règlement UE 2018/848): the supplier's organic certificate. */
+  organicCertNumber: text('organic_cert_number'),
+  organicCertBody: text('organic_cert_body'),
+  organicCertExpiry: date('organic_cert_expiry'),
   legacyFnrcode: text('legacy_fnrcode').unique(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -493,12 +497,33 @@ export const product = app.table(
     minStock: qty('min_stock'),
     /** Cache of the sum of stock_movement.qty, updated in the same transaction (principle 6). */
     stockQty: qty('stock_qty').notNull().default('0'),
+    /** R-STK-06: running weighted average unit cost excl. VAT (CMUP), 6 decimals; null until known. */
+    avgCost: numeric('avg_cost', { precision: 14, scale: 6 }),
     /** False keeps this product out of the online shop (it stays sold at the till). */
     shopVisible: boolean('shop_visible').notNull().default(true),
     labelPending: boolean('label_pending').notNull().default(false),
     posTabId: uuid('pos_tab_id').references(() => posTab.id, { onDelete: 'set null' }),
     posSort: integer('pos_sort').notNull().default(0),
     posLabel: text('pos_label'),
+    /** Food: allergens, ingredients and origin must be filled in (règlement UE 1169/2011). */
+    isFood: boolean('is_food').notNull().default(false),
+    ingredients: text('ingredients'),
+    /** null: not decided yet; NONE: « aucun allergène déclaré » chosen explicitly; LISTED: see `allergens`. */
+    allergensDecision: text('allergens_decision'),
+    allergens: text('allergens')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** « Peut contenir des traces de »: same codes as `allergens`. */
+    allergenTraces: text('allergen_traces')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    origin: text('origin'),
+    /** Family for which the origin is mandatory (fruit and vegetables, honey, meat…). */
+    originFamily: text('origin_family'),
+    /** Why the product can be called « local » (producer, place, distance). */
+    localJustification: text('local_justification'),
     imageId: uuid('image_id').references(() => media.id, { onDelete: 'set null' }),
     createdOn: date('created_on'),
     createdAt: createdAt(),
@@ -551,6 +576,8 @@ export const stockMovement = app.table(
     qty: qty('qty').notNull(),
     kind: stockMovementKind('kind').notNull(),
     unitCost: price4('unit_cost'),
+    /** R-STK-06: the product's average cost after this movement (CMUP), the base of the valuation at a date. */
+    avgCostAfter: numeric('avg_cost_after', { precision: 14, scale: 6 }),
     sourceType: text('source_type'),
     sourceId: text('source_id'),
     comment: text('comment'),
@@ -684,6 +711,9 @@ export const walletEntry = app.table(
 // --- Till: devices, sessions, sales (§4.4, §4.5, §8.3) -------------------------
 
 export const cashSessionStatus = app.enum('cash_session_status', ['OPEN', 'CLOSED']);
+/** R-TVA-07: the VAT regime of the association (see packages/shared/src/vat.ts). */
+export const vatRegime = app.enum('vat_regime', ['LIABLE', 'FRANCHISE', 'EXEMPT']);
+
 export const saleStatus = app.enum('sale_status', ['COMPLETED', 'CANCELLED']);
 
 export const posDevice = app.table('pos_device', {
@@ -789,6 +819,8 @@ export const sale = app.table(
     soldAt: tz('sold_at').notNull(),
     total: money('total').notNull(),
     discountTotal: money('discount_total').notNull().default('0'),
+    /** The VAT regime in force on the day of the ticket, kept as it was (R-TVA-07). */
+    vatRegime: vatRegime('vat_regime').notNull().default('LIABLE'),
     status: saleStatus('status').notNull().default('COMPLETED'),
     cancelsSaleId: uuid('cancels_sale_id').references((): AnyPgColumn => sale.id),
     hasServices: boolean('has_services').notNull().default(false),
@@ -1011,7 +1043,24 @@ export const purchaseOrderStatus = app.enum('purchase_order_status', [
   'CLOSED',
   'CANCELLED',
 ]);
-export const supplierInvoiceStatus = app.enum('supplier_invoice_status', ['TO_PAY', 'PAID']);
+/**
+ * R-TVA-07: history of the VAT regime. A change takes effect on a date; past operations keep the
+ * regime they were recorded with (`sale.vat_regime`, `supplier_invoice.vat_regime`). No row means
+ * LIABLE (the migration inserts the first one).
+ */
+export const vatRegimeChange = app.table('vat_regime_change', {
+  id: id(),
+  effectiveFrom: date('effective_from').notNull().unique(),
+  regime: vatRegime('regime').notNull(),
+  createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+});
+
+export const supplierInvoiceStatus = app.enum('supplier_invoice_status', [
+  'TO_PAY',
+  'PAID',
+  'CANCELLED',
+]);
 export const inventoryStatus = app.enum('inventory_status', ['OPEN', 'VALIDATED', 'CANCELLED']);
 
 /** R-CMD-*: supplier purchase order; totals are recomputed from the lines. */
@@ -1125,6 +1174,8 @@ export const supplierInvoice = app.table(
     totalExcl: money('total_excl').notNull(),
     totalVat: money('total_vat').notNull().default('0'),
     totalIncl: money('total_incl').notNull(),
+    /** The VAT regime in force on the date of the invoice, kept as it was (R-TVA-07). */
+    vatRegime: vatRegime('vat_regime').notNull().default('LIABLE'),
     status: supplierInvoiceStatus('status').notNull().default('TO_PAY'),
     paymentMethod: supplierPaymentMethod('payment_method'),
     paidAt: date('paid_at'),
@@ -1139,16 +1190,46 @@ export const supplierInvoice = app.table(
     /** Overrides the default purchase account (R-FAC-03). */
     expenseAccountNumber: text('expense_account_number'),
     comment: text('comment'),
+    /** Lot D: an invoice entered by mistake is cancelled (never deleted): reason, date, counter entry. */
+    cancelledAt: tz('cancelled_at'),
+    cancelledBy: uuid('cancelled_by').references(() => member.id, { onDelete: 'set null' }),
+    cancelReason: text('cancel_reason'),
+    cancelEntryId: uuid('cancel_entry_id').references((): AnyPgColumn => entry.id, {
+      onDelete: 'set null',
+    }),
     createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     legacyFactid: integer('legacy_factid').unique(),
   },
   (t) => [
-    uniqueIndex('supplier_invoice_piece_uq').on(t.supplierId, t.pieceRef),
+    // A cancelled invoice frees its piece number so that it can be entered again.
+    uniqueIndex('supplier_invoice_piece_uq')
+      .on(t.supplierId, t.pieceRef)
+      .where(sql`${t.cancelledAt} is null`),
     index('supplier_invoice_due_idx').on(t.status, t.dueDate),
     check('supplier_invoice_due_after_date', sql`${t.dueDate} >= ${t.date}`),
   ],
+);
+
+/**
+ * R-TVA-03: the breakdown of a supplier invoice by VAT rate. The totals of the invoice are the
+ * sums of its lines (derived by the server). Legacy invoices carry one line with their totals, at
+ * the standard rate nearest to VAT / HT ; amounts are checked by the API only (a legacy credit note
+ * may be negative).
+ */
+export const supplierInvoiceVatLine = app.table(
+  'supplier_invoice_vat_line',
+  {
+    id: id(),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => supplierInvoice.id, { onDelete: 'cascade' }),
+    rate: numeric('rate', { precision: 5, scale: 2 }).notNull(),
+    excl: money('excl').notNull(),
+    vat: money('vat').notNull(),
+  },
+  (t) => [uniqueIndex('supplier_invoice_vat_line_rate_uq').on(t.invoiceId, t.rate)],
 );
 
 /** R-FAC-02: an invoice covers one or several receipts. */
@@ -1163,6 +1244,67 @@ export const invoiceReceipt = app.table(
       .references(() => goodsReceipt.id, { onDelete: 'cascade' }),
   },
   (t) => [primaryKey({ columns: [t.invoiceId, t.receiptId] })],
+);
+
+export const creditNoteStatus = app.enum('supplier_credit_note_status', ['ACTIVE', 'CANCELLED']);
+
+/** Lot D: supplier credit note (avoir), standalone or linked to the invoice it corrects. */
+export const supplierCreditNote = app.table(
+  'supplier_credit_note',
+  {
+    id: id(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id),
+    invoiceId: uuid('invoice_id').references(() => supplierInvoice.id),
+    pieceRef: text('piece_ref').notNull(),
+    date: date('date').notNull(),
+    totalExcl: money('total_excl').notNull(),
+    totalVat: money('total_vat').notNull().default('0'),
+    totalIncl: money('total_incl').notNull(),
+    status: creditNoteStatus('status').notNull().default('ACTIVE'),
+    expenseAccountNumber: text('expense_account_number'),
+    entryId: uuid('entry_id').references((): AnyPgColumn => entry.id, { onDelete: 'set null' }),
+    cancelledAt: tz('cancelled_at'),
+    cancelReason: text('cancel_reason'),
+    cancelEntryId: uuid('cancel_entry_id').references((): AnyPgColumn => entry.id, {
+      onDelete: 'set null',
+    }),
+    comment: text('comment'),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('supplier_credit_note_piece_uq')
+      .on(t.supplierId, t.pieceRef)
+      .where(sql`${t.cancelledAt} is null`),
+    index('supplier_credit_note_supplier_idx').on(t.supplierId, t.date),
+    check('supplier_credit_note_positive', sql`${t.totalIncl} > 0`),
+  ],
+);
+
+/** Lot D: an amount of a credit note offset against an invoice to pay (lettered at payment). */
+export const supplierCreditAllocation = app.table(
+  'supplier_credit_allocation',
+  {
+    id: id(),
+    creditNoteId: uuid('credit_note_id')
+      .notNull()
+      .references(() => supplierCreditNote.id),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => supplierInvoice.id),
+    amount: money('amount').notNull(),
+    date: date('date').notNull(),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('supplier_credit_allocation_invoice_idx').on(t.invoiceId),
+    index('supplier_credit_allocation_note_idx').on(t.creditNoteId),
+    check('supplier_credit_allocation_positive', sql`${t.amount} > 0`),
+  ],
 );
 
 /** R-STK-04: inventory session, total or partial; the theoretical stock is frozen at opening. */
@@ -1237,6 +1379,11 @@ export const fiscalYear = app.table(
     status: fiscalYearStatus('status').notNull().default('OPEN'),
     closedAt: tz('closed_at'),
     closedBy: uuid('closed_by').references(() => member.id, { onDelete: 'set null' }),
+    /** Lot D: once the general assembly has approved the accounts the year can never be reopened. */
+    approvedOn: date('approved_on'),
+    approvedAt: tz('approved_at'),
+    approvedBy: uuid('approved_by').references(() => member.id, { onDelete: 'set null' }),
+    approvalReference: text('approval_reference'),
     createdAt: createdAt(),
   },
   (t) => [check('fiscal_year_dates', sql`${t.endDate} >= ${t.startDate}`)],
@@ -1643,6 +1790,57 @@ export const productBatch = app.table(
   ],
 );
 
+/**
+ * Traceability (règlement CE 178/2002, art. 18): the supplier lot received, with its best-before
+ * date. What was sold from it is not recorded at the till; it is estimated by FEFO (see
+ * packages/shared/src/traceability.ts).
+ */
+export const productLot = app.table(
+  'product_lot',
+  {
+    id: id(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => product.id),
+    supplierId: uuid('supplier_id').references(() => supplier.id),
+    receiptId: uuid('receipt_id').references(() => goodsReceipt.id),
+    receiptLineId: uuid('receipt_line_id').references(() => goodsReceiptLine.id),
+    lotNumber: text('lot_number').notNull(),
+    /** DLC or DDM; null for what carries none (fresh fruit and vegetables). */
+    bestBefore: date('best_before'),
+    qty: qty('qty').notNull(),
+    receivedOn: date('received_on').notNull(),
+    createdAt: createdAt(),
+    by: uuid('by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    index('product_lot_product_idx').on(t.productId, t.receivedOn),
+    index('product_lot_number_idx').on(t.lotNumber),
+    check('product_lot_qty', sql`${t.qty} > 0`),
+  ],
+);
+
+/**
+ * RGPD: what a member agreed to or refused, with the date, the version of the text shown and the
+ * way it was collected. Append-only: a withdrawal is a new row, the current choice is the latest.
+ */
+export const consent = app.table(
+  'consent',
+  {
+    id: id(),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => member.id, { onDelete: 'cascade' }),
+    purpose: text('purpose').notNull(),
+    granted: boolean('granted').notNull(),
+    textVersion: text('text_version').notNull(),
+    channel: text('channel').notNull(),
+    at: tz('at').notNull().defaultNow(),
+    recordedBy: uuid('recorded_by').references(() => member.id, { onDelete: 'set null' }),
+  },
+  (t) => [index('consent_member_idx').on(t.memberId, t.purpose, t.at)],
+);
+
 /** R-CPT-20: yearly budget of an expense or income account, compared with the books in the reports. */
 export const budgetLine = app.table(
   'budget_line',
@@ -1672,6 +1870,24 @@ export const jobRun = app.table(
     at: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.name, t.day] })],
+);
+
+/**
+ * Size of the database, taken once a week and around every purge (ADR 0017): the growth curve of
+ * Administration › Base de données. Technical, not captured by the journal of changes.
+ */
+export const dbSizeSnapshot = app.table(
+  'db_size_snapshot',
+  {
+    id: id(),
+    at: tz('at').notNull().defaultNow(),
+    totalBytes: bigint('total_bytes', { mode: 'number' }).notNull(),
+    /** [{ name, totalBytes, tableBytes, indexBytes, rows }] for the biggest tables. */
+    tables: jsonb('tables').notNull(),
+    /** weekly | before_purge | after_purge */
+    reason: text('reason').notNull(),
+  },
+  (t) => [index('db_size_snapshot_at_idx').on(t.at)],
 );
 
 /** Last low-cagnotte reminder sent to a household (R-CAG-06). */

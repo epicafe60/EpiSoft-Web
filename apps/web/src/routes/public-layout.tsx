@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBranding } from '@/lib/branding';
+import { LegalLinks } from './legal';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 /** Centered card used by the login and password pages. */
@@ -36,6 +37,7 @@ export function PublicLayout({
             </CardHeader>
             <CardContent>{children}</CardContent>
           </Card>
+          <LegalLinks className="mt-6 justify-center" />
         </div>
       </main>
     </div>

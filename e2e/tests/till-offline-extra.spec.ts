@@ -196,6 +196,6 @@ test('R-OFF-08: a back-office page opened offline says clearly that it needs the
   await startTill(page, 'BACKOFFICE');
   await offline(context);
   await page.goto('/mon-foyer');
-  await expect(page.getByText(/serveur est injoignable/i)).toBeVisible();
+  await expect(page.getByText(/serveur est injoignable/i).first()).toBeVisible();
   await online(context);
 });

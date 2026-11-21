@@ -1,10 +1,18 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { auditLog, priceHistory, product, purchaseOrder, supplier } from '@episoft/db';
+import {
+  auditLog,
+  goodsReceiptLine,
+  priceHistory,
+  product,
+  purchaseOrder,
+  stockMovement,
+  supplier,
+} from '@episoft/db';
 import { createUser, login, setupTestApp } from './helpers';
 import { addProduct } from './till-fixtures';
 
-// « Passer une commande »: last ordered quantity, start at 0, PA HT carried over to the product.
+// « Passer une commande »: last ordered quantity, start at 0, PA HT stays on the order line.
 
 let t: Awaited<ReturnType<typeof setupTestApp>>;
 let h: Record<string, string>;
@@ -87,37 +95,29 @@ describe('quantité dernière commande', () => {
   });
 });
 
-describe('PA HT unitaire typed in the order follows the product sheet', () => {
-  it('updates the product price (HT, with VAT amount and TTC kept consistent), history and audit; unchanged price touches nothing', async () => {
+describe('PA HT unitaire typed in the order stays on the order line', () => {
+  it('never touches the product sheet, no history, no product audit entry', async () => {
     const { s, p } = await setup();
     const o = await newOrder(s.id);
-    // Same price: nothing changes.
-    await call('PUT', `/purchase-orders/${o.id}`, {
-      lines: [{ productId: p.id, qty: '2', unitPriceExcl: '5' }],
-    });
-    expect(await t.db.select().from(priceHistory)).toHaveLength(0);
-
     const res = await call('PUT', `/purchase-orders/${o.id}`, {
       lines: [{ productId: p.id, qty: '2', unitPriceExcl: '5.4' }],
     });
     expect(res.statusCode, res.body).toBe(200);
     const [after] = await t.db.select().from(product).where(eq(product.id, p.id));
-    // The VAT amount and the TTC follow the HT at the rate of the product: 5.4 x 1.055.
     expect(after).toMatchObject({
-      purchasePriceExcl: '5.4000',
-      purchaseVatAmount: '0.2970',
-      purchasePriceIncl: '5.6970',
+      purchasePriceExcl: '5.0000',
+      purchaseVatAmount: '0.2750',
+      purchasePriceIncl: '5.2750',
     });
-    const hist = await t.db.select().from(priceHistory);
-    expect(hist).toHaveLength(1);
-    expect(hist[0]).toMatchObject({ productId: p.id, purchasePriceExcl: '5.4000', source: 'FORM' });
+    expect(await t.db.select().from(priceHistory)).toHaveLength(0);
     const entries = await t.db
       .select()
       .from(auditLog)
       .where(sql`${auditLog.action} = 'product.update' and ${auditLog.entityId} = ${p.id}`);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]!.before).toMatchObject({ purchasePriceExcl: '5.0000' });
-    expect(entries[0]!.after).toMatchObject({ purchasePriceExcl: '5.4000' });
+    expect(entries).toHaveLength(0);
+    // The typed price is the one of the order line.
+    const lines = (await detail(o.id)).lines as unknown as { unitPriceExcl: string }[];
+    expect(lines[0]!.unitPriceExcl).toBe('5.4000');
   });
 
   it('a line at quantity 0 does not touch the product, and an empty or invalid price is refused', async () => {
@@ -136,5 +136,98 @@ describe('PA HT unitaire typed in the order follows the product sheet', () => {
       expect(bad.statusCode).toBe(400);
     }
     expect(await t.db.select().from(purchaseOrder)).toHaveLength(1);
+  });
+});
+
+describe('reception: the product sheet changes only on an explicit confirmation', () => {
+  async function ordered(s: { id: string }, p: { id: string }) {
+    const o = await newOrder(s.id);
+    await call('PUT', `/purchase-orders/${o.id}`, {
+      lines: [{ productId: p.id, qty: '4', unitPriceExcl: '5.2' }],
+    });
+    const line = (await call('GET', `/purchase-orders/${o.id}`)).json().lines[0] as { id: string };
+    return { o, line };
+  }
+  const sheet = async (id: string) =>
+    (await t.db.select().from(product).where(eq(product.id, id)))[0]!;
+
+  it('without updateProductPrice the sheet is untouched, the real cost stays on the line and the movement', async () => {
+    const { s, p } = await setup();
+    const { o, line } = await ordered(s, p);
+    const res = await call('POST', `/purchase-orders/${o.id}/receipts`, {
+      lines: [{ orderLineId: line.id, productId: p.id, qty: '4', unitPriceExcl: '5.6' }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await sheet(p.id)).toMatchObject({
+      purchasePriceExcl: '5.0000',
+      purchaseVatAmount: '0.2750',
+      purchasePriceIncl: '5.2750',
+    });
+    expect(await t.db.select().from(priceHistory)).toHaveLength(0);
+    expect((await t.db.select().from(goodsReceiptLine))[0]!.unitPriceExcl).toBe('5.6000');
+    const mv = await t.db.select().from(stockMovement).where(eq(stockMovement.kind, 'PURCHASE_IN'));
+    expect(mv[0]!.unitCost).toBe('5.6000');
+  });
+
+  it('with updateProductPrice the three amounts follow the VAT rate; history and audit are written', async () => {
+    const { s, p } = await setup();
+    const { o, line } = await ordered(s, p);
+    const res = await call('POST', `/purchase-orders/${o.id}/receipts`, {
+      lines: [
+        {
+          orderLineId: line.id,
+          productId: p.id,
+          qty: '4',
+          unitPriceExcl: '5.4',
+          updateProductPrice: true,
+        },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(await sheet(p.id)).toMatchObject({
+      purchasePriceExcl: '5.4000',
+      purchaseVatAmount: '0.2970',
+      purchasePriceIncl: '5.6970',
+    });
+    const hist = await t.db.select().from(priceHistory);
+    expect(hist).toHaveLength(1);
+    expect(hist[0]).toMatchObject({ purchasePriceExcl: '5.4000', source: 'RECEIPT' });
+    const entries = await t.db
+      .select()
+      .from(auditLog)
+      .where(sql`${auditLog.action} = 'product.update' and ${auditLog.entityId} = ${p.id}`);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.before).toMatchObject({ purchasePriceExcl: '5.0000' });
+    expect(entries[0]!.after).toMatchObject({
+      purchasePriceExcl: '5.4000',
+      purchasePriceIncl: '5.6970',
+    });
+  });
+
+  it('refuses an update whose amounts would not be coherent, under the price field, and writes nothing', async () => {
+    const { s } = await setup();
+    // A VAT rate far above 20 %: the VAT amount would exceed 20 % of the HT.
+    const odd = await addProduct(t.db, {
+      supplierId: s.id,
+      name: 'Étrange',
+      purchasePriceExcl: '5.0000',
+      vatRate: '50.00',
+    });
+    const o = await newOrder(s.id);
+    const res = await call('POST', `/purchase-orders/${o.id}/receipts`, {
+      lines: [
+        {
+          orderLineId: null,
+          productId: odd.id,
+          qty: '1',
+          unitPriceExcl: '6',
+          updateProductPrice: true,
+        },
+      ],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().errors[0]).toMatchObject({ path: 'lines.0.unitPriceExcl' });
+    expect((await sheet(odd.id)).purchasePriceExcl).toBe('5.0000');
+    expect(await t.db.select().from(goodsReceiptLine)).toHaveLength(0);
   });
 });

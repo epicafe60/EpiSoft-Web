@@ -8,7 +8,9 @@ import {
   lineTotalCents,
   parseQtyToMilli,
   PAYMENT_METHOD_LABELS,
+  regimeAt,
   returnLineRefund,
+  shopFormat,
   type PaymentMethod,
 } from '@episoft/shared';
 import { Button } from '@/components/ui/button';
@@ -57,6 +59,7 @@ export function TicketActions({
   onDone: () => void;
 }) {
   const { meta, cashierId, cashierCheck, cashierProof, engine, settings } = useTill();
+  const products = useLiveQuery(() => tillDb.products.toArray(), []);
   const reprints = useLiveQuery(
     () =>
       tillDb.outbox
@@ -235,6 +238,19 @@ export function TicketActions({
           associationName={settings?.associationName ?? DEFAULT_BRANDING_INFO.associationName}
           memberName={memberName}
           duplicata={copy}
+          // A duplicata reproduces the ticket: same address, SIREN, VAT regime of the day and VAT by rate.
+          address={settings?.associationAddress ?? null}
+          siren={settings?.associationSiren ?? null}
+          regime={regimeAt(
+            settings?.vatRegimes ?? [],
+            shopFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+              new Date(sale.soldAt),
+            ),
+          )}
+          vatOf={(id) => {
+            const p = products?.find((x) => x.id === id);
+            return p ? { rate: p.vatRate, outOfScope: p.code === '01004' } : undefined;
+          }}
         />
       ) : null}
     </div>

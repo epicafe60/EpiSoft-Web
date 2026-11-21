@@ -26,7 +26,9 @@ import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/inputs';
 import { ProductPicker } from '@/components/product-picker';
 import { type OrderDetail } from '@/lib/types-supplies';
+import { type ProductDetail } from '@/lib/types';
 import { orderLinesPayload } from './order-payload';
+import { priceGap, receiptPayload } from './receipt-payload';
 
 interface EditLine {
   productId: string;
@@ -137,8 +139,8 @@ export function DraftEditor({
   }, [order, supplierProducts.data]);
   const save = useMutation({
     mutationFn: () => {
-      // Lines left empty or at zero are not recorded (R-CMD-02, R-EVO-10). A PA HT changed here
-      // is carried over to the product sheet when saving.
+      // Lines left empty or at zero are not recorded (R-CMD-02, R-EVO-10). The PA HT typed here
+      // belongs to the order line only: the product sheet is never touched.
       const payload = orderLinesPayload(lines);
       if (!payload.ok) throw new Error(payload.error);
       return api.put(`/purchase-orders/${order.id}`, { comment, lines: payload.lines });
@@ -464,8 +466,12 @@ interface ReceiveLine {
   orderLineId: string | null;
   productId: string;
   name: string;
-  /** Last known purchase price of the product, to warn when the new one jumps. */
+  /** Purchase price of the product sheet (reference), to show the gap when the new one differs. */
   previousPrice: string | null;
+  /** Price printed on the purchase order, null for a product that was not ordered. */
+  orderedPrice: string | null;
+  /** « Mettre à jour la fiche produit »: unchecked by default. */
+  updateProductPrice: boolean;
   remaining: string;
   qty: string;
   unitPriceExcl: string;
@@ -473,6 +479,7 @@ interface ReceiveLine {
   salePrice: string;
   newSalePrice: string;
   bestBefore: string;
+  lotNumber: string;
 }
 
 /**
@@ -518,6 +525,8 @@ export function ReceiveDialog({
           productId: l.productId,
           name: l.name,
           previousPrice: l.purchasePriceExcl,
+          orderedPrice: Number(l.unitPriceExcl).toString(),
+          updateProductPrice: false,
           remaining: formatQty(remaining),
           qty: remaining ? formatQty(remaining) : '',
           unitPriceExcl: Number(l.unitPriceExcl).toString(),
@@ -525,6 +534,7 @@ export function ReceiveDialog({
           salePrice: l.salePrice,
           newSalePrice: '',
           bestBefore: '',
+          lotNumber: '',
         };
       }),
     );
@@ -553,21 +563,10 @@ export function ReceiveDialog({
   const anyWarning = lines.some((l) => warningsOf(l).length > 0);
   const receive = useMutation({
     mutationFn: () => {
-      const received = lines.filter((l) => (parseQtyToMilli(l.qty || '0') ?? 0) > 0);
-      return api.post(`/purchase-orders/${order.id}/receipts`, {
-        date,
-        closeOrder,
-        lines: received.map((l) => ({
-          orderLineId: l.orderLineId,
-          productId: l.productId,
-          qty: l.qty,
-          unitPriceExcl: l.unitPriceExcl,
-          bestBefore: l.bestBefore || null,
-        })),
-        newSalePrices: Object.fromEntries(
-          received.filter((l) => l.newSalePrice).map((l) => [l.productId, l.newSalePrice]),
-        ),
-      });
+      return api.post(
+        `/purchase-orders/${order.id}/receipts`,
+        receiptPayload(lines, date, closeOrder),
+      );
     },
     onSuccess: async () => {
       await onDone();
@@ -591,24 +590,30 @@ export function ReceiveDialog({
           </Field>
           <ProductPicker
             placeholder="Ajouter un produit reçu non commandé…"
-            onPick={(p) =>
-              setLines([
-                ...lines,
+            onPick={async (p) => {
+              const detail = await api.get<ProductDetail>(`/products/${p.id}`);
+              setLines((prev) => [
+                ...prev,
                 {
                   orderLineId: null,
                   productId: p.id,
                   name: p.name,
-                  previousPrice: null,
+                  previousPrice: detail.purchasePriceExcl,
+                  orderedPrice: null,
+                  updateProductPrice: false,
                   remaining: '—',
                   qty: '1',
-                  unitPriceExcl: '0',
-                  vatRate: '5.50',
+                  unitPriceExcl: detail.purchasePriceExcl
+                    ? Number(detail.purchasePriceExcl).toString()
+                    : '0',
+                  vatRate: detail.vatRate,
                   salePrice: p.salePrice,
                   newSalePrice: '',
                   bestBefore: '',
+                  lotNumber: '',
                 },
-              ])
-            }
+              ]);
+            }}
           />
         </div>
         <div className="max-h-[50vh] overflow-y-auto">
@@ -619,7 +624,8 @@ export function ReceiveDialog({
                 <th className="text-right">Attendu</th>
                 <th className="w-24 text-right">Reçu</th>
                 <th className="w-28 text-right">PA HT réel</th>
-                <th className="w-36">DLC (option)</th>
+                <th className="w-44">Fiche produit</th>
+                <th className="w-44">Lot et DLC (obligatoires pour l’alimentaire)</th>
                 <th className="w-44">Nouveau PV</th>
               </tr>
             </thead>
@@ -627,7 +633,13 @@ export function ReceiveDialog({
               {lines.map((l, i) => {
                 const excl4 = parsePrice4(l.unitPriceExcl || '0') ?? 0;
                 const incl4 = inclFromExcl4(excl4, l.vatRate);
-                const current = margin(Math.round(Number(l.salePrice) * 100), incl4);
+                const sheetIncl4 =
+                  l.previousPrice === null
+                    ? null
+                    : inclFromExcl4(parsePrice4(l.previousPrice) ?? 0, l.vatRate);
+                const current = margin(Math.round(Number(l.salePrice) * 100), sheetIncl4);
+                const newMargin = margin(Math.round(Number(l.salePrice) * 100), incl4);
+                const gap = priceGap(l.previousPrice, l.unitPriceExcl);
                 const suggested = pricing.data
                   ? salePriceForMarkup(incl4, pricing.data.targetMarkupPct, pricing.data.rounding)
                   : null;
@@ -666,7 +678,47 @@ export function ReceiveDialog({
                         onChange={(e) => set(i, { unitPriceExcl: e.target.value })}
                       />
                     </td>
-                    <td data-label="DLC (option)">
+                    <td data-label="Fiche produit" data-wide>
+                      <span className="block text-xs text-muted-foreground">
+                        Fiche : {l.previousPrice === null ? '—' : `${Number(l.previousPrice)} €`}
+                        {l.orderedPrice !== null ? ` · Commandé : ${l.orderedPrice} €` : ''}
+                      </span>
+                      {gap && gap.amount4 !== 0 ? (
+                        <span className="block text-xs font-medium text-destructive">
+                          Écart {gap.amount4 > 0 ? '+' : ''}
+                          {(gap.amount4 / 10_000).toLocaleString('fr-FR')} €
+                          {gap.pct === null
+                            ? ''
+                            : ` (${gap.pct > 0 ? '+' : ''}${gap.pct.toLocaleString('fr-FR')} %)`}
+                        </span>
+                      ) : null}
+                      <span className="flex items-center gap-1 text-xs">
+                        <Checkbox
+                          id={`upd-${i}`}
+                          aria-label={`Mettre à jour la fiche produit ${l.name}`}
+                          checked={l.updateProductPrice}
+                          onChange={(e) => set(i, { updateProductPrice: e.target.checked })}
+                        />
+                        <Label htmlFor={`upd-${i}`} className="font-normal">
+                          Mettre à jour la fiche produit
+                        </Label>
+                      </span>
+                      {l.updateProductPrice && newMargin ? (
+                        <span className="block text-xs text-muted-foreground">
+                          Marge au PV {euro(l.salePrice)} :{' '}
+                          {newMargin.ratePct.toLocaleString('fr-FR')} %
+                          {current ? ` (avant ${current.ratePct.toLocaleString('fr-FR')} %)` : ''}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td data-label="Lot et DLC">
+                      <Input
+                        aria-label={`N° de lot ${l.name}`}
+                        placeholder="N° de lot"
+                        className="mb-1"
+                        value={l.lotNumber}
+                        onChange={(e) => set(i, { lotNumber: e.target.value })}
+                      />
                       <Input
                         aria-label={`DLC ${l.name}`}
                         type="date"
@@ -715,8 +767,9 @@ export function ReceiveDialog({
         {anyWarning ? (
           <div className="grid gap-2 rounded-md border border-warning bg-warning/10 p-3 text-sm">
             <p className="font-medium">
-              Des lignes sortent de l’ordinaire (en rouge ci-dessus). Le prix d’achat reçu remplace
-              l’ancien : vérifiez le bon de livraison.
+              Des lignes sortent de l’ordinaire (en rouge ci-dessus). La fiche produit ne change que
+              sur les lignes où « Mettre à jour la fiche produit » est coché : vérifiez le bon de
+              livraison.
             </p>
             <div className="flex items-center gap-2">
               <Checkbox

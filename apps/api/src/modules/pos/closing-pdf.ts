@@ -3,6 +3,8 @@ import { cashCount, cashSession, type DbOrTx } from '@episoft/db';
 import {
   DENOMINATIONS,
   fillZone,
+  formatVatRate,
+  identityAddress,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
   pdfTemplateDef,
@@ -19,6 +21,7 @@ import {
 } from '../../lib/pdf-template';
 import { loadSettings } from '../admin/settings-store';
 import { sessionSummary, type SessionSummary } from './closing';
+import { sessionVat } from './closing-vat';
 
 /** R-SES-02 step 6: closing report as PDF (sent to the treasurer, downloadable). */
 export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer> {
@@ -27,6 +30,7 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
   const count = await db.query.cashCount.findFirst({ where: eq(cashCount.sessionId, s.id) });
   const summary = count ? (count.summary as SessionSummary) : await sessionSummary(db, s.id);
   const settings = await loadSettings(db);
+  const vat = await sessionVat(db, s.id);
   const def = pdfTemplateDef('cash_closing')!;
   const { config } = await loadPdfConfig(db, 'cash_closing');
   const logo = config.logo ? await loadPdfLogo(db) : null;
@@ -48,6 +52,20 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
       515,
     );
     doc.x = 40;
+    doc.moveDown();
+    // R-TVA-05: who sold, and the VAT included in the sales by rate.
+    const identity = settings['association.identity'];
+    keyValues(
+      doc,
+      [
+        ['Association', pdfText(identity.name)],
+        ...(identityAddress(identity)
+          ? [['Adresse', pdfText(identityAddress(identity)!)] as [string, string]]
+          : []),
+        ...(identity.siren ? [['SIREN', identity.siren] as [string, string]] : []),
+      ],
+      { width: 330 },
+    );
     doc.moveDown();
     keyValues(
       doc,
@@ -72,6 +90,43 @@ export async function closingPdf(db: DbOrTx, sessionId: string): Promise<Buffer>
       ],
       { width: 330 },
     );
+    doc.moveDown();
+    // Only the tickets of the LIABLE regime carry a breakdown; the others print their mention.
+    if (vat.breakdown.byRate.length > 0) {
+      table(
+        doc,
+        [
+          { header: 'TVA incluse', width: 90 },
+          { header: 'Ventes TTC', width: 80, align: 'right' },
+          { header: 'Montant HT', width: 80, align: 'right' },
+          { header: 'TVA', width: 80, align: 'right' },
+        ],
+        [
+          ...vat.breakdown.byRate.map((r) => [
+            formatVatRate(r.rate),
+            eur(r.inclCents / 100),
+            eur(r.exclCents / 100),
+            eur(r.vatCents / 100),
+          ]),
+          [
+            'Total',
+            eur(vat.breakdown.inclCents / 100),
+            eur(vat.breakdown.exclCents / 100),
+            eur(vat.breakdown.vatCents / 100),
+          ],
+        ],
+      );
+    }
+    for (const u of vat.untaxed)
+      doc
+        .moveDown(0.5)
+        .fontSize(10)
+        .text(`${u.mention} : ${eur(u.inclCents / 100)} de ventes`);
+    if (vat.breakdown.outOfScopeCents !== 0)
+      doc
+        .moveDown(0.5)
+        .fontSize(9)
+        .text(`Dons hors champ de la TVA : ${eur(vat.breakdown.outOfScopeCents / 100)}`);
     if (count) {
       doc.moveDown();
       keyValues(

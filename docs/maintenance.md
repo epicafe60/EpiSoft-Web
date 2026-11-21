@@ -213,3 +213,17 @@ Check that the tills are connected, or validate knowingly (« Valider quand mêm
 The target is the MinisForum (Debian 13) that already hosts the production MariaDB. Keep the
 app isolated from it (own containers, own ports). Any other host must offer PostgreSQL 17,
 Node 22 and daily backups kept elsewhere.
+
+## Taille de la base et conservation (ADR 0017)
+
+- Administration › Base de données : taille, durées de conservation, purge, adhérents inactifs, archives.
+- Après une grosse purge, PostgreSQL réutilise la place libérée mais ne rend pas le disque. Pour réduire le fichier
+  (à un moment calme, une table à la fois, le verrou est exclusif) :
+  `sudo -u postgres psql -d episoft -c "VACUUM FULL app.data_change;"`. L'application ne le lance jamais.
+- Les archives de purge sont dans `ARCHIVE_DIR` (défaut `archives/` à côté du lancement ; sur le serveur, le fixer dans
+  `/etc/episoft/api.env`, par exemple `/var/lib/episoft/archives`, dossier appartenant à l'utilisateur du service).
+  Elles contiennent des données personnelles et sont effacées après 30 jours.
+- `DISK_CHECK_PATH` (facultatif) : disque dont l'espace libre déclenche l'alerte (par défaut le dossier de lancement ;
+  sur le serveur, `/var/lib/postgresql`).
+- La purge des journaux passe par la fonction `app.retention_run` (propriétaire de la base) : elle ne protège
+  l'historique qu'après la séparation des rôles (section « Database roles »).

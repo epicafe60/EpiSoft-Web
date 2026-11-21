@@ -17,14 +17,14 @@ import {
   agedPayables,
   balanceOf,
   balanceSheet,
-  buildFec,
   centsToDecimal,
   decimalToCents,
   formatEntryNumber,
+  formatVatRate,
+  vatBreakdownIncl,
   incomeStatement,
   reportQuerySchema,
   situation,
-  type FecLine,
   type Section,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -453,6 +453,110 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       };
     },
 
+    /**
+     * R-TVA-06: VAT collected on the sales and deductible on the supplier invoices, by rate, for a
+     * period (the CA3 is filled from it). Sales: HT = round(sum TTC / (1 + rate)) per rate, never per
+     * ticket; donations and top-ups of the cagnotte are out of the scope of VAT.
+     */
+    async vat(q) {
+      // A month or a quarter (CA3): explicit dates win over the fiscal year.
+      let from = q.from;
+      let to = q.to;
+      if (q.fiscalYearId && !q.from && !q.to) {
+        const [fy] = await db.select().from(fiscalYear).where(eq(fiscalYear.id, q.fiscalYearId));
+        if (!fy) throw notFound('Exercice introuvable.');
+        from = fy.startDate;
+        to = fy.endDate;
+      }
+      const salesRows = await db.execute<{ rate: string; cents: string }>(sql`
+        select l.vat_rate::text as rate, coalesce(sum(l.line_total), 0)::text as cents
+          from app.sale s
+          join app.sale_line l on l.sale_id = s.id
+          join app.product p on p.id = l.product_id
+         where p.code <> '01004'
+           and s.vat_regime = 'LIABLE'
+           and (${from ?? null}::date is null or (s.sold_at at time zone ${tzSql()})::date >= ${from ?? null}::date)
+           and (${to ?? null}::date is null or (s.sold_at at time zone ${tzSql()})::date <= ${to ?? null}::date)
+         group by 1`);
+      const purchaseRows = await db.execute<{ rate: string; excl: string; vat: string }>(sql`
+        select l.rate::text as rate, sum(l.excl)::text as excl, sum(l.vat)::text as vat
+          from app.supplier_invoice_vat_line l
+          join app.supplier_invoice i on i.id = l.invoice_id
+         where i.vat_regime = 'LIABLE'
+           and (${from ?? null}::date is null or i.date >= ${from ?? null}::date)
+           and (${to ?? null}::date is null or i.date <= ${to ?? null}::date)
+         group by 1`);
+      const sales = vatBreakdownIncl(
+        salesRows.rows.map((r) => ({ rate: r.rate, inclCents: decimalToCents(r.cents) })),
+      );
+      const collected = new Map(
+        sales.byRate.map((r) => [r.rate, { excl: r.exclCents, vat: r.vatCents }]),
+      );
+      const deductible = new Map(
+        purchaseRows.rows.map((r) => [
+          Number(r.rate).toFixed(2),
+          { excl: decimalToCents(r.excl), vat: decimalToCents(r.vat) },
+        ]),
+      );
+      const rates = [...new Set([...collected.keys(), ...deductible.keys()])].sort(
+        (a, b) => Number(a) - Number(b),
+      );
+      const sum = { cHt: 0, cVat: 0, dHt: 0, dVat: 0 };
+      const rows = rates.map((rate) => {
+        const c = collected.get(rate) ?? { excl: 0, vat: 0 };
+        const d = deductible.get(rate) ?? { excl: 0, vat: 0 };
+        sum.cHt += c.excl;
+        sum.cVat += c.vat;
+        sum.dHt += d.excl;
+        sum.dVat += d.vat;
+        return cell({
+          rate: formatVatRate(rate),
+          salesBase: money(c.excl),
+          collected: money(c.vat),
+          purchasesBase: money(d.excl),
+          deductible: money(d.vat),
+          balance: money(c.vat - d.vat),
+        });
+      });
+      rows.push(
+        cell(
+          {
+            rate: 'Total',
+            salesBase: money(sum.cHt),
+            collected: money(sum.cVat),
+            purchasesBase: money(sum.dHt),
+            deductible: money(sum.dVat),
+            balance: money(sum.cVat - sum.dVat),
+          },
+          true,
+        ),
+      );
+      const result = sum.cVat - sum.dVat;
+      rows.push(
+        cell(
+          {
+            rate: result >= 0 ? 'TVA à payer' : 'Crédit de TVA',
+            balance: money(Math.abs(result)),
+          },
+          true,
+        ),
+      );
+      return {
+        title: 'TVA collectée et déductible',
+        // Only what was recorded under the LIABLE regime counts; franchise and exempt periods carry no VAT.
+        subtitle: `${await periodLabel(q)} · opérations sous le régime assujetti uniquement · hors dons et cagnotte`,
+        columns: [
+          { key: 'rate', label: 'Taux', type: 'text', width: 1.4 },
+          { key: 'salesBase', label: 'Ventes HT', type: 'money', width: 1.4 },
+          { key: 'collected', label: 'TVA collectée', type: 'money', width: 1.4 },
+          { key: 'purchasesBase', label: 'Achats HT', type: 'money', width: 1.4 },
+          { key: 'deductible', label: 'TVA déductible', type: 'money', width: 1.4 },
+          { key: 'balance', label: 'TVA due (collectée − déductible)', type: 'money', width: 1.8 },
+        ],
+        rows,
+      };
+    },
+
     /** Dettes fournisseurs par ancienneté (R-CPT-16). */
     async 'aged-payables'() {
       const today = toShopDate(new Date());
@@ -546,76 +650,6 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             template.config.logo ? await loadPdfLogo(db) : null,
           ),
         );
-    },
-  );
-
-  /**
-   * FEC (R-CPT-19): validated entries of a fiscal year, tab-separated. A year with drafts is
-   * refused: the file must be complete.
-   */
-  app.get(
-    '/reports/fec/:fiscalYearId',
-    { ...compta, schema: { params: z.object({ fiscalYearId: z.string().uuid() }) } },
-    async (req, reply) => {
-      const [fy] = await db
-        .select()
-        .from(fiscalYear)
-        .where(eq(fiscalYear.id, req.params.fiscalYearId));
-      if (!fy) throw notFound('Exercice introuvable.');
-      const [drafts] = await db
-        .select({ n: sql<number>`count(*)::int` })
-        .from(entry)
-        .where(and(eq(entry.fiscalYearId, fy.id), eq(entry.status, 'DRAFT')));
-      if (drafts!.n > 0)
-        throw badRequest(
-          `${drafts!.n} écriture(s) sont encore des brouillons : validez-les d’abord.`,
-        );
-      const rows = await db
-        .select({
-          code: journal.code,
-          journalLabel: journal.label,
-          number: entry.number,
-          date: entry.date,
-          account: account.number,
-          accountLabel: account.label,
-          pieceRef: entry.pieceRef,
-          label: entryLine.label,
-          debit: entryLine.debit,
-          credit: entryLine.credit,
-          lettering: entryLine.letteringCode,
-          letteredOn: entryLine.letteredOn,
-          validatedAt: entry.validatedAt,
-        })
-        .from(entryLine)
-        .innerJoin(entry, eq(entry.id, entryLine.entryId))
-        .innerJoin(journal, eq(journal.id, entry.journalId))
-        .innerJoin(account, eq(account.id, entryLine.accountId))
-        .where(eq(entry.fiscalYearId, fy.id))
-        .orderBy(asc(journal.code), asc(entry.number), asc(entryLine.lineNo));
-      const year = Number(fy.startDate.slice(0, 4));
-      const lines: FecLine[] = rows.map((r) => ({
-        journalCode: r.code,
-        journalLabel: r.journalLabel,
-        entryNumber: formatEntryNumber(r.code, year, r.number!),
-        date: r.date,
-        account: r.account,
-        accountLabel: r.accountLabel,
-        pieceRef: r.pieceRef,
-        label: r.label,
-        debitCents: decimalToCents(r.debit),
-        creditCents: decimalToCents(r.credit),
-        lettering: r.lettering,
-        letteredOn: r.letteredOn,
-        validatedOn: toShopDate(r.validatedAt ?? new Date()),
-      }));
-      const siren = (await loadSettings(db))['association.identity'].siren ?? 'SIREN';
-      return reply
-        .header(
-          'content-disposition',
-          `attachment; filename="${siren}FEC${fy.endDate.replaceAll('-', '')}.txt"`,
-        )
-        .type('text/plain; charset=utf-8')
-        .send(buildFec(lines));
     },
   );
 };

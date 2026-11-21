@@ -17,11 +17,14 @@ const PUBLIC = [
   'GET /api/v1/branding',
   'GET /api/v1/branding/logo/:id',
   'GET /api/v1/branding/manifest.webmanifest',
+  'GET /api/v1/legal', // mentions légales and privacy policy: public by law
   'POST /api/v1/internal/backup-report', // shared secret, compared in constant time
 ];
 
 /** Open to any signed-in member: what each one checks by itself. */
 const ANY_MEMBER: Record<string, string> = {
+  'GET /api/v1/me/consents': 'the member sees their own consents',
+  'PUT /api/v1/me/consents': 'the member withdraws or gives back their own consent',
   'POST /api/v1/auth/impersonate/stop': 'ends the impersonation of the session itself',
   'POST /api/v1/auth/unlock': 'the password of the session holder (R-SES-07)',
   'GET /api/v1/communes': 'reference list (postcodes, towns)',
