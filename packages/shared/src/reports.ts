@@ -290,23 +290,29 @@ const fecDate = (d: string) => d.replaceAll('-', '');
 const fecAmount = (c: number) => `${Math.floor(c / 100)},${String(c % 100).padStart(2, '0')}`;
 const clean = (s: string) => s.replace(/[\t\r\n|]/g, ' ').trim();
 
+const COLLECTIVE_LABELS: Record<string, string> = { '401': 'Fournisseurs', '411': 'Clients' };
+
 /**
  * FEC: tab-separated, one header line, dates as YYYYMMDD, decimal comma. Only validated
- * entries belong in it. Supplier (401) and member (411) accounts are given as auxiliary.
+ * entries belong in it. Supplier (401) and member (411) accounts follow the official layout:
+ * CompteNum is the collective account (401000), CompAuxNum the third party's own account.
  */
 export function buildFec(lines: readonly FecLine[]): string {
   const rows = lines.map((l) => {
-    const aux = l.account.startsWith('401') || l.account.startsWith('411');
+    const prefix = l.account.slice(0, 3);
+    const aux = (prefix === '401' || prefix === '411') && l.account !== `${prefix}000`;
+    const general = aux ? `${prefix}000` : l.account;
+    const generalLabel = aux ? COLLECTIVE_LABELS[prefix]! : l.accountLabel;
     return [
       l.journalCode,
       clean(l.journalLabel),
       l.entryNumber,
       fecDate(l.date),
-      l.account,
-      clean(l.accountLabel),
+      general,
+      clean(generalLabel),
       aux ? l.account : '',
       aux ? clean(l.accountLabel) : '',
-      clean(l.pieceRef ?? l.entryNumber),
+      clean(l.pieceRef || l.entryNumber),
       fecDate(l.date),
       clean(l.label),
       fecAmount(l.debitCents),

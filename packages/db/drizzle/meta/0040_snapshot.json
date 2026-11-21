@@ -1,5 +1,5 @@
 {
-  "id": "09b5ef0c-d3fb-4338-9338-21edecc983f8",
+  "id": "afb741a5-b4d8-4c53-a91f-ffc6b9813b5d",
   "prevId": "03f73fea-f389-42a8-bec0-71d2ae333b08",
   "version": "7",
   "dialect": "postgresql",
@@ -3313,6 +3313,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "approved_on": {
+          "name": "approved_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_reference": {
+          "name": "approval_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3330,6 +3354,20 @@
           "schemaTo": "app",
           "columnsFrom": [
             "closed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "fiscal_year_approved_by_member_id_fk": {
+          "name": "fiscal_year_approved_by_member_id_fk",
+          "tableFrom": "fiscal_year",
+          "tableTo": "member",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "approved_by"
           ],
           "columnsTo": [
             "id"
@@ -6314,6 +6352,12 @@
           "notNull": true,
           "default": "'0'"
         },
+        "avg_cost": {
+          "name": "avg_cost",
+          "type": "numeric(14, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "shop_visible": {
           "name": "shop_visible",
           "type": "boolean",
@@ -7447,14 +7491,6 @@
           "notNull": true,
           "default": "'0'"
         },
-        "vat_regime": {
-          "name": "vat_regime",
-          "type": "vat_regime",
-          "typeSchema": "app",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'LIABLE'"
-        },
         "status": {
           "name": "status",
           "type": "sale_status",
@@ -8265,6 +8301,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "avg_cost_after": {
+          "name": "avg_cost_after",
+          "type": "numeric(14, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "source_type": {
           "name": "source_type",
           "type": "text",
@@ -8577,6 +8619,387 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "app.supplier_credit_allocation": {
+      "name": "supplier_credit_allocation",
+      "schema": "app",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "credit_note_id": {
+          "name": "credit_note_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invoice_id": {
+          "name": "invoice_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "supplier_credit_allocation_invoice_idx": {
+          "name": "supplier_credit_allocation_invoice_idx",
+          "columns": [
+            {
+              "expression": "invoice_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "supplier_credit_allocation_note_idx": {
+          "name": "supplier_credit_allocation_note_idx",
+          "columns": [
+            {
+              "expression": "credit_note_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "supplier_credit_allocation_credit_note_id_supplier_credit_note_id_fk": {
+          "name": "supplier_credit_allocation_credit_note_id_supplier_credit_note_id_fk",
+          "tableFrom": "supplier_credit_allocation",
+          "tableTo": "supplier_credit_note",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "credit_note_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_allocation_invoice_id_supplier_invoice_id_fk": {
+          "name": "supplier_credit_allocation_invoice_id_supplier_invoice_id_fk",
+          "tableFrom": "supplier_credit_allocation",
+          "tableTo": "supplier_invoice",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_allocation_created_by_member_id_fk": {
+          "name": "supplier_credit_allocation_created_by_member_id_fk",
+          "tableFrom": "supplier_credit_allocation",
+          "tableTo": "member",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "supplier_credit_allocation_positive": {
+          "name": "supplier_credit_allocation_positive",
+          "value": "\"app\".\"supplier_credit_allocation\".\"amount\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "app.supplier_credit_note": {
+      "name": "supplier_credit_note",
+      "schema": "app",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "supplier_id": {
+          "name": "supplier_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invoice_id": {
+          "name": "invoice_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "piece_ref": {
+          "name": "piece_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_excl": {
+          "name": "total_excl",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_vat": {
+          "name": "total_vat",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "total_incl": {
+          "name": "total_incl",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "supplier_credit_note_status",
+          "typeSchema": "app",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "expense_account_number": {
+          "name": "expense_account_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_entry_id": {
+          "name": "cancel_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "comment": {
+          "name": "comment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "supplier_credit_note_piece_uq": {
+          "name": "supplier_credit_note_piece_uq",
+          "columns": [
+            {
+              "expression": "supplier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "piece_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"app\".\"supplier_credit_note\".\"cancelled_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "supplier_credit_note_supplier_idx": {
+          "name": "supplier_credit_note_supplier_idx",
+          "columns": [
+            {
+              "expression": "supplier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "supplier_credit_note_supplier_id_supplier_id_fk": {
+          "name": "supplier_credit_note_supplier_id_supplier_id_fk",
+          "tableFrom": "supplier_credit_note",
+          "tableTo": "supplier",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_note_invoice_id_supplier_invoice_id_fk": {
+          "name": "supplier_credit_note_invoice_id_supplier_invoice_id_fk",
+          "tableFrom": "supplier_credit_note",
+          "tableTo": "supplier_invoice",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_note_entry_id_entry_id_fk": {
+          "name": "supplier_credit_note_entry_id_entry_id_fk",
+          "tableFrom": "supplier_credit_note",
+          "tableTo": "entry",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_note_cancel_entry_id_entry_id_fk": {
+          "name": "supplier_credit_note_cancel_entry_id_entry_id_fk",
+          "tableFrom": "supplier_credit_note",
+          "tableTo": "entry",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "cancel_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "supplier_credit_note_created_by_member_id_fk": {
+          "name": "supplier_credit_note_created_by_member_id_fk",
+          "tableFrom": "supplier_credit_note",
+          "tableTo": "member",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "supplier_credit_note_positive": {
+          "name": "supplier_credit_note_positive",
+          "value": "\"app\".\"supplier_credit_note\".\"total_incl\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "app.supplier_invoice": {
       "name": "supplier_invoice",
       "schema": "app",
@@ -8629,14 +9052,6 @@
           "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": true
-        },
-        "vat_regime": {
-          "name": "vat_regime",
-          "type": "vat_regime",
-          "typeSchema": "app",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'LIABLE'"
         },
         "status": {
           "name": "status",
@@ -8695,6 +9110,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancel_entry_id": {
+          "name": "cancel_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -8740,6 +9179,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"app\".\"supplier_invoice\".\"cancelled_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8823,6 +9263,34 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "supplier_invoice_cancelled_by_member_id_fk": {
+          "name": "supplier_invoice_cancelled_by_member_id_fk",
+          "tableFrom": "supplier_invoice",
+          "tableTo": "member",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "cancelled_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "supplier_invoice_cancel_entry_id_entry_id_fk": {
+          "name": "supplier_invoice_cancel_entry_id_entry_id_fk",
+          "tableFrom": "supplier_invoice",
+          "tableTo": "entry",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "cancel_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "supplier_invoice_created_by_member_id_fk": {
           "name": "supplier_invoice_created_by_member_id_fk",
           "tableFrom": "supplier_invoice",
@@ -8855,86 +9323,6 @@
           "value": "\"app\".\"supplier_invoice\".\"due_date\" >= \"app\".\"supplier_invoice\".\"date\""
         }
       },
-      "isRLSEnabled": false
-    },
-    "app.supplier_invoice_vat_line": {
-      "name": "supplier_invoice_vat_line",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "invoice_id": {
-          "name": "invoice_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "rate": {
-          "name": "rate",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "excl": {
-          "name": "excl",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "vat": {
-          "name": "vat",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "supplier_invoice_vat_line_rate_uq": {
-          "name": "supplier_invoice_vat_line_rate_uq",
-          "columns": [
-            {
-              "expression": "invoice_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "rate",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "supplier_invoice_vat_line_invoice_id_supplier_invoice_id_fk": {
-          "name": "supplier_invoice_vat_line_invoice_id_supplier_invoice_id_fk",
-          "tableFrom": "supplier_invoice_vat_line",
-          "tableTo": "supplier_invoice",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "app.sync_receipt": {
@@ -9416,74 +9804,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "app.vat_regime_change": {
-      "name": "vat_regime_change",
-      "schema": "app",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "effective_from": {
-          "name": "effective_from",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "regime": {
-          "name": "regime",
-          "type": "vat_regime",
-          "typeSchema": "app",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "vat_regime_change_created_by_member_id_fk": {
-          "name": "vat_regime_change_created_by_member_id_fk",
-          "tableFrom": "vat_regime_change",
-          "tableTo": "member",
-          "schemaTo": "app",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "vat_regime_change_effective_from_unique": {
-          "name": "vat_regime_change_effective_from_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "effective_from"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "app.wallet_entry": {
       "name": "wallet_entry",
       "schema": "app",
@@ -9871,6 +10191,14 @@
         "CLOSED"
       ]
     },
+    "app.supplier_credit_note_status": {
+      "name": "supplier_credit_note_status",
+      "schema": "app",
+      "values": [
+        "ACTIVE",
+        "CANCELLED"
+      ]
+    },
     "app.deposit_kind": {
       "name": "deposit_kind",
       "schema": "app",
@@ -10099,7 +10427,8 @@
       "schema": "app",
       "values": [
         "TO_PAY",
-        "PAID"
+        "PAID",
+        "CANCELLED"
       ]
     },
     "app.supplier_payment_method": {
@@ -10121,15 +10450,6 @@
         "KG",
         "ML",
         "L"
-      ]
-    },
-    "app.vat_regime": {
-      "name": "vat_regime",
-      "schema": "app",
-      "values": [
-        "LIABLE",
-        "FRANCHISE",
-        "EXEMPT"
       ]
     },
     "app.wallet_entry_kind": {

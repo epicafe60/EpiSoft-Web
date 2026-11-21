@@ -42,3 +42,7 @@ export * from './text';
 export * from './vat';
 export * from './till-pin';
 export * from './revert';
+export * from './cash-limit';
+export * from './stock-cost';
+export * from './credit-notes';
+export * from './fec-check';

@@ -19,6 +19,8 @@ import {
   centsToDecimal,
   decimalToCents,
   invoicePaySchema,
+  paymentReversalSchema,
+  reasonSchema,
   invoiceDueDateFor,
   invoiceSchema,
   resolveInvoiceAmounts,
@@ -33,6 +35,8 @@ import { audit } from '../../lib/audit';
 import { toShopDate } from '../../lib/dates';
 import { htmlList, queueTemplatedEmail } from '../../lib/email-render';
 import { payInvoice, syncInvoiceEntry } from '../accounting/auto';
+import { allocatedCents } from '../accounting/credit-allocations';
+import { cancelInvoice, reverseInvoicePayment } from '../accounting/invoice-corrections';
 import { eur } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { regimeOn } from '../../lib/vat-regime';
@@ -89,7 +93,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 
   const listQuery = z.object({
     supplierId: z.string().uuid().optional(),
-    status: z.enum(['TO_PAY', 'PAID']).optional(),
+    status: z.enum(['TO_PAY', 'PAID', 'CANCELLED']).optional(),
     from: z.string().date().optional(),
     to: z.string().date().optional(),
   });
@@ -114,6 +118,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         status: supplierInvoice.status,
         paymentMethod: supplierInvoice.paymentMethod,
         paidAt: supplierInvoice.paidAt,
+        cancelReason: supplierInvoice.cancelReason,
         hasDocument: sql<boolean>`${supplierInvoice.documentMediaId} is not null`,
       })
       .from(supplierInvoice)
@@ -155,7 +160,8 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           totalExcl: Number(r.totalExcl),
           totalVat: Number(r.totalVat),
           totalIncl: Number(r.totalIncl),
-          status: r.status === 'PAID' ? 'Réglée' : 'À régler',
+          status:
+            r.status === 'PAID' ? 'Réglée' : r.status === 'CANCELLED' ? 'Annulée' : 'À régler',
           paidAt: r.paidAt ?? '',
           paymentMethod: r.paymentMethod ?? '',
         });
@@ -226,6 +232,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       .from(supplierInvoiceVatLine)
       .where(eq(supplierInvoiceVatLine.invoiceId, inv.id))
       .orderBy(supplierInvoiceVatLine.rate);
+    const credited = await allocatedCents(db, inv.id);
     return {
       ...inv,
       vatLines,
@@ -233,6 +240,9 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       updatedAt: inv.updatedAt.toISOString(),
       dueReminderSentAt: inv.dueReminderSentAt?.toISOString() ?? null,
       receipts: links,
+      creditApplied: centsToDecimal(credited),
+      netToPay: centsToDecimal(decimalToCents(inv.totalIncl) - credited),
+      cancelledAt: inv.cancelledAt?.toISOString() ?? null,
       receivedTotal: centsToDecimal(received),
       difference: links.length ? centsToDecimal(decimalToCents(inv.totalIncl) - received) : null,
       duplicates: await duplicatesOf(db, inv),
@@ -260,6 +270,7 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
       where: and(
         eq(supplierInvoice.supplierId, s.id),
         eq(supplierInvoice.pieceRef, b.pieceRef),
+        sql`${supplierInvoice.status} <> 'CANCELLED'`,
         id ? sql`${supplierInvoice.id} <> ${id}` : undefined,
       ),
     });
@@ -336,8 +347,20 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           .where(eq(supplierInvoice.id, req.params.id))
           .for('update');
         if (!before) throw notFound('Facture introuvable.');
-        if (before.status === 'PAID') throw conflict('Une facture réglée n’est plus modifiable.');
+        if (before.status === 'PAID')
+          throw conflict(
+            'Une facture réglée n’est plus modifiable : annulez-la (avec un motif) puis saisissez-la de nouveau.',
+          );
+        if (before.status === 'CANCELLED')
+          throw conflict('Une facture annulée n’est plus modifiable.');
         const inv = await save(tx, before.id, req.body, req.user!.id);
+        // The total is derived from the VAT lines: checked once saved (the transaction is rolled
+        // back by the refusal) against the credit notes already allocated to this invoice.
+        const credited = await allocatedCents(tx, before.id);
+        if (decimalToCents(inv.totalIncl) < credited)
+          throw conflict(
+            `Des avoirs de ${centsToDecimal(credited)} € sont imputés sur cette facture : le total ne peut pas être inférieur.`,
+          );
         await syncInvoiceEntry(tx, inv.id, req.user!.id);
         await audit(tx, req, {
           action: 'invoice.update',
@@ -435,6 +458,58 @@ export const invoiceRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
           after: { ...req.body, entry: r.entryId },
         });
         return { ok: true, entryId: r.entryId };
+      }),
+  );
+
+  /**
+   * An invoice entered by mistake is cancelled, never deleted: motif required, counter entry of its
+   * accounting entry (and of its payment when it was paid). Enter it again afterwards.
+   */
+  app.post(
+    '/supplier-invoices/:id/cancel',
+    { ...editors, schema: { ...idParams, body: reasonSchema } },
+    (req) =>
+      db.transaction(async (tx) => {
+        const r = await cancelInvoice(tx, {
+          invoiceId: req.params.id,
+          reason: req.body.reason,
+          userId: req.user!.id,
+        });
+        await audit(tx, req, {
+          action: 'invoice.cancel',
+          entity: 'supplier_invoice',
+          entityId: req.params.id,
+          before: r.invoice,
+          after: {
+            reason: req.body.reason,
+            cancelEntry: r.cancelEntryId,
+            paymentCounterEntry: r.paymentCounterEntryId,
+          },
+        });
+        return { ok: true, cancelEntryId: r.cancelEntryId };
+      }),
+  );
+
+  /** The payment of an invoice reversed by a counter entry (motif required): back to « à régler ». */
+  app.post(
+    '/supplier-invoices/:id/reverse-payment',
+    { ...editors, schema: { ...idParams, body: paymentReversalSchema } },
+    (req) =>
+      db.transaction(async (tx) => {
+        const r = await reverseInvoicePayment(tx, {
+          invoiceId: req.params.id,
+          reason: req.body.reason,
+          date: req.body.date,
+          userId: req.user!.id,
+        });
+        await audit(tx, req, {
+          action: 'invoice.payment_reverse',
+          entity: 'supplier_invoice',
+          entityId: req.params.id,
+          before: r.invoice,
+          after: { reason: req.body.reason, counterEntry: r.counterEntryId },
+        });
+        return { ok: true, counterEntryId: r.counterEntryId };
       }),
   );
 };

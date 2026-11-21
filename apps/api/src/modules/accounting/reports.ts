@@ -17,7 +17,6 @@ import {
   agedPayables,
   balanceOf,
   balanceSheet,
-  buildFec,
   centsToDecimal,
   decimalToCents,
   formatEntryNumber,
@@ -26,7 +25,6 @@ import {
   incomeStatement,
   reportQuerySchema,
   situation,
-  type FecLine,
   type Section,
 } from '@episoft/shared';
 import type { Config } from '../../config';
@@ -652,76 +650,6 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
             template.config.logo ? await loadPdfLogo(db) : null,
           ),
         );
-    },
-  );
-
-  /**
-   * FEC (R-CPT-19): validated entries of a fiscal year, tab-separated. A year with drafts is
-   * refused: the file must be complete.
-   */
-  app.get(
-    '/reports/fec/:fiscalYearId',
-    { ...compta, schema: { params: z.object({ fiscalYearId: z.string().uuid() }) } },
-    async (req, reply) => {
-      const [fy] = await db
-        .select()
-        .from(fiscalYear)
-        .where(eq(fiscalYear.id, req.params.fiscalYearId));
-      if (!fy) throw notFound('Exercice introuvable.');
-      const [drafts] = await db
-        .select({ n: sql<number>`count(*)::int` })
-        .from(entry)
-        .where(and(eq(entry.fiscalYearId, fy.id), eq(entry.status, 'DRAFT')));
-      if (drafts!.n > 0)
-        throw badRequest(
-          `${drafts!.n} écriture(s) sont encore des brouillons : validez-les d’abord.`,
-        );
-      const rows = await db
-        .select({
-          code: journal.code,
-          journalLabel: journal.label,
-          number: entry.number,
-          date: entry.date,
-          account: account.number,
-          accountLabel: account.label,
-          pieceRef: entry.pieceRef,
-          label: entryLine.label,
-          debit: entryLine.debit,
-          credit: entryLine.credit,
-          lettering: entryLine.letteringCode,
-          letteredOn: entryLine.letteredOn,
-          validatedAt: entry.validatedAt,
-        })
-        .from(entryLine)
-        .innerJoin(entry, eq(entry.id, entryLine.entryId))
-        .innerJoin(journal, eq(journal.id, entry.journalId))
-        .innerJoin(account, eq(account.id, entryLine.accountId))
-        .where(eq(entry.fiscalYearId, fy.id))
-        .orderBy(asc(journal.code), asc(entry.number), asc(entryLine.lineNo));
-      const year = Number(fy.startDate.slice(0, 4));
-      const lines: FecLine[] = rows.map((r) => ({
-        journalCode: r.code,
-        journalLabel: r.journalLabel,
-        entryNumber: formatEntryNumber(r.code, year, r.number!),
-        date: r.date,
-        account: r.account,
-        accountLabel: r.accountLabel,
-        pieceRef: r.pieceRef,
-        label: r.label,
-        debitCents: decimalToCents(r.debit),
-        creditCents: decimalToCents(r.credit),
-        lettering: r.lettering,
-        letteredOn: r.letteredOn,
-        validatedOn: toShopDate(r.validatedAt ?? new Date()),
-      }));
-      const siren = (await loadSettings(db))['association.identity'].siren ?? 'SIREN';
-      return reply
-        .header(
-          'content-disposition',
-          `attachment; filename="${siren}FEC${fy.endDate.replaceAll('-', '')}.txt"`,
-        )
-        .type('text/plain; charset=utf-8')
-        .send(buildFec(lines));
     },
   );
 };

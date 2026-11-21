@@ -493,6 +493,8 @@ export const product = app.table(
     minStock: qty('min_stock'),
     /** Cache of the sum of stock_movement.qty, updated in the same transaction (principle 6). */
     stockQty: qty('stock_qty').notNull().default('0'),
+    /** R-STK-06: running weighted average unit cost excl. VAT (CMUP), 6 decimals; null until known. */
+    avgCost: numeric('avg_cost', { precision: 14, scale: 6 }),
     /** False keeps this product out of the online shop (it stays sold at the till). */
     shopVisible: boolean('shop_visible').notNull().default(true),
     labelPending: boolean('label_pending').notNull().default(false),
@@ -551,6 +553,8 @@ export const stockMovement = app.table(
     qty: qty('qty').notNull(),
     kind: stockMovementKind('kind').notNull(),
     unitCost: price4('unit_cost'),
+    /** R-STK-06: the product's average cost after this movement (CMUP), the base of the valuation at a date. */
+    avgCostAfter: numeric('avg_cost_after', { precision: 14, scale: 6 }),
     sourceType: text('source_type'),
     sourceId: text('source_id'),
     comment: text('comment'),
@@ -935,7 +939,11 @@ export const vatRegimeChange = app.table('vat_regime_change', {
   createdAt: createdAt(),
 });
 
-export const supplierInvoiceStatus = app.enum('supplier_invoice_status', ['TO_PAY', 'PAID']);
+export const supplierInvoiceStatus = app.enum('supplier_invoice_status', [
+  'TO_PAY',
+  'PAID',
+  'CANCELLED',
+]);
 export const inventoryStatus = app.enum('inventory_status', ['OPEN', 'VALIDATED', 'CANCELLED']);
 
 /** R-CMD-*: supplier purchase order; totals are recomputed from the lines. */
@@ -1065,13 +1073,23 @@ export const supplierInvoice = app.table(
     /** Overrides the default purchase account (R-FAC-03). */
     expenseAccountNumber: text('expense_account_number'),
     comment: text('comment'),
+    /** Lot D: an invoice entered by mistake is cancelled (never deleted): reason, date, counter entry. */
+    cancelledAt: tz('cancelled_at'),
+    cancelledBy: uuid('cancelled_by').references(() => member.id, { onDelete: 'set null' }),
+    cancelReason: text('cancel_reason'),
+    cancelEntryId: uuid('cancel_entry_id').references((): AnyPgColumn => entry.id, {
+      onDelete: 'set null',
+    }),
     createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     legacyFactid: integer('legacy_factid').unique(),
   },
   (t) => [
-    uniqueIndex('supplier_invoice_piece_uq').on(t.supplierId, t.pieceRef),
+    // A cancelled invoice frees its piece number so that it can be entered again.
+    uniqueIndex('supplier_invoice_piece_uq')
+      .on(t.supplierId, t.pieceRef)
+      .where(sql`${t.cancelledAt} is null`),
     index('supplier_invoice_due_idx').on(t.status, t.dueDate),
     check('supplier_invoice_due_after_date', sql`${t.dueDate} >= ${t.date}`),
   ],
@@ -1109,6 +1127,67 @@ export const invoiceReceipt = app.table(
       .references(() => goodsReceipt.id, { onDelete: 'cascade' }),
   },
   (t) => [primaryKey({ columns: [t.invoiceId, t.receiptId] })],
+);
+
+export const creditNoteStatus = app.enum('supplier_credit_note_status', ['ACTIVE', 'CANCELLED']);
+
+/** Lot D: supplier credit note (avoir), standalone or linked to the invoice it corrects. */
+export const supplierCreditNote = app.table(
+  'supplier_credit_note',
+  {
+    id: id(),
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => supplier.id),
+    invoiceId: uuid('invoice_id').references(() => supplierInvoice.id),
+    pieceRef: text('piece_ref').notNull(),
+    date: date('date').notNull(),
+    totalExcl: money('total_excl').notNull(),
+    totalVat: money('total_vat').notNull().default('0'),
+    totalIncl: money('total_incl').notNull(),
+    status: creditNoteStatus('status').notNull().default('ACTIVE'),
+    expenseAccountNumber: text('expense_account_number'),
+    entryId: uuid('entry_id').references((): AnyPgColumn => entry.id, { onDelete: 'set null' }),
+    cancelledAt: tz('cancelled_at'),
+    cancelReason: text('cancel_reason'),
+    cancelEntryId: uuid('cancel_entry_id').references((): AnyPgColumn => entry.id, {
+      onDelete: 'set null',
+    }),
+    comment: text('comment'),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('supplier_credit_note_piece_uq')
+      .on(t.supplierId, t.pieceRef)
+      .where(sql`${t.cancelledAt} is null`),
+    index('supplier_credit_note_supplier_idx').on(t.supplierId, t.date),
+    check('supplier_credit_note_positive', sql`${t.totalIncl} > 0`),
+  ],
+);
+
+/** Lot D: an amount of a credit note offset against an invoice to pay (lettered at payment). */
+export const supplierCreditAllocation = app.table(
+  'supplier_credit_allocation',
+  {
+    id: id(),
+    creditNoteId: uuid('credit_note_id')
+      .notNull()
+      .references(() => supplierCreditNote.id),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => supplierInvoice.id),
+    amount: money('amount').notNull(),
+    date: date('date').notNull(),
+    createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('supplier_credit_allocation_invoice_idx').on(t.invoiceId),
+    index('supplier_credit_allocation_note_idx').on(t.creditNoteId),
+    check('supplier_credit_allocation_positive', sql`${t.amount} > 0`),
+  ],
 );
 
 /** R-STK-04: inventory session, total or partial; the theoretical stock is frozen at opening. */
@@ -1183,6 +1262,11 @@ export const fiscalYear = app.table(
     status: fiscalYearStatus('status').notNull().default('OPEN'),
     closedAt: tz('closed_at'),
     closedBy: uuid('closed_by').references(() => member.id, { onDelete: 'set null' }),
+    /** Lot D: once the general assembly has approved the accounts the year can never be reopened. */
+    approvedOn: date('approved_on'),
+    approvedAt: tz('approved_at'),
+    approvedBy: uuid('approved_by').references(() => member.id, { onDelete: 'set null' }),
+    approvalReference: text('approval_reference'),
     createdAt: createdAt(),
   },
   (t) => [check('fiscal_year_dates', sql`${t.endDate} >= ${t.startDate}`)],

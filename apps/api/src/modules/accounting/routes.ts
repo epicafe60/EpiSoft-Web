@@ -231,6 +231,8 @@ export const accountingRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }>
         startDate: fiscalYear.startDate,
         endDate: fiscalYear.endDate,
         status: fiscalYear.status,
+        approvedOn: fiscalYear.approvedOn,
+        approvalReference: fiscalYear.approvalReference,
         entries: sql<number>`(select count(*)::int from app.entry e where e.fiscal_year_id = ${fiscalYear.id})`,
         drafts: sql<number>`(select count(*)::int from app.entry e where e.fiscal_year_id = ${fiscalYear.id} and e.status = 'DRAFT')`,
       })
