@@ -1704,6 +1704,24 @@ export const jobRun = app.table(
   (t) => [primaryKey({ columns: [t.name, t.day] })],
 );
 
+/**
+ * Size of the database, taken once a week and around every purge (ADR 0017): the growth curve of
+ * Administration › Base de données. Technical, not captured by the journal of changes.
+ */
+export const dbSizeSnapshot = app.table(
+  'db_size_snapshot',
+  {
+    id: id(),
+    at: tz('at').notNull().defaultNow(),
+    totalBytes: bigint('total_bytes', { mode: 'number' }).notNull(),
+    /** [{ name, totalBytes, tableBytes, indexBytes, rows }] for the biggest tables. */
+    tables: jsonb('tables').notNull(),
+    /** weekly | before_purge | after_purge */
+    reason: text('reason').notNull(),
+  },
+  (t) => [index('db_size_snapshot_at_idx').on(t.at)],
+);
+
 /** Last low-cagnotte reminder sent to a household (R-CAG-06). */
 export const walletLowNotice = app.table('wallet_low_notice', {
   householdId: uuid('household_id')

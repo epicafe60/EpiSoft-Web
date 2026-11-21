@@ -309,6 +309,20 @@
       "when": 1795254155432,
       "tag": "0043_vat_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795255353637,
+      "tag": "0044_retention_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795255363815,
+      "tag": "0045_retention_purge",
+      "breakpoints": true
     }
   ]
 }

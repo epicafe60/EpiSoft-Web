@@ -20,6 +20,7 @@ import errors from './plugins/errors';
 import { TILL_ROUTES } from './plugins/till-routes';
 import { authRoutes } from './modules/auth/routes';
 import { adminRoutes } from './modules/admin/routes';
+import { retentionRoutes } from './modules/admin/retention/routes';
 import { posRoutes } from './modules/pos/routes';
 import { memberRoutes } from './modules/members/routes';
 import { catalogRoutes } from './modules/catalog/routes';
@@ -158,6 +159,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
     async (api) => {
       await api.register(authRoutes, { db, config });
       await api.register(adminRoutes, { db, config });
+      await api.register(retentionRoutes, { db, config });
       await api.register(posRoutes, { db, config });
       await api.register(memberRoutes, { db, config });
       await api.register(catalogRoutes, { db, config });

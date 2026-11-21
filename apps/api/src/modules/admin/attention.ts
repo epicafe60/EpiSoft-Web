@@ -5,6 +5,10 @@ import { tzSql } from '../../lib/dates';
 import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
 import { REFUSAL_PREFIX } from '../../plugins/errors';
 import { backupRun, emailOutbox, integrityRun, syncRejection, errorLog } from '@episoft/db';
+import { loadSettings } from './settings-store';
+import { diskSpace, totalDatabaseBytes } from './retention/size';
+
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024).toLocaleString('fr-FR')} Mo`;
 
 /** One thing that needs a human look, as shown in the « À surveiller » block. */
 export interface AttentionItem {
@@ -219,6 +223,31 @@ export async function computeAttention(
         : 'Aucune sauvegarde n’a été signalée à l’application.',
       link: '/surveillance/sauvegardes',
     });
+
+  // Size of the database and free space of the disk (ADR 0017): the thresholds are a setting.
+  const { alerts } = (await loadSettings(db))['data.retention'];
+  if (alerts.dbSizeMb !== null) {
+    const bytes = await totalDatabaseBytes(db);
+    if (bytes > alerts.dbSizeMb * 1024 * 1024)
+      items.push({
+        code: 'DB_SIZE',
+        severity: 'warning',
+        count: 1,
+        label: `La base de données pèse ${mb(bytes)} (seuil : ${alerts.dbSizeMb} Mo) : voir la conservation des données.`,
+        link: '/admin/base',
+      });
+  }
+  if (alerts.diskFreePct !== null) {
+    const disk = await diskSpace();
+    if (disk && disk.freePct < alerts.diskFreePct)
+      items.push({
+        code: 'DISK_LOW',
+        severity: disk.freePct < alerts.diskFreePct / 2 ? 'error' : 'warning',
+        count: 1,
+        label: `Il ne reste que ${disk.freePct.toFixed(0)} % d’espace libre sur le disque du serveur (${mb(disk.freeBytes)}).`,
+        link: '/admin/base',
+      });
+  }
 
   const rank = { error: 0, warning: 1 } as const;
   return items.sort((a, b) => rank[a.severity] - rank[b.severity]);

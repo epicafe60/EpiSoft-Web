@@ -21,6 +21,7 @@ import { SettingsPage } from './routes/admin/settings';
 import { UsersPage } from './routes/admin/users';
 import { AuditPage } from './routes/admin/audit';
 import { LoginsPage } from './routes/admin/logins';
+import { DatabasePage } from './routes/admin/database';
 import { MembershipTypesPage, TillAdminPage } from './routes/admin/till';
 import { NotFound, RouteError } from './routes/errors';
 import { MembersPage } from './routes/members/list';
@@ -551,6 +552,11 @@ const adminLoginsRoute = createRoute({
   component: LoginsPage,
 });
 
+const adminDatabaseRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/base',
+  component: DatabasePage,
+});
 const adminTypesRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/adhesions',
@@ -641,6 +647,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAuditRoute,
       adminLoginsRoute,
+      adminDatabaseRoute,
       adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,
