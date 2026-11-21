@@ -388,14 +388,12 @@ describe('inactive members (spec Q8)', () => {
       .update(member)
       .set({ householdId: hCreditor!.id })
       .where(sql`id = ${creditor.id}`);
-    await t.db
-      .insert(walletEntry)
-      .values({
-        householdId: hCreditor!.id,
-        amount: '12.00',
-        kind: 'TOPUP',
-        at: new Date(Date.now() - 5 * 365 * 86_400_000),
-      });
+    await t.db.insert(walletEntry).values({
+      householdId: hCreditor!.id,
+      amount: '12.00',
+      kind: 'TOPUP',
+      at: new Date(Date.now() - 5 * 365 * 86_400_000),
+    });
 
     const [hOrder] = await t.db.insert(household).values({}).returning();
     await t.db
@@ -567,12 +565,10 @@ describe('administration routes', () => {
     const none = await t.app.inject({ url: '/api/v1/admin/attention', headers });
     expect(JSON.stringify(none.json())).not.toContain('DB_SIZE');
     // A disk is never 90 % free on a machine that runs the tests: the alert shows.
-    await t.db
-      .insert(setting)
-      .values({
-        key: 'data.retention',
-        value: { ...DEFAULT_RETENTION, alerts: { dbSizeMb: 2048, diskFreePct: 90 } },
-      });
+    await t.db.insert(setting).values({
+      key: 'data.retention',
+      value: { ...DEFAULT_RETENTION, alerts: { dbSizeMb: 2048, diskFreePct: 90 } },
+    });
     const res = await t.app.inject({ url: '/api/v1/admin/attention', headers });
     expect(res.statusCode).toBe(200);
     const disk = await diskSpace();
