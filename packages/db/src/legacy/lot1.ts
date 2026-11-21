@@ -3,6 +3,7 @@ import { uuidv7 } from 'uuidv7';
 import { centsToDecimal, cleanText, formatSaleNumber, membershipEnd } from '@episoft/shared';
 import type { Tx } from '../index';
 import * as s from '../schema';
+import { importOptions } from './options';
 import type { LegacySource } from './source';
 import type { Issue } from './transform';
 import {
@@ -15,6 +16,7 @@ import {
   type LegacyProductRow,
   firstContinuousTicketDate,
   isDebitCoveredByTickets,
+  isFoodUniverse,
 } from './transform-lot1';
 
 // Legacy migration, lot 1 part (spec §9.1 steps 3–6): suppliers, catalogue, images and
@@ -263,9 +265,12 @@ async function migrateCatalog(src: LegacySource, tx: Tx, r: Report) {
       labelPending: d.labelPending,
       createdOn: d.createdOn,
     };
+    // The products of the food universes are marked as food on creation (their allergens,
+    // ingredients and origin are still to be filled in). A re-run never touches the mark again:
+    // a volunteer may have corrected it.
     const [p] = await tx
       .insert(s.product)
-      .values(values)
+      .values({ ...values, isFood: isFoodUniverse(d.kind, d.universeCode) })
       .onConflictDoUpdate({ target: s.product.code, set: values })
       .returning({ id: s.product.id });
     const productId = p!.id;
@@ -314,15 +319,24 @@ async function migrateCatalog(src: LegacySource, tx: Tx, r: Report) {
       );
     if (d.kind === 'GOODS' && d.stock !== '0.000') {
       withStock++;
+      // Weighted average cost (R-STK-06): the opening stock enters at the purchase price known at
+      // the migration; without a price the cost stays unknown (the valuation says so).
       await tx.insert(s.stockMovement).values({
         productId,
         qty: d.stock,
         kind: 'INITIAL',
+        unitCost: d.purchasePriceExcl,
+        avgCostAfter: d.purchasePriceExcl,
         sourceType: 'legacy',
         sourceId: d.code,
         comment: 'Stock EpiSoft à la reprise',
       });
     }
+    // The running average of the product follows its ledger (null when the cost is unknown).
+    await tx
+      .update(s.product)
+      .set({ avgCost: d.kind === 'GOODS' && d.stock !== '0.000' ? d.purchasePriceExcl : null })
+      .where(eq(s.product.id, productId));
     // The cached stock is the sum of the ledger (principle 6).
     await tx
       .update(s.product)
@@ -827,6 +841,7 @@ async function migrateTickets(src: LegacySource, tx: Tx, r: Report) {
       soldAt: paris(t.TICKDATE),
       total: centsToDecimal(totalCents),
       hasServices: (t.TICKHASEXTRA ?? 0) !== 0 || tl.some((l) => l.TICKPRODID.trim().length === 5),
+      vatRegime: importOptions.vatRegime,
       legacyRef: ref,
     });
     // Labels are the product names at migration time.

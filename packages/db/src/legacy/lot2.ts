@@ -9,9 +9,11 @@ import {
 import type { Tx } from '../index';
 import * as s from '../schema';
 import type { Report } from './lot1';
+import { importOptions } from './options';
 import type { LegacySource } from './source';
 import { fixed } from './transform-lot1';
 import {
+  estimateInvoiceVatLines,
   lineVatRate,
   orderStatus,
   transformInvoice,
@@ -219,6 +221,7 @@ async function migrateInvoices(
     'SELECT FACTID, FACTFNR, FACTPIECE, FACTDATE, FACTHT, FACTTVA, FACTTTC, FACTECH, FACTETAT, FACTMODE, FACTLINK, FACTCOM FROM epidatas.facturesfnr ORDER BY FACTID',
   );
   let migrated = 0;
+  const breakdown = { EXACT: 0, ESTIMATED: 0, APPROXIMATE: 0, NONE: 0 };
   for (const row of rows) {
     const supplierId = suppliers.get(row.FACTFNR.trim());
     if (!supplierId) {
@@ -265,21 +268,52 @@ async function migrateInvoices(
       status: d.status,
       paymentMethod: d.paymentMethod,
       comment: d.comment,
+      // The regime of the history taken over (the old software had no VAT breakdown).
+      vatRegime: importOptions.vatRegime,
       // Old invoices must not trigger the J−3 alert.
       dueReminderSentAt: new Date(),
       legacyFactid: row.FACTID,
     };
-    await tx
+    const [inv] = await tx
       .insert(s.supplierInvoice)
       .values(values)
-      .onConflictDoUpdate({ target: s.supplierInvoice.legacyFactid, set: values });
+      .onConflictDoUpdate({ target: s.supplierInvoice.legacyFactid, set: values })
+      .returning({ id: s.supplierInvoice.id });
+    // R-TVA-03: an invoice is entered by VAT rate. The old software only had three totals: the
+    // breakdown is rebuilt from them (exact when one standard rate explains the VAT, estimated on
+    // two rates otherwise) and said so in the report.
+    // Under a regime without VAT to recover (franchise, exempt) a breakdown has no use: none is made up.
+    const split =
+      importOptions.vatRegime === 'LIABLE'
+        ? estimateInvoiceVatLines(d.totalExcl, d.totalVat)
+        : { lines: [], quality: 'NONE' as const, note: '' };
+    await tx
+      .delete(s.supplierInvoiceVatLine)
+      .where(eq(s.supplierInvoiceVatLine.invoiceId, inv!.id));
+    if (split.lines.length)
+      await tx
+        .insert(s.supplierInvoiceVatLine)
+        .values(split.lines.map((l) => ({ invoiceId: inv!.id, ...l })));
+    breakdown[split.quality]++;
+    if (split.quality !== 'EXACT' && importOptions.vatRegime === 'LIABLE')
+      r.issues.push({
+        entity: 'facture',
+        legacyId: String(row.FACTID),
+        field: 'FACTTVA',
+        value: `HT ${d.totalExcl} · TVA ${d.totalVat}`,
+        problem: 'ventilation par taux de TVA inconnue (l’ancien logiciel n’a que des totaux)',
+        action: split.note,
+      });
     migrated++;
   }
   r.counts.push({
     table: 'facture',
     source: rows.length,
     migrated,
-    note: 'écritures comptables : lot 3',
+    note:
+      importOptions.vatRegime === 'LIABLE'
+        ? `écritures comptables : lot 3 ; ventilation de TVA : ${breakdown.EXACT} exacte(s), ${breakdown.ESTIMATED} estimée(s) sur deux taux, ${breakdown.APPROXIMATE} approchée(s), ${breakdown.NONE} sans ligne`
+        : `écritures comptables : lot 3 ; reprises au régime ${importOptions.vatRegime} (pas de ventilation de TVA)`,
   });
 }
 

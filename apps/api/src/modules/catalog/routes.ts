@@ -345,7 +345,8 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         // the fields they depend on is touched (a price change alone does not reopen them).
         if ((FOOD_INFO_TRIGGERS as readonly string[]).some((k) => k in fields)) {
           const merged = { ...before, ...fields } as typeof before;
-          const claimChanged = 'qualities' in fields || 'supplierId' in fields;
+          const claimChanged =
+            'qualities' in fields || 'supplierId' in fields || 'localJustification' in fields;
           const kind = merged.kind;
           await assertClaims(tx, { ...merged, kind }, claimChanged);
         }
@@ -501,7 +502,10 @@ async function assertClaims(
   p: FoodInfo & { supplierId?: string | null },
   checkOrganic: boolean,
 ) {
-  const problems = foodInfoProblems(p, { foodInfo: await foodInfoEnabled(tx) });
+  const problems = foodInfoProblems(p, {
+    foodInfo: await foodInfoEnabled(tx),
+    claims: checkOrganic,
+  });
   if (problems.length)
     throw badRequest(
       problems[0]!.message,

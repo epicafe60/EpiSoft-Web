@@ -134,6 +134,34 @@ describe('product information and claims', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('keeps the « local » mention of a product taken over from the old software, until someone touches the claim', async () => {
+    // Imported: « local » without justification, outside the form.
+    const [p] = await t.db
+      .insert(product)
+      .values({ code: '700950', name: 'Miel', salePrice: '6.00', qualities: ['LOCAL'] })
+      .returning();
+    const detail = async () =>
+      (
+        await t.app.inject({ method: 'GET', url: `/api/v1/products/${p!.id}`, headers: h })
+      ).json() as { updatedAt: string };
+    const patch = async (payload: object) =>
+      t.app.inject({
+        method: 'PATCH',
+        url: `/api/v1/products/${p!.id}`,
+        headers: h,
+        payload: { ...payload, updatedAt: (await detail()).updatedAt },
+      });
+    // An unrelated change (the name, the shop display) is not blocked by the missing justification.
+    expect((await patch({ shopVisible: false })).statusCode).toBe(200);
+    // Touching the claim asks for the reason.
+    const refused = await patch({ qualities: ['LOCAL', 'SEASONAL'] });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toMatch(/justifi/);
+    expect(
+      (await patch({ qualities: ['LOCAL'], localJustification: 'Ferme Durand, 5 km' })).statusCode,
+    ).toBe(200);
+  });
+
   it('refuses an incomplete organic certificate on a supplier', async () => {
     const ap = await login(t.app, (await createUser(t.db, { roles: ['APPROS'] })).username!);
     const res = await t.app.inject({
