@@ -33,14 +33,19 @@ const PARIS_DAY = (col: SQL) => sql`(${col} at time zone ${tzSql()})::date`;
  */
 export async function listOperations(
   db: DbOrTx,
-  scope: { sessionId: string } | { day: string },
+  scope: { sessionId: string } | { day: string } | { from: string; to: string },
 ): Promise<OperationRow[]> {
   const bySession = 'sessionId' in scope;
+  // A day, or a period of days (inclusive), in the time zone of the shop.
+  const inDays = (col: SQL): SQL =>
+    'day' in scope
+      ? sql`${PARIS_DAY(col)} = ${scope.day}::date`
+      : 'from' in scope
+        ? sql`${PARIS_DAY(col)} between ${scope.from}::date and ${scope.to}::date`
+        : sql`false`;
 
   // --- Tickets
-  const saleScope = bySession
-    ? eq(sale.sessionId, scope.sessionId)
-    : sql`${PARIS_DAY(sql`${sale.soldAt}`)} = ${scope.day}::date`;
+  const saleScope = bySession ? eq(sale.sessionId, scope.sessionId) : inDays(sql`${sale.soldAt}`);
   const sales = await db
     .select({
       id: sale.id,
@@ -152,7 +157,7 @@ export async function listOperations(
   // --- Payments made outside a ticket (the change of a ticket is tied to its sale: left out)
   const paymentScope = bySession
     ? eq(memberPayment.cashSessionId, scope.sessionId)
-    : sql`${PARIS_DAY(sql`${memberPayment.createdAt}`)} = ${scope.day}::date`;
+    : inDays(sql`${memberPayment.createdAt}`);
   const payments = await db
     .select({
       id: memberPayment.id,

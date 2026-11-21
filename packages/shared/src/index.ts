@@ -22,6 +22,7 @@ export * from './push';
 export * from './roles';
 export * from './scale';
 export * from './branding';
+export * from './allocations';
 export * from './settings';
 export * from './timezone';
 export * from './dates';
