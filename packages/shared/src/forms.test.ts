@@ -116,18 +116,21 @@ describe('product form (R-PRD-01, R-PRD-04)', () => {
     expect(
       bad({ purchasePriceExcl: '1,20', purchaseVatAmount: '0,066', purchasePriceIncl: '1,27' }),
     ).toBe(false);
-    // TTC below HT, VAT above 20 %.
+    // TTC below HT, VAT amount that is not HT x the rate of the product (R-TVA-02).
     expect(bad({ purchasePriceExcl: '1,20', purchasePriceIncl: '1' })).toBe(false);
     expect(
       bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,5', purchasePriceIncl: '1,5' }),
     ).toBe(false);
-    // 20 % exactly is fine; HT alone is fine.
+    expect(
+      bad({ purchasePriceExcl: '1', purchaseVatAmount: '0,2', purchasePriceIncl: '1,2' }),
+    ).toBe(false);
+    // 20 % on a product at 20 % is fine; HT alone is fine.
     expect(
       bad({
+        vatRate: '20.00',
         purchasePriceExcl: '1',
         purchaseVatAmount: '0,2',
         purchasePriceIncl: '1,2',
-        vatRate: '20.00',
       }),
     ).toBe(true);
     // R-PRD-04: the VAT amount must match the rate of the product (one cent apart).

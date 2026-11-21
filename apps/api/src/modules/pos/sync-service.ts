@@ -51,6 +51,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toShopDate } from '../../lib/dates';
+import { regimeOn } from '../../lib/vat-regime';
 import { proofIsValid } from '../../lib/till-cashier';
 import { queueSaleReceipt, queueTopupReceipt } from '../../lib/receipts';
 import { alertNow } from '../../lib/alerts';
@@ -658,6 +659,7 @@ async function recordSale(
     memberId: p.memberId,
     householdId,
     soldAt,
+    vatRegime: await regimeOn(tx, toShopDate(soldAt)),
     total: centsToDecimal(totalCents),
     discountTotal: centsToDecimal(discountCents),
     hasServices: lines.some((x) => x.prod.kind === 'SERVICE'),
@@ -1053,6 +1055,8 @@ async function cancelSale(
     memberId: original.memberId,
     householdId: original.householdId,
     soldAt: at,
+    // A cancellation reverses the ticket as it was recorded, whatever the regime of today.
+    vatRegime: original.vatRegime,
     total: neg(original.total),
     discountTotal: neg(original.discountTotal),
     cancelsSaleId: original.id,

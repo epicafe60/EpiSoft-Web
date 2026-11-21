@@ -38,6 +38,7 @@ export const AUDIT_SENTENCES = {
   'entry.reverse': () => 'a contre-passé une écriture comptable',
   'fiscal_year.create': () => 'a créé un exercice comptable',
   'fiscal_year.close': () => 'a clôturé un exercice comptable',
+  'vat_regime.change': () => 'a changé le régime de TVA de l’association',
   'fiscal_year.reopen': (a) => `a rouvert un exercice comptable${named(a, 'reason')}`,
   'fiscal_year.approve': () =>
     'a enregistré l’approbation des comptes d’un exercice par l’assemblée générale',

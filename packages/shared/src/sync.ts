@@ -235,6 +235,13 @@ export interface TillSettings {
   /** R-VTE-04: null when scale labels are not decoded. */
   scaleBarcodes: 'PRICE' | 'WEIGHT' | null;
   associationName: string;
+  /**
+   * R-TVA-05: what the ticket prints (works offline). Absent from an older snapshot: no address,
+   * no SIREN, liable (an empty history is LIABLE too).
+   */
+  vatRegimes?: import('./vat').VatRegimeChange[];
+  associationAddress?: string | null;
+  associationSiren?: string | null;
   /** R-SES-07: the chosen cashier types their code. Absent from an older snapshot: true. */
   cashierPinRequired?: boolean;
 }

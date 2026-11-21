@@ -15,7 +15,7 @@ import {
   inventoryCreateSchema,
   inventoryValidateSchema,
   invoicePaySchema,
-  invoiceTotalsProblem,
+  invoiceSchema,
   orderCreateSchema,
   orderSchema,
   receiptCorrectionSchema,
@@ -184,7 +184,9 @@ describe('lot A: integrity of entries', () => {
     const p = { purchasePriceExcl: '10.0000', vatRate: '5.50' };
     expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.5500' })).toBeNull();
     expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.5600' })).toBeNull();
-    expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.7000' })).toMatch(/taux du produit/);
+    expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.7000' })).toMatch(
+      /taux de 5,5 % du produit/,
+    );
     expect(
       purchasePricesProblem({ purchasePriceExcl: '10.0000', purchaseVatAmount: '0.7000' }),
     ).toBeNull();
@@ -198,7 +200,19 @@ describe('lot A: integrity of entries', () => {
     expect(
       walletCorrectionSchema.safeParse({ amount: '-500', comment: 'erreur de saisie' }).success,
     ).toBe(true);
-    expect(invoiceTotalsProblem('100000.01', '0.00', '100000.01')).toMatch(/trop élevé/);
-    expect(invoiceTotalsProblem('100.00', '20.00', '120.00')).toBeNull();
+    // The ceiling applies to the total derived from the VAT lines (R-TVA-03).
+    const inv = (vatLines: object[]) =>
+      invoiceSchema.safeParse({
+        supplierId: id(),
+        pieceRef: 'F-1',
+        date: '2026-10-01',
+        vatLines,
+        paymentMethod: null,
+        comment: '',
+      });
+    const tooBig = inv([{ rate: '0.00', excl: '100000.01', vat: '0' }]);
+    expect(tooBig.success).toBe(false);
+    expect(JSON.stringify(tooBig.error?.issues)).toMatch(/trop élevé/);
+    expect(inv([{ rate: '20.00', excl: '100.00', vat: '20.00' }]).success).toBe(true);
   });
 });

@@ -1,8 +1,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '@episoft/db';
 import {
-  invoiceTotalsProblem,
   isRealCalendarDate,
+  MAX_INVOICE_CENTS,
   isSettingKey,
   orderSteps,
   parseAmountToCents,
@@ -273,7 +273,21 @@ export async function assertRestoredValid(db: DbOrTx, steps: RestoreStep[]): Pro
         throw refuse(`produit ${str('code')}`, 'le prix de vente est invalide.');
     } else if (s.table === 'supplier_invoice') {
       const str = (c: string) => String(row[c] ?? '');
-      const why = invoiceTotalsProblem(str('total_excl'), str('total_vat'), str('total_incl'));
+      const excl = parseAmountToCents(str('total_excl'));
+      const vat = parseAmountToCents(str('total_vat'));
+      const incl = parseAmountToCents(str('total_incl'));
+      const why =
+        excl === null || vat === null || incl === null
+          ? 'un montant est invalide.'
+          : excl <= 0
+            ? 'le total HT doit être positif.'
+            : vat < 0
+              ? 'la TVA ne peut pas être négative.'
+              : excl + vat !== incl
+                ? 'le TTC doit être égal au total HT plus la TVA.'
+                : incl > MAX_INVOICE_CENTS
+                  ? 'le total dépasse le plafond d’une facture.'
+                  : null;
       if (why) throw refuse(`facture ${str('piece_ref')}`, why);
       for (const c of ['date', 'due_date'])
         if (row[c] != null && !isRealCalendarDate(String(row[c]).slice(0, 10)))

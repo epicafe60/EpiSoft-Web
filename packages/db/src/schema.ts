@@ -688,6 +688,9 @@ export const walletEntry = app.table(
 // --- Till: devices, sessions, sales (§4.4, §4.5, §8.3) -------------------------
 
 export const cashSessionStatus = app.enum('cash_session_status', ['OPEN', 'CLOSED']);
+/** R-TVA-07: the VAT regime of the association (see packages/shared/src/vat.ts). */
+export const vatRegime = app.enum('vat_regime', ['LIABLE', 'FRANCHISE', 'EXEMPT']);
+
 export const saleStatus = app.enum('sale_status', ['COMPLETED', 'CANCELLED']);
 
 export const posDevice = app.table('pos_device', {
@@ -793,6 +796,8 @@ export const sale = app.table(
     soldAt: tz('sold_at').notNull(),
     total: money('total').notNull(),
     discountTotal: money('discount_total').notNull().default('0'),
+    /** The VAT regime in force on the day of the ticket, kept as it was (R-TVA-07). */
+    vatRegime: vatRegime('vat_regime').notNull().default('LIABLE'),
     status: saleStatus('status').notNull().default('COMPLETED'),
     cancelsSaleId: uuid('cancels_sale_id').references((): AnyPgColumn => sale.id),
     hasServices: boolean('has_services').notNull().default(false),
@@ -921,6 +926,19 @@ export const purchaseOrderStatus = app.enum('purchase_order_status', [
   'CLOSED',
   'CANCELLED',
 ]);
+/**
+ * R-TVA-07: history of the VAT regime. A change takes effect on a date; past operations keep the
+ * regime they were recorded with (`sale.vat_regime`, `supplier_invoice.vat_regime`). No row means
+ * LIABLE (the migration inserts the first one).
+ */
+export const vatRegimeChange = app.table('vat_regime_change', {
+  id: id(),
+  effectiveFrom: date('effective_from').notNull().unique(),
+  regime: vatRegime('regime').notNull(),
+  createdBy: uuid('created_by').references(() => member.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+});
+
 export const supplierInvoiceStatus = app.enum('supplier_invoice_status', [
   'TO_PAY',
   'PAID',
@@ -1039,6 +1057,8 @@ export const supplierInvoice = app.table(
     totalExcl: money('total_excl').notNull(),
     totalVat: money('total_vat').notNull().default('0'),
     totalIncl: money('total_incl').notNull(),
+    /** The VAT regime in force on the date of the invoice, kept as it was (R-TVA-07). */
+    vatRegime: vatRegime('vat_regime').notNull().default('LIABLE'),
     status: supplierInvoiceStatus('status').notNull().default('TO_PAY'),
     paymentMethod: supplierPaymentMethod('payment_method'),
     paidAt: date('paid_at'),
@@ -1073,6 +1093,26 @@ export const supplierInvoice = app.table(
     index('supplier_invoice_due_idx').on(t.status, t.dueDate),
     check('supplier_invoice_due_after_date', sql`${t.dueDate} >= ${t.date}`),
   ],
+);
+
+/**
+ * R-TVA-03: the breakdown of a supplier invoice by VAT rate. The totals of the invoice are the
+ * sums of its lines (derived by the server). Legacy invoices carry one line with their totals, at
+ * the standard rate nearest to VAT / HT ; amounts are checked by the API only (a legacy credit note
+ * may be negative).
+ */
+export const supplierInvoiceVatLine = app.table(
+  'supplier_invoice_vat_line',
+  {
+    id: id(),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => supplierInvoice.id, { onDelete: 'cascade' }),
+    rate: numeric('rate', { precision: 5, scale: 2 }).notNull(),
+    excl: money('excl').notNull(),
+    vat: money('vat').notNull(),
+  },
+  (t) => [uniqueIndex('supplier_invoice_vat_line_rate_uq').on(t.invoiceId, t.rate)],
 );
 
 /** R-FAC-02: an invoice covers one or several receipts. */

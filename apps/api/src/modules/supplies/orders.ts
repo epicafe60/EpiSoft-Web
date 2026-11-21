@@ -446,7 +446,9 @@ export async function recordReceipt(
       ? purchaseAmountsFromExcl(l.unitPriceExcl, p.vatRate)
       : null;
     if (l.updateProductPrice) {
-      const problem = amounts ? purchasePricesProblem(amounts) : 'Prix d’achat invalide.';
+      const problem = amounts
+        ? purchasePricesProblem({ ...amounts, vatRate: p.vatRate })
+        : 'Prix d’achat invalide.';
       if (problem)
         throw badRequest(problem, [{ path: `lines.${i}.unitPriceExcl`, message: problem }]);
     }

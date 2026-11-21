@@ -172,6 +172,7 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
     'Une contrepassation est définitive. Si elle était une erreur, saisissez à nouveau l’écriture d’origine.',
   ),
   'fiscal_year.create': restore,
+  'vat_regime.change': restore,
   'fiscal_year.close': via(
     'Un exercice clôturé se rouvre depuis l’écran de clôture.',
     '/compta/cloture',

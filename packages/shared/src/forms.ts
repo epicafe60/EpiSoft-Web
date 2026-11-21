@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { pastOrTodayDate } from './dates';
 import { MEMBER_STATUSES } from './api';
-import { inclFromExcl4, parsePrice4, price4ToDecimal } from './supplies';
+import { parsePrice4, price4ToDecimal } from './supplies';
 import {
   MEMBER_PAYMENT_METHODS,
   PRODUCT_KINDS,
@@ -15,6 +15,7 @@ import {
 import { centsToDecimal, parseAmountToCents } from './money';
 import { isValidEan, parseQtyToMilli, milliToDecimal } from './pos';
 import { patchOf } from './patch';
+import { purchaseVatProblem, vatOfExcl4 } from './vat';
 import { isValidEmail } from './text';
 
 // Back-office forms (members, households, catalogue). Shared by the web forms and the API.
@@ -159,33 +160,24 @@ const purchaseAmountInput = z
   .transform((s) => price4ToDecimal(parsePrice4(s)!));
 
 /**
- * Consistency of the three purchase amounts typed on a product sheet (R-PRD-04). They stay free
- * fields, but an impossible combination is refused: PA TTC below PA HT, a VAT above the highest
- * French rate (20 % of the PA HT), or, when the three are given, a PA TTC that is not PA HT plus
+ * Consistency of the three purchase amounts typed on a product sheet (R-PRD-04, R-TVA-02). They
+ * stay typed fields, but an impossible combination is refused: PA TTC below PA HT, a VAT amount
+ * that is not PA HT x the product's rate (one cent tolerance), or a PA TTC that is not PA HT plus
  * the VAT amount. Empty fields are not checked.
  */
 export function purchasePricesProblem(prices: {
   purchasePriceExcl?: string | null;
   purchaseVatAmount?: string | null;
   purchasePriceIncl?: string | null;
-  /** The VAT rate of the product ("5.50"): when given, the VAT amount must be HT × rate (± 1 cent). */
+  /** The VAT rate of the product ("5.50"): the VAT amount must be HT x rate (1 cent). */
   vatRate?: string | null;
 }): string | null {
-  const excl = prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null;
-  const vat = prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null;
-  const incl = prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null;
-  if (excl !== null && incl !== null && incl < excl)
-    return 'Le PA TTC ne peut pas être inférieur au PA HT.';
-  if (excl !== null && vat !== null && vat * 5 > excl + 5)
-    return 'Le montant de TVA dépasse 20 % du PA HT : vérifiez les montants.';
-  if (excl !== null && vat !== null && prices.vatRate) {
-    const rateBp = Math.round(Number(prices.vatRate) * 100);
-    if (Number.isFinite(rateBp) && Math.abs(vat - (excl * rateBp) / 10_000) > 100)
-      return `Le montant de TVA ne correspond pas au taux du produit (${prices.vatRate.replace('.00', '').replace('.', ',')} % du PA HT, à un centime près).`;
-  }
-  if (excl !== null && vat !== null && incl !== null && excl + vat !== incl)
-    return 'Le PA TTC doit être égal au PA HT plus le montant de TVA.';
-  return null;
+  return purchaseVatProblem({
+    excl4: prices.purchasePriceExcl ? parsePrice4(prices.purchasePriceExcl) : null,
+    vat4: prices.purchaseVatAmount ? parsePrice4(prices.purchaseVatAmount) : null,
+    incl4: prices.purchasePriceIncl ? parsePrice4(prices.purchasePriceIncl) : null,
+    rate: prices.vatRate ?? null,
+  });
 }
 
 /**
@@ -232,11 +224,12 @@ export function purchaseAmountsFromExcl(
 ): { purchasePriceExcl: string; purchaseVatAmount: string; purchasePriceIncl: string } | null {
   const excl4 = parsePrice4(excl);
   if (excl4 === null || excl4 < 0) return null;
-  const incl4 = inclFromExcl4(excl4, vatRate);
+  // R-TVA-02: the VAT amount comes from the single VAT calculation (vat.ts).
+  const vat4 = vatOfExcl4(excl4, vatRate);
   return {
     purchasePriceExcl: price4ToDecimal(excl4),
-    purchaseVatAmount: price4ToDecimal(incl4 - excl4),
-    purchasePriceIncl: price4ToDecimal(incl4),
+    purchaseVatAmount: price4ToDecimal(vat4),
+    purchasePriceIncl: price4ToDecimal(excl4 + vat4),
   };
 }
 

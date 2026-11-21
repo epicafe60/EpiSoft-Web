@@ -1,5 +1,6 @@
 import { centsToDecimal } from './money';
 import type { PaymentMethod } from './pos';
+import { formatVatRate } from './vat';
 
 // Accounting rules (spec §4.11). Pure functions on integer cents, shared by the API (source
 // of truth) and the entry form (live balance indicator).
@@ -114,6 +115,12 @@ export interface AccountMap {
   stockVariation: string;
   surplus: string;
   deficit: string;
+  /** R-TVA-04: VAT collected on sales, one account per rate (4457xx), and deductible VAT (44566). */
+  vatCollected20: string;
+  vatCollected10: string;
+  vatCollected55: string;
+  vatCollected21: string;
+  vatDeductible: string;
 }
 
 export const DEFAULT_ACCOUNTS: AccountMap = {
@@ -132,6 +139,11 @@ export const DEFAULT_ACCOUNTS: AccountMap = {
   stockVariation: '603700',
   surplus: '120000',
   deficit: '129000',
+  vatCollected20: '445712',
+  vatCollected10: '445711',
+  vatCollected55: '445713',
+  vatCollected21: '445714',
+  vatDeductible: '445660',
 };
 
 export interface PlannedLine {
@@ -181,6 +193,11 @@ export interface SessionAccountingInput {
   payments: Partial<Record<PaymentMethod, number>>;
   /** Net revenue by credit account, from the sale lines (R-CPT-08 table). */
   revenue: Record<string, number>;
+  /**
+   * R-TVA-04: VAT collected on the sales of the session, by rate (credit of the 4457xx account of
+   * the rate). When given, `revenue` holds the amounts excl. VAT, so that Σ revenue + Σ VAT = TTC.
+   */
+  vatCollected?: { account: string; rate: string; cents: number }[];
   /** Cagnotte top-ups received at the till, by method. */
   topups: Partial<Record<MoneyMethod, number>>;
   /** counted − expected cash (R-SES-02). */
@@ -202,6 +219,11 @@ export function buildSessionEntry(input: SessionAccountingInput, a: AccountMap):
     x.localeCompare(y),
   )) {
     lines.push(side(account, revenueLabel(account, a), -cents));
+  }
+  for (const v of [...(input.vatCollected ?? [])].sort(
+    (x, y) => x.account.localeCompare(y.account) || x.rate.localeCompare(y.rate),
+  )) {
+    lines.push(side(v.account, `TVA collectée ${formatVatRate(v.rate)}`, -v.cents));
   }
   for (const m of ['CASH', 'CHEQUE', 'CARD', 'TRANSFER'] as const) {
     const t = input.topups[m] ?? 0;
@@ -242,7 +264,6 @@ function mergeSameLines(lines: PlannedLine[]): PlannedLine[] {
   return out;
 }
 
-/** R-FAC-03: ACH draft. The association is presumed not liable to VAT (Q1): TTC is the cost. */
 /**
  * Audit KV2, C02: what is missing from the accounts of a closed session once tickets arrived after
  * its entry was validated (a validated entry is never changed, R-CPT-05). `recorded` are the lines
@@ -271,14 +292,24 @@ export function regularizationLines(
   return out;
 }
 
+/**
+ * R-FAC-03 / R-TVA-04: ACH draft. Debits: the expense excl. VAT and the deductible VAT per rate;
+ * credit: the supplier for the TTC. Without `vatLines` (franchise regime, legacy entries) the
+ * expense carries the TTC.
+ */
 export function buildInvoiceEntry(a: {
   supplierAccount: string;
   expenseLines: { account: string; cents: number }[];
+  /** R-TVA-04: deductible VAT, one line per rate (debit of 44566). Absent: nothing deductible. */
+  vatLines?: { account: string; rate: string; cents: number }[];
   label: string;
 }): PlannedLine[] {
-  const total = a.expenseLines.reduce((s, l) => s + l.cents, 0);
+  const vat = a.vatLines ?? [];
+  const total =
+    a.expenseLines.reduce((s, l) => s + l.cents, 0) + vat.reduce((s, l) => s + l.cents, 0);
   return compact([
     ...a.expenseLines.map((l) => side(l.account, a.label, l.cents)),
+    ...vat.map((l) => side(l.account, `TVA déductible ${formatVatRate(l.rate)}`, l.cents)),
     side(a.supplierAccount, a.label, -total),
   ]);
 }

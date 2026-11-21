@@ -410,9 +410,7 @@ describe('stock and receipts', () => {
       supplierId: s!.id,
       pieceRef: 'F-1',
       date: '2026-03-10',
-      totalExcl: '100.00',
-      totalVat: '5.50',
-      totalIncl: '105.50',
+      vatLines: [{ rate: '5.50', excl: '100.00', vat: '5.50' }],
       paymentMethod: null,
       comment: null,
       receiptIds: [],
@@ -426,10 +424,10 @@ describe('stock and receipts', () => {
         h,
         'POST',
         '/supplier-invoices',
-        inv({ totalExcl: '100000.01', totalVat: '0', totalIncl: '100000.01' }),
+        inv({ vatLines: [{ rate: '0.00', excl: '100000.01', vat: '0' }] }),
       ),
     );
-    expect(pathsOf(big)).toContain('totalIncl');
+    expect(pathsOf(big)).toContain('vatLines');
     const early = refused(
       await call(h, 'POST', '/supplier-invoices', inv({ dueDate: '2026-03-01' })),
     );
@@ -594,9 +592,7 @@ describe('undo re-validates the values it puts back', () => {
       supplierId: s!.id,
       pieceRef: 'F-9',
       date: '2026-03-10',
-      totalExcl: '100.00',
-      totalVat: '5.50',
-      totalIncl: '105.50',
+      vatLines: [{ rate: '5.50', excl: '100.00', vat: '5.50' }],
       paymentMethod: null,
       comment: null,
       receiptIds: [],

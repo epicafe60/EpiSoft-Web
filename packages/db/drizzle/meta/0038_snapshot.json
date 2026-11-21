@@ -8508,6 +8508,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "pay_at_month_end": {
+          "name": "pay_at_month_end",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},

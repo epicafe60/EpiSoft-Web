@@ -39,6 +39,7 @@ export * from './supplies-forms';
 export * from './table-export';
 export * from './sync';
 export * from './text';
+export * from './vat';
 export * from './till-pin';
 export * from './revert';
 export * from './cash-limit';

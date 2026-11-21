@@ -260,7 +260,8 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         if (
           fields.purchasePriceExcl !== undefined ||
           fields.purchaseVatAmount !== undefined ||
-          fields.purchasePriceIncl !== undefined
+          fields.purchasePriceIncl !== undefined ||
+          fields.vatRate !== undefined
         ) {
           const problem = purchasePricesProblem({
             purchasePriceExcl:

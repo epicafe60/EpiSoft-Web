@@ -1,12 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { invoicePayload } from './invoice-payload';
+import { invoicePayload, type InvoiceLineValues } from './invoice-payload';
+import { regimeOnDate, useVatRegime } from '@/lib/vat-regime';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileUp, Plus } from 'lucide-react';
 import {
   centsToDecimal,
+  formatVatRate,
   invoiceDueDateFor,
+  invoiceTotalsFromLines,
+  isLiable,
+  regimeMention,
+  STANDARD_VAT_RATES,
+  vatOfExclCents,
   parseAmountToCents,
   SUPPLIER_PAYMENT_METHOD_LABELS,
   SUPPLIER_PAYMENT_METHODS,
@@ -228,9 +235,32 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   const [pieceRef, setPieceRef] = useState(invoice?.pieceRef ?? '');
   const [date, setDate] = useState(invoice?.date ?? todayIso());
   const [dueDate, setDueDate] = useState(invoice?.dueDate ?? '');
-  const [totalExcl, setTotalExcl] = useState(invoice?.totalExcl ?? '');
-  const [totalVat, setTotalVat] = useState(invoice?.totalVat ?? '0');
-  const [totalIncl, setTotalIncl] = useState(invoice?.totalIncl ?? '');
+  // R-TVA-03: one line per VAT rate; the totals are their sums. Without a breakdown (regime other
+  // than LIABLE) the total TTC alone is typed.
+  const regimeInfo = useVatRegime();
+  const regime = invoice ? invoice.vatRegime : regimeOnDate(regimeInfo.data, date);
+  const liable = isLiable(regime);
+  const [lines, setLines] = useState<InvoiceLineValues[]>(
+    invoice?.vatLines.length
+      ? invoice.vatLines.map((l) => ({ rate: l.rate, excl: l.excl, vat: l.vat }))
+      : [{ rate: '5.50', excl: '', vat: '' }],
+  );
+  const [totalIncl, setTotalIncl] = useState(
+    invoice && invoice.vatLines.length === 0 ? invoice.totalIncl : '',
+  );
+  const [breakdown, setBreakdown] = useState(!!invoice?.vatLines.length);
+  const withLines = liable || breakdown;
+  const setLine = (i: number, patch: Partial<InvoiceLineValues>) =>
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const typedLines = withLines ? lines.filter((l) => l.excl.trim() || l.vat.trim()) : [];
+  const sums = invoiceTotalsFromLines(
+    typedLines.map((l) => ({
+      rate: l.rate,
+      excl: centsToDecimal(parseAmountToCents(l.excl) ?? 0),
+      vat: centsToDecimal(parseAmountToCents(l.vat) ?? 0),
+    })),
+  );
+  const shownIncl = withLines ? centsToDecimal(sums.inclCents) : totalIncl;
   const [method, setMethod] = useState<SupplierPaymentMethod | ''>(invoice?.paymentMethod ?? '');
   const [comment, setComment] = useState(invoice?.comment ?? '');
   const [receiptIds, setReceiptIds] = useState<string[]>(invoice?.receipts.map((r) => r.id) ?? []);
@@ -254,7 +284,7 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
   }, [supplier.data, date, invoice]);
 
   const check = useQuery({
-    queryKey: ['invoice-check', supplierId, pieceRef, date, totalIncl, invoice?.id],
+    queryKey: ['invoice-check', supplierId, pieceRef, date, shownIncl, invoice?.id],
     queryFn: () =>
       api.post<{ duplicates: { id: string; pieceRef: string; date: string; totalIncl: string }[] }>(
         '/supplier-invoices/check',
@@ -263,10 +293,10 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
           supplierId,
           pieceRef,
           date,
-          totalIncl: centsToDecimal(parseAmountToCents(totalIncl) ?? 0),
+          totalIncl: centsToDecimal(parseAmountToCents(shownIncl) ?? 0),
         },
       ),
-    enabled: !!supplierId && !!pieceRef && parseAmountToCents(totalIncl) !== null,
+    enabled: !!supplierId && !!pieceRef && parseAmountToCents(shownIncl) !== null,
   });
 
   const save = useMutation({
@@ -276,9 +306,8 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
         pieceRef,
         date,
         dueDate,
-        totalExcl,
-        totalVat,
-        totalIncl,
+        lines: typedLines,
+        totalIncl: withLines ? '' : totalIncl,
         method,
         comment,
         receiptIds,
@@ -374,41 +403,104 @@ function InvoiceForm({ invoice }: { invoice: InvoiceDetail | null }) {
                 )}
               </Field>
             </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Total HT (€)" error={errors.totalExcl}>
-                {(p) => (
-                  <Input
-                    {...p}
-                    inputMode="decimal"
+            {withLines ? (
+              <div className="grid gap-2">
+                <Label>Ventilation par taux de TVA</Label>
+                {lines.map((l, i) => {
+                  const e = parseAmountToCents(l.excl);
+                  const expected = e === null ? null : vatOfExclCents(e, l.rate);
+                  return (
+                    <div key={i} className="grid grid-cols-[7rem_1fr_1fr_auto] items-start gap-2">
+                      <Select
+                        aria-label="Taux"
+                        disabled={paid}
+                        value={l.rate}
+                        onChange={(ev) => setLine(i, { rate: ev.target.value })}
+                      >
+                        {STANDARD_VAT_RATES.map((r) => (
+                          <option key={r} value={r}>
+                            {formatVatRate(r)}
+                          </option>
+                        ))}
+                      </Select>
+                      <Input
+                        aria-label="HT (€)"
+                        placeholder="HT (€)"
+                        inputMode="decimal"
+                        disabled={paid}
+                        value={l.excl}
+                        onChange={(ev) => setLine(i, { excl: ev.target.value })}
+                      />
+                      <Input
+                        aria-label="TVA (€)"
+                        placeholder={
+                          expected === null ? 'TVA (€)' : `TVA (≈ ${centsToDecimal(expected)})`
+                        }
+                        inputMode="decimal"
+                        disabled={paid}
+                        value={l.vat}
+                        onChange={(ev) => setLine(i, { vat: ev.target.value })}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={paid || lines.length === 1}
+                        onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                        aria-label="Retirer ce taux"
+                      >
+                        Retirer
+                      </Button>
+                    </div>
+                  );
+                })}
+                {errors.vatLines ? (
+                  <p className="text-sm text-destructive">{errors.vatLines}</p>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={paid || lines.length >= 5}
+                    onClick={() => setLines((ls) => [...ls, { rate: '20.00', excl: '', vat: '' }])}
+                  >
+                    <Plus /> Ajouter un taux
+                  </Button>
+                  <p className="text-sm tabular-nums">
+                    HT {euro(centsToDecimal(sums.exclCents))} · TVA{' '}
+                    {euro(centsToDecimal(sums.vatCents))} ·{' '}
+                    <strong>TTC {euro(centsToDecimal(sums.inclCents))}</strong>
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {regimeMention(regime)} : aucune TVA n’est récupérable, le total TTC est la
+                  charge.
+                </p>
+                <Field label="Total TTC (€)" error={errors.totalIncl ?? errors.vatLines}>
+                  {(p) => (
+                    <Input
+                      {...p}
+                      inputMode="decimal"
+                      disabled={paid}
+                      value={totalIncl}
+                      onChange={(e) => setTotalIncl(e.target.value)}
+                    />
+                  )}
+                </Field>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
                     disabled={paid}
-                    value={totalExcl}
-                    onChange={(e) => setTotalExcl(e.target.value)}
-                  />
-                )}
-              </Field>
-              <Field label="TVA (€)" error={errors.totalVat} hint="Peut valoir 0.">
-                {(p) => (
-                  <Input
-                    {...p}
-                    inputMode="decimal"
-                    disabled={paid}
-                    value={totalVat}
-                    onChange={(e) => setTotalVat(e.target.value)}
-                  />
-                )}
-              </Field>
-              <Field label="Total TTC (€)" error={errors.totalIncl}>
-                {(p) => (
-                  <Input
-                    {...p}
-                    inputMode="decimal"
-                    disabled={paid}
-                    value={totalIncl}
-                    onChange={(e) => setTotalIncl(e.target.value)}
-                  />
-                )}
-              </Field>
-            </div>
+                    onClick={() => setBreakdown(true)}
+                  >
+                    Ventiler par taux (facultatif)
+                  </Button>
+                </div>
+              </div>
+            )}
             <Field label="Mode de paiement prévu">
               {(p) => (
                 <Select

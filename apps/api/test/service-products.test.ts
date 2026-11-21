@@ -109,7 +109,7 @@ describe('purchase prices typed by hand (R-PRD-04)', () => {
     expect((await patch(id, before.updatedAt, { purchaseVatAmount: '7' })).statusCode).toBe(400);
   });
 
-  it('changing the VAT rate never recomputes the amounts, and a lone HT change is refused', async () => {
+  it('changing the VAT rate never recomputes the amounts: an inconsistent rate is refused (R-TVA-02)', async () => {
     const { id } = await create({
       purchasePriceExcl: '4.10',
       purchaseVatAmount: '0.2255',
@@ -119,12 +119,19 @@ describe('purchase prices typed by hand (R-PRD-04)', () => {
     expect(
       (await patch(id, before.updatedAt, { vatRate: '20.00', purchasePriceExcl: '5' })).statusCode,
     ).toBe(400);
-    const res = await patch(id, before.updatedAt, { vatRate: '20.00' });
+    const refused = await patch(id, before.updatedAt, { vatRate: '20.00' });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().detail ?? refused.body).toMatch(/taux/);
+    const res = await patch(id, before.updatedAt, {
+      vatRate: '20.00',
+      purchaseVatAmount: '0.82',
+      purchasePriceIncl: '4.92',
+    });
     expect(res.statusCode).toBe(200);
     expect(await row(id)).toMatchObject({
       purchasePriceExcl: '4.1000',
-      purchaseVatAmount: '0.2255',
-      purchasePriceIncl: '4.3255',
+      purchaseVatAmount: '0.8200',
+      purchasePriceIncl: '4.9200',
     });
   });
 

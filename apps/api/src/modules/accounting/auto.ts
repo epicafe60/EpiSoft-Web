@@ -15,6 +15,8 @@ import {
   supplierCreditAllocation,
   supplierCreditNote,
   supplierInvoice,
+  supplierInvoiceVatLine,
+  type DbOrTx,
   type Tx,
 } from '@episoft/db';
 import {
@@ -24,7 +26,12 @@ import {
   buildSessionEntry,
   cashPaymentProblem,
   decimalToCents,
+  isLiable,
   regularizationLines,
+  splitRevenueVat,
+  vatCollectedKey,
+  type AccountMap,
+  type VatRegime,
   type PlannedLine,
   type MoneyMethod,
   type PaymentMethod,
@@ -82,8 +89,73 @@ export async function generateSessionEntry(
   return id;
 }
 
-/** What the VTE entry of a session is, from its tickets, top-ups and cash count as they are now. */
-async function sessionEntryPlan(tx: Tx, sessionId: string): Promise<PlannedLine[]> {
+/**
+ * R-TVA-04: the revenue of a set of sessions by credit account (excl. VAT for the liable tickets)
+ * and the VAT collected by rate. Shared by the entry of a session and the weekly proposals.
+ * `withVat` false keeps everything TTC (an entry validated before the VAT split).
+ */
+export async function sessionsRevenue(
+  tx: DbOrTx,
+  sessionIds: string[],
+  a: AccountMap,
+  withVat = true,
+): Promise<{
+  revenue: Record<string, number>;
+  vatCollected: { account: string; rate: string; cents: number }[];
+}> {
+  const list = sql.join(
+    sessionIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rev = await tx.execute<{
+    kind: string;
+    account: string | null;
+    rate: string;
+    regime: VatRegime;
+    cents: string;
+  }>(sql`
+    select case when exists (select 1 from app.membership_type mt where mt.product_id = p.id) then 'MEMBERSHIP'
+                when p.code = '01004' then 'DONATION' else 'SALES' end as kind,
+           c.sales_account_number as account,
+           l.vat_rate::text as rate,
+           s.vat_regime::text as regime,
+           coalesce(sum(l.line_total), 0)::text as cents
+      from app.sale s
+      join app.sale_line l on l.sale_id = s.id
+      join app.product p on p.id = l.product_id
+      left join app.category c on c.id = p.category_id
+     where s.session_id in (${list})
+     group by 1, 2, 3, 4`);
+  const split = splitRevenueVat(
+    rev.rows.map((r) => ({
+      account:
+        r.kind === 'MEMBERSHIP'
+          ? a.memberships
+          : r.kind === 'DONATION'
+            ? a.donations
+            : (r.account ?? a.sales),
+      rate: r.rate,
+      inclCents: decimalToCents(r.cents),
+      // The regime of each ticket as it was recorded (a change never recomputes the past).
+      regime: withVat ? r.regime : ('FRANCHISE' as VatRegime),
+      // A donation is out of the scope of VAT; a membership follows the rate of its product.
+      outOfScope: r.kind === 'DONATION',
+    })),
+    (rate) => {
+      const key = vatCollectedKey(rate);
+      return key ? a[key] : null;
+    },
+  );
+  return split;
+}
+
+/**
+ * What the VTE entry of a session is, from its tickets, top-ups and cash count as they are now.
+ * R-TVA-04: the revenue of the liable tickets is booked excl. VAT with the VAT collected per rate;
+ * franchise and exempt tickets are booked TTC. `withVat` false: the regularization of an entry
+ * validated before the VAT split, which stays in its structure.
+ */
+async function sessionEntryPlan(tx: Tx, sessionId: string, withVat = true): Promise<PlannedLine[]> {
   const a = await accountMap(tx);
   const [count] = await tx.select().from(cashCount).where(eq(cashCount.sessionId, sessionId));
 
@@ -99,27 +171,7 @@ async function sessionEntryPlan(tx: Tx, sessionId: string): Promise<PlannedLine[
   const payments: Partial<Record<PaymentMethod, number>> = {};
   for (const p of pays) payments[p.method as PaymentMethod] = decimalToCents(p.cents);
 
-  const rev = await tx.execute<{ kind: string; account: string | null; cents: string }>(sql`
-    select case when exists (select 1 from app.membership_type mt where mt.product_id = p.id) then 'MEMBERSHIP'
-                when p.code = '01004' then 'DONATION' else 'SALES' end as kind,
-           c.sales_account_number as account,
-           coalesce(sum(l.line_total), 0)::text as cents
-      from app.sale s
-      join app.sale_line l on l.sale_id = s.id
-      join app.product p on p.id = l.product_id
-      left join app.category c on c.id = p.category_id
-     where s.session_id = ${sessionId}
-     group by 1, 2`);
-  const revenue: Record<string, number> = {};
-  for (const r of rev.rows) {
-    const acct =
-      r.kind === 'MEMBERSHIP'
-        ? a.memberships
-        : r.kind === 'DONATION'
-          ? a.donations
-          : (r.account ?? a.sales);
-    revenue[acct] = (revenue[acct] ?? 0) + decimalToCents(r.cents);
-  }
+  const { revenue, vatCollected } = await sessionsRevenue(tx, [sessionId], a, withVat);
 
   const tops = await tx
     .select({
@@ -138,6 +190,7 @@ async function sessionEntryPlan(tx: Tx, sessionId: string): Promise<PlannedLine[
     {
       payments,
       revenue,
+      vatCollected,
       topups,
       cashDifferenceCents: count ? decimalToCents(count.difference) : 0,
     },
@@ -194,7 +247,12 @@ export async function regularizeSessionEntry(
       debitCents: decimalToCents(r.debit),
       creditCents: decimalToCents(r.credit),
     })),
-    await sessionEntryPlan(tx, sessionId),
+    // An entry validated before the VAT split stays in its structure (never rewritten).
+    await sessionEntryPlan(
+      tx,
+      sessionId,
+      recorded.length === 0 || recorded.some((r) => r.account.startsWith('4457')),
+    ),
     label,
   );
   if (!lines.length) return 'unchanged';
@@ -244,13 +302,39 @@ export async function syncInvoiceEntry(
   const sup = await supplierAccountNumber(tx, inv.supplierId);
   const expense = inv.expenseAccountNumber ?? a.purchases;
   await ensureAccount(tx, expense, 'Achats');
+  const label = `Facture ${sup.name}`;
+  const regime = inv.vatRegime; // the regime of the invoice date, as recorded
+  const vatRows = await tx
+    .select()
+    .from(supplierInvoiceVatLine)
+    .where(eq(supplierInvoiceVatLine.invoiceId, invoiceId))
+    .orderBy(supplierInvoiceVatLine.rate);
+  // R-TVA-04: expense excl. VAT + deductible VAT per rate (44566) / supplier for the TTC. Outside
+  // the LIABLE regime VAT is not recoverable: the VAT paid is a cost, the expense carries the TTC. The entry always balances
+  // because the totals of the invoice are the sums of its lines.
+  // A legacy invoice whose typed totals do not add up keeps the TTC-only entry.
+  const split =
+    isLiable(regime) &&
+    vatRows.length > 0 &&
+    decimalToCents(inv.totalExcl) + decimalToCents(inv.totalVat) === decimalToCents(inv.totalIncl);
+  if (split) await ensureAccount(tx, a.vatDeductible, 'TVA déductible sur biens et services');
   const planned = buildInvoiceEntry({
     supplierAccount: sup.number,
-    // Free totals: HT, VAT and TTC are typed by the team and may not add up. The entry uses the
-    // TTC alone (the amount due: credit of 401, debit of the expense), so it always balances;
-    // the VAT is implicitly TTC - HT and is not posted on its own.
+    expenseLines: [
+      { account: expense, cents: decimalToCents(split ? inv.totalExcl : inv.totalIncl) },
+    ],
+    vatLines: split
+      ? vatRows
+          .filter((v) => decimalToCents(v.vat) !== 0)
+          .map((v) => ({ account: a.vatDeductible, rate: v.rate, cents: decimalToCents(v.vat) }))
+      : [],
+    label,
+  });
+  // Entries validated before the VAT split carry the TTC alone: they stay valid (never rewritten).
+  const legacyPlanned = buildInvoiceEntry({
+    supplierAccount: sup.number,
     expenseLines: [{ account: expense, cents: decimalToCents(inv.totalIncl) }],
-    label: `Facture ${sup.name}`,
+    label,
   });
   const existing = await entryBySource(tx, 'invoice', invoiceId);
 
@@ -260,17 +344,17 @@ export async function syncInvoiceEntry(
       .from(entryLine)
       .innerJoin(account, eq(account.id, entryLine.accountId))
       .where(eq(entryLine.entryId, existing.id));
-    const same =
-      current.length === planned.length &&
-      planned.every((p) =>
+    const matches = (plan: PlannedLine[]) =>
+      current.length === plan.length &&
+      plan.every((p) =>
         current.some(
           (c) =>
             c.number === p.account &&
             decimalToCents(c.debit) === p.debitCents &&
             decimalToCents(c.credit) === p.creditCents,
         ),
-      ) &&
-      existing.date === inv.date;
+      );
+    const same = (matches(planned) || matches(legacyPlanned)) && existing.date === inv.date;
     if (!same)
       throw conflict(
         'L’écriture comptable de cette facture est validée : contre-passez-la avant de modifier la facture.',
@@ -282,7 +366,7 @@ export async function syncInvoiceEntry(
     journalCode: 'ACH',
     date: inv.date,
     pieceRef: inv.pieceRef,
-    label: `Facture ${sup.name}`,
+    label,
     mode: supplierModeToEntryMode(inv.paymentMethod as SupplierMode | null),
     lines: plannedToLines(planned),
     source: { type: 'invoice', id: invoiceId },
