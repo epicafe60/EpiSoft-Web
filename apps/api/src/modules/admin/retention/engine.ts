@@ -95,7 +95,11 @@ async function retentionRun(
   mode: 'count' | 'purge' | 'archive',
   keys: string[],
 ) {
-  const res = await tx.execute<{ n: string; bytes: string; removed: { table: string; row: unknown }[] | null }>(
+  const res = await tx.execute<{
+    n: string;
+    bytes: string;
+    removed: { table: string; row: unknown }[] | null;
+  }>(
     sql`select * from app.retention_run(${kind}, ${cutoff.toISOString()}::timestamptz, ${batch}::int, ${mode}, ${arrayParam(keys)})`,
   );
   return res.rows[0]!;

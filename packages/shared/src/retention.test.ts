@@ -26,9 +26,9 @@ describe('data.retention: legal floors (spec 5.7, ADR 0017)', () => {
     const parsed = retentionSchema.parse({});
     expect(parsed.durations.audit_accounting).toBe(120);
     expect(parsed.nightly).toBe(false);
-    expect(settingSchemas['data.retention'].safeParse(SETTING_DEFAULTS['data.retention']).success).toBe(
-      true,
-    );
+    expect(
+      settingSchemas['data.retention'].safeParse(SETTING_DEFAULTS['data.retention']).success,
+    ).toBe(true);
   });
 
   it('refuses the accounting journals below 10 years, quoting the Code de commerce', () => {
@@ -38,7 +38,9 @@ describe('data.retention: legal floors (spec 5.7, ADR 0017)', () => {
     expect(issue.path).toEqual(['durations', 'audit_accounting']);
     expect(issue.message).toContain('Obligation légale');
     expect(issue.message).toContain('L123-22');
-    expect(retentionSchema.safeParse(withDuration('data_change_accounting', 60)).success).toBe(false);
+    expect(retentionSchema.safeParse(withDuration('data_change_accounting', 60)).success).toBe(
+      false,
+    );
   });
 
   it('refuses the ticket journals below 6 years, quoting the Livre des procédures fiscales', () => {
@@ -64,7 +66,8 @@ describe('data.retention: legal floors (spec 5.7, ADR 0017)', () => {
 
   it('every default respects its own floor', () => {
     for (const c of RETENTION_CLASSES)
-      if (c.floor && c.defaultValue !== null) expect(c.defaultValue).toBeGreaterThanOrEqual(c.floor.value);
+      if (c.floor && c.defaultValue !== null)
+        expect(c.defaultValue).toBeGreaterThanOrEqual(c.floor.value);
   });
 
   it('warns, without refusing, under the recommended minimum of a business class', () => {
@@ -74,13 +77,13 @@ describe('data.retention: legal floors (spec 5.7, ADR 0017)', () => {
   });
 
   it('checks the anonymisation delay and the alert thresholds', () => {
-    expect(
-      retentionSchema.safeParse({ anonymization: { enabled: true, years: 0 } }).success,
-    ).toBe(false);
-    expect(retentionSchema.safeParse({ alerts: { dbSizeMb: 10 } }).success).toBe(false);
-    expect(retentionSchema.safeParse({ alerts: { dbSizeMb: null, diskFreePct: null } }).success).toBe(
-      true,
+    expect(retentionSchema.safeParse({ anonymization: { enabled: true, years: 0 } }).success).toBe(
+      false,
     );
+    expect(retentionSchema.safeParse({ alerts: { dbSizeMb: 10 } }).success).toBe(false);
+    expect(
+      retentionSchema.safeParse({ alerts: { dbSizeMb: null, diskFreePct: null } }).success,
+    ).toBe(true);
   });
 });
 

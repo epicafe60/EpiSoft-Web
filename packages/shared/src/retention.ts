@@ -67,11 +67,15 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     label: 'Journal des courriels (lignes)',
     nature: 'TECHNICAL',
     unit: 'months',
-    scope: 'Les lignes du journal des courriels déjà envoyés ou en échec (jamais celles en attente).',
+    scope:
+      'Les lignes du journal des courriels déjà envoyés ou en échec (jamais celles en attente).',
     keeps: 'Rien : la ligne disparaît.',
     tables: ['email_outbox'],
     defaultValue: 24,
-    floor: safety(3, 'Le journal des courriels sert à comprendre un message non reçu : 3 mois au moins.'),
+    floor: safety(
+      3,
+      'Le journal des courriels sert à comprendre un message non reçu : 3 mois au moins.',
+    ),
   },
   {
     id: 'error_log',
@@ -136,18 +140,24 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     label: 'Photographies quotidiennes des cagnottes',
     nature: 'TECHNICAL',
     unit: 'months',
-    scope: 'Les soldes de fin de journée servant à détecter une dérive (le plus récent de chaque foyer est conservé).',
-    keeps: 'La photographie la plus récente de chaque foyer. Les écritures de cagnotte ne sont jamais touchées.',
+    scope:
+      'Les soldes de fin de journée servant à détecter une dérive (le plus récent de chaque foyer est conservé).',
+    keeps:
+      'La photographie la plus récente de chaque foyer. Les écritures de cagnotte ne sont jamais touchées.',
     tables: ['wallet_snapshot'],
     defaultValue: 24,
-    floor: safety(3, 'Le contrôle des cagnottes compare avec les jours précédents : 3 mois au moins.'),
+    floor: safety(
+      3,
+      'Le contrôle des cagnottes compare avec les jours précédents : 3 mois au moins.',
+    ),
   },
   {
     id: 'backup_run',
     label: 'Comptes rendus des sauvegardes',
     nature: 'TECHNICAL',
     unit: 'months',
-    scope: 'Les rapports anciens des sauvegardes et des tests de restauration (le dernier de chaque type est conservé).',
+    scope:
+      'Les rapports anciens des sauvegardes et des tests de restauration (le dernier de chaque type est conservé).',
     keeps: 'Le dernier rapport de chaque type.',
     tables: ['backup_run'],
     defaultValue: 24,
@@ -162,7 +172,10 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     keeps: 'Rien.',
     tables: ['till_pin_attempt'],
     defaultValue: 30,
-    floor: safety(2, 'Le blocage après des essais faux et l’alerte se calculent sur 24 h : 2 jours au moins.'),
+    floor: safety(
+      2,
+      'Le blocage après des essais faux et l’alerte se calculent sur 24 h : 2 jours au moins.',
+    ),
   },
   {
     id: 'expired_sessions',
@@ -173,7 +186,10 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     keeps: 'Rien.',
     tables: ['session', 'password_reset_token'],
     defaultValue: 30,
-    floor: safety(1, 'Une session expirée depuis moins d’un jour peut encore être expliquée à un utilisateur.'),
+    floor: safety(
+      1,
+      'Une session expirée depuis moins d’un jour peut encore être expliquée à un utilisateur.',
+    ),
   },
   // --- Business: configurable, with a recommended minimum ----------------------------------------
   {
@@ -204,7 +220,8 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     floor: safety(1, 'Un signalement clos reste un mois consultable.'),
     recommendedMin: {
       value: 6,
-      advice: 'Les signalements clos servent à retrouver pourquoi un choix a été fait : gardez-les 6 mois au moins.',
+      advice:
+        'Les signalements clos servent à retrouver pourquoi un choix a été fait : gardez-les 6 mois au moins.',
     },
   },
   {
@@ -216,10 +233,14 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     keeps: 'Le dernier prix de chaque produit. Les tickets gardent le prix de la vente.',
     tables: ['price_history'],
     defaultValue: 60,
-    floor: safety(3, 'L’historique des prix sert aux marges et aux propositions : 3 mois au moins.'),
+    floor: safety(
+      3,
+      'L’historique des prix sert aux marges et aux propositions : 3 mois au moins.',
+    ),
     recommendedMin: {
       value: 24,
-      advice: 'Les statistiques de marge et d’évolution des prix lisent cet historique : gardez 2 ans au moins.',
+      advice:
+        'Les statistiques de marge et d’évolution des prix lisent cet historique : gardez 2 ans au moins.',
     },
   },
   {
@@ -232,10 +253,14 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     keeps: 'Rien.',
     tables: ['audit_log'],
     defaultValue: 60,
-    floor: safety(12, 'Les traces d’accès et de gestion des données personnelles se gardent 12 mois au moins (CNIL).'),
+    floor: safety(
+      12,
+      'Les traces d’accès et de gestion des données personnelles se gardent 12 mois au moins (CNIL).',
+    ),
     recommendedMin: {
       value: 24,
-      advice: 'Ces actions servent à prouver qui a fait quoi en cas de litige ou de demande d’un adhérent : 2 ans au moins.',
+      advice:
+        'Ces actions servent à prouver qui a fait quoi en cas de litige ou de demande d’un adhérent : 2 ans au moins.',
     },
   },
   {
@@ -243,11 +268,15 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     label: 'Journal d’audit : autres actions',
     nature: 'BUSINESS',
     unit: 'months',
-    scope: 'Catalogue, fournisseurs, commandes, stock, adhérents, courriels, signalements, réglages courants.',
+    scope:
+      'Catalogue, fournisseurs, commandes, stock, adhérents, courriels, signalements, réglages courants.',
     keeps: 'Rien.',
     tables: ['audit_log'],
     defaultValue: 36,
-    floor: safety(3, 'Le journal d’audit sert à annuler une action et au contrôle AUD-01 : 3 mois au moins.'),
+    floor: safety(
+      3,
+      'Le journal d’audit sert à annuler une action et au contrôle AUD-01 : 3 mois au moins.',
+    ),
     recommendedMin: {
       value: 12,
       advice: 'Gardez un an au moins pour pouvoir retrouver l’origine d’une erreur de gestion.',
@@ -265,7 +294,8 @@ export const RETENTION_CLASSES: readonly RetentionClass[] = [
     floor: safety(3, 'Le détail des modifications sert à annuler une action : 3 mois au moins.'),
     recommendedMin: {
       value: 6,
-      advice: 'En dessous de 6 mois, une erreur découverte à la clôture ne pourra plus être annulée depuis le journal.',
+      advice:
+        'En dessous de 6 mois, une erreur découverte à la clôture ne pourra plus être annulée depuis le journal.',
     },
   },
   // --- Journals about legal data: the floor of the data itself --------------------------------
@@ -360,7 +390,14 @@ export const LEGAL_RETENTIONS: readonly LegalRetention[] = [
   {
     id: 'sales',
     label: 'Tickets, lignes, règlements, sessions et clôtures de caisse',
-    tables: ['sale', 'sale_line', 'sale_payment', 'cash_session', 'cash_session_alias', 'cash_count'],
+    tables: [
+      'sale',
+      'sale_line',
+      'sale_payment',
+      'cash_session',
+      'cash_session_alias',
+      'cash_count',
+    ],
     months: 72,
     rule: LAW_TICKETS,
   },
@@ -397,8 +434,9 @@ export const ACCOUNTING_CHANGE_TABLES: readonly string[] = [
   'bank_rule',
 ];
 /** The tables whose changes are kept as long as the tickets. */
-export const SALES_CHANGE_TABLES: readonly string[] =
-  LEGAL_RETENTIONS.find((l) => l.id === 'sales')!.tables;
+export const SALES_CHANGE_TABLES: readonly string[] = LEGAL_RETENTIONS.find(
+  (l) => l.id === 'sales',
+)!.tables;
 
 export type AuditGroup = 'ACCOUNTING' | 'SALES' | 'SECURITY' | 'OTHER';
 

@@ -89,10 +89,19 @@ export const retentionRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
 
   app.get(
     '/admin/retention/inactive-members',
-    { ...admin, schema: { querystring: z.object({ years: z.coerce.number().int().min(1).max(30).optional() }) } },
+    {
+      ...admin,
+      schema: {
+        querystring: z.object({ years: z.coerce.number().int().min(1).max(30).optional() }),
+      },
+    },
     async (req) => {
       const cfg = (await loadSettings(db))['data.retention'];
-      const report = await inactiveMembers(db, req.query.years ?? cfg.anonymization.years, new Date());
+      const report = await inactiveMembers(
+        db,
+        req.query.years ?? cfg.anonymization.years,
+        new Date(),
+      );
       return {
         ...report,
         excluded: report.excluded.map((r) => ({
@@ -108,7 +117,10 @@ export const retentionRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
     {
       ...admin,
       schema: {
-        body: z.object({ confirm: z.literal(true), ids: z.array(z.string().uuid()).max(500).optional() }),
+        body: z.object({
+          confirm: z.literal(true),
+          ids: z.array(z.string().uuid()).max(500).optional(),
+        }),
       },
     },
     async (req) => {
@@ -154,13 +166,17 @@ export const retentionRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
 
   const nameParams = { params: z.object({ name: z.string().regex(ARCHIVE_NAME) }) };
 
-  app.get('/admin/retention/archives/:name', { ...admin, schema: nameParams }, async (req, reply) => {
-    if (!files().some((f) => f.name === req.params.name)) throw notFound('Archive introuvable.');
-    void reply
-      .header('content-type', 'application/gzip')
-      .header('content-disposition', `attachment; filename="${req.params.name}"`);
-    return createReadStream(join(archiveDir(config), req.params.name));
-  });
+  app.get(
+    '/admin/retention/archives/:name',
+    { ...admin, schema: nameParams },
+    async (req, reply) => {
+      if (!files().some((f) => f.name === req.params.name)) throw notFound('Archive introuvable.');
+      void reply
+        .header('content-type', 'application/gzip')
+        .header('content-disposition', `attachment; filename="${req.params.name}"`);
+      return createReadStream(join(archiveDir(config), req.params.name));
+    },
+  );
 
   app.delete('/admin/retention/archives/:name', { ...admin, schema: nameParams }, async (req) => {
     if (!files().some((f) => f.name === req.params.name)) throw notFound('Archive introuvable.');
@@ -184,7 +200,11 @@ export const retentionRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> 
       tableSizes(db),
       diskSpace(),
       db
-        .select({ at: dbSizeSnapshot.at, totalBytes: dbSizeSnapshot.totalBytes, reason: dbSizeSnapshot.reason })
+        .select({
+          at: dbSizeSnapshot.at,
+          totalBytes: dbSizeSnapshot.totalBytes,
+          reason: dbSizeSnapshot.reason,
+        })
         .from(dbSizeSnapshot)
         .orderBy(desc(dbSizeSnapshot.at))
         .limit(120),

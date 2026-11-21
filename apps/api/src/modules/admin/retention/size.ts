@@ -19,7 +19,9 @@ export interface TableSize {
 }
 
 export async function totalDatabaseBytes(db: DbOrTx): Promise<number> {
-  const r = await db.execute<{ n: string }>(sql`select pg_database_size(current_database())::text as n`);
+  const r = await db.execute<{ n: string }>(
+    sql`select pg_database_size(current_database())::text as n`,
+  );
   return Number(r.rows[0]!.n);
 }
 

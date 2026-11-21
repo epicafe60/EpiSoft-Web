@@ -80,7 +80,8 @@ export async function runNightlyRetention(
         trigger: 'nightly',
         maxMs: NIGHTLY_MAX_MS,
         anonymized,
-        record: (tx, s) => auditSystem(tx, { action: 'retention.purge', entity: 'retention', after: s }),
+        record: (tx, s) =>
+          auditSystem(tx, { action: 'retention.purge', entity: 'retention', after: s }),
       });
       rows = summary.total;
       if (summary.error) log?.error({ error: summary.error }, 'purge de nuit');

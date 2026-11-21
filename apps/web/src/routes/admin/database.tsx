@@ -86,7 +86,11 @@ interface Inactive {
   excluded: InactiveRow[];
 }
 
-const NATURE_LABEL = { LEGAL: 'Obligation légale', BUSINESS: 'Métier', TECHNICAL: 'Technique' } as const;
+const NATURE_LABEL = {
+  LEGAL: 'Obligation légale',
+  BUSINESS: 'Métier',
+  TECHNICAL: 'Technique',
+} as const;
 const settingsQuery = { queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') };
 const fr = (n: number) => n.toLocaleString('fr-FR');
 
@@ -119,8 +123,8 @@ function SizeSection() {
       <CardHeader>
         <CardTitle>Taille de la base de données</CardTitle>
         <CardDescription>
-          Relevée chaque semaine et après chaque purge. Les données utiles ne se purgent jamais ici :
-          seuls les journaux, les courriels et les traces techniques sont concernés.
+          Relevée chaque semaine et après chaque purge. Les données utiles ne se purgent jamais ici
+          : seuls les journaux, les courriels et les traces techniques sont concernés.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5">
@@ -149,14 +153,18 @@ function SizeSection() {
             </div>
           )}
           <div>
-            <div className="text-3xl font-semibold tabular-nums">{formatBytes(data.estimate.bytes)}</div>
+            <div className="text-3xl font-semibold tabular-nums">
+              {formatBytes(data.estimate.bytes)}
+            </div>
             <div className="text-sm text-muted-foreground">
               à gagner en purgeant maintenant ({fr(data.estimate.rows)} lignes, estimation)
             </div>
           </div>
         </div>
         {data.overThreshold ? (
-          <Alert>La base dépasse le seuil d’alerte : regardez les plus gros consommateurs ci-dessous.</Alert>
+          <Alert>
+            La base dépasse le seuil d’alerte : regardez les plus gros consommateurs ci-dessous.
+          </Alert>
         ) : null}
         {data.diskLow ? <Alert>Le disque du serveur manque de place.</Alert> : null}
 
@@ -200,7 +208,13 @@ function SizeSection() {
               role="img"
               aria-label={`Taille de la base, de ${formatBytes(data.snapshots[0]!.totalBytes)} à ${formatBytes(data.snapshots.at(-1)!.totalBytes)}`}
             >
-              <polyline points={line} fill="none" stroke="currentColor" strokeWidth="2" className="text-primary" />
+              <polyline
+                points={line}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="text-primary"
+              />
             </svg>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -209,7 +223,8 @@ function SizeSection() {
           )}
           {data.snapshots.length ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              {data.snapshots.length} relevé(s), le dernier le {formatDateTime(data.snapshots.at(-1)!.at)} :{' '}
+              {data.snapshots.length} relevé(s), le dernier le{' '}
+              {formatDateTime(data.snapshots.at(-1)!.at)} :{' '}
               {formatBytes(data.snapshots.at(-1)!.totalBytes)}.
             </p>
           ) : null}
@@ -218,10 +233,11 @@ function SizeSection() {
         <div className="rounded-md border bg-muted/40 p-3 text-sm">
           <p className="font-medium">Après une grosse purge</p>
           <p className="text-muted-foreground">
-            PostgreSQL réutilise la place libérée pour les nouvelles données, mais ne rend pas le disque au
-            système. Pour réduire vraiment le fichier, un technicien peut lancer{' '}
-            <code>VACUUM FULL</code> sur une table, à un moment calme : la table est verrouillée pendant ce
-            temps. L’application ne le lance jamais d’elle-même (voir la page Maintenance).
+            PostgreSQL réutilise la place libérée pour les nouvelles données, mais ne rend pas le
+            disque au système. Pour réduire vraiment le fichier, un technicien peut lancer{' '}
+            <code>VACUUM FULL</code> sur une table, à un moment calme : la table est verrouillée
+            pendant ce temps. L’application ne le lance jamais d’elle-même (voir la page
+            Maintenance).
           </p>
           {data.vacuum.length ? (
             <p className="mt-1">
@@ -271,7 +287,9 @@ function PolicySection() {
   if (error) return <QueryError error={error} />;
   if (isPending || !value || !initial) return null;
   const errors = save.error instanceof ApiError ? save.error.fieldErrors() : {};
-  const invalid = RETENTION_CLASSES.some((c) => parseDurationInput(drafts[c.id] ?? '') === 'invalid');
+  const invalid = RETENTION_CLASSES.some(
+    (c) => parseDurationInput(drafts[c.id] ?? '') === 'invalid',
+  );
   const current: RetentionSettings = {
     ...value,
     durations: {
@@ -329,9 +347,16 @@ function PolicySection() {
         >
           <div className="grid gap-3">
             {RETENTION_CLASSES.map((c) => {
-              const err = errors[`durations.${c.id}`] ?? (parseDurationInput(drafts[c.id] ?? '') === 'invalid' ? 'Nombre entier d’au moins 1, ou vide.' : undefined);
+              const err =
+                errors[`durations.${c.id}`] ??
+                (parseDurationInput(drafts[c.id] ?? '') === 'invalid'
+                  ? 'Nombre entier d’au moins 1, ou vide.'
+                  : undefined);
               return (
-                <div key={c.id} className="grid gap-1 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-start sm:gap-4">
+                <div
+                  key={c.id}
+                  className="grid gap-1 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-start sm:gap-4"
+                >
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{c.label}</span>
@@ -347,7 +372,11 @@ function PolicySection() {
                         Minimum : {c.floor.value} {unitLabel(c)}. {c.floor.rule}
                       </p>
                     ) : null}
-                    {warnings[c.id] ? <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{warnings[c.id]}</p> : null}
+                    {warnings[c.id] ? (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                        {warnings[c.id]}
+                      </p>
+                    ) : null}
                   </div>
                   <Field label={`Durée (${unitLabel(c)})`} error={err}>
                     {(p) => (
@@ -373,7 +402,9 @@ function PolicySection() {
                 checked={value.nightly}
                 onChange={(e) => set({ nightly: e.target.checked })}
               />
-              <Label htmlFor="ret-nightly">Purger automatiquement chaque nuit (entre 2 h et 5 h)</Label>
+              <Label htmlFor="ret-nightly">
+                Purger automatiquement chaque nuit (entre 2 h et 5 h)
+              </Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox
@@ -389,7 +420,9 @@ function PolicySection() {
               <Checkbox
                 id="ret-anon"
                 checked={value.anonymization.enabled}
-                onChange={(e) => set({ anonymization: { ...value.anonymization, enabled: e.target.checked } })}
+                onChange={(e) =>
+                  set({ anonymization: { ...value.anonymization, enabled: e.target.checked } })
+                }
               />
               <Label htmlFor="ret-anon">Anonymiser chaque nuit les adhérents inactifs depuis</Label>
               <Input
@@ -398,7 +431,12 @@ function PolicySection() {
                 inputMode="numeric"
                 value={String(value.anonymization.years)}
                 onChange={(e) =>
-                  set({ anonymization: { ...value.anonymization, years: Number(e.target.value.replace(/\D/g, '')) || 0 } })
+                  set({
+                    anonymization: {
+                      ...value.anonymization,
+                      years: Number(e.target.value.replace(/\D/g, '')) || 0,
+                    },
+                  })
                 }
               />
               <span className="text-sm">an(s)</span>
@@ -407,26 +445,52 @@ function PolicySection() {
               ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Alerte si la base dépasse (Mo)" error={errors['alerts.dbSizeMb']} hint="Vide : pas d’alerte.">
+              <Field
+                label="Alerte si la base dépasse (Mo)"
+                error={errors['alerts.dbSizeMb']}
+                hint="Vide : pas d’alerte."
+              >
                 {(p) => (
                   <Input
                     {...p}
                     inputMode="numeric"
                     value={value.alerts.dbSizeMb === null ? '' : String(value.alerts.dbSizeMb)}
                     onChange={(e) =>
-                      set({ alerts: { ...value.alerts, dbSizeMb: e.target.value === '' ? null : Number(e.target.value.replace(/\D/g, '')) } })
+                      set({
+                        alerts: {
+                          ...value.alerts,
+                          dbSizeMb:
+                            e.target.value === ''
+                              ? null
+                              : Number(e.target.value.replace(/\D/g, '')),
+                        },
+                      })
                     }
                   />
                 )}
               </Field>
-              <Field label="Alerte si l’espace libre passe sous (%)" error={errors['alerts.diskFreePct']} hint="Vide : pas d’alerte.">
+              <Field
+                label="Alerte si l’espace libre passe sous (%)"
+                error={errors['alerts.diskFreePct']}
+                hint="Vide : pas d’alerte."
+              >
                 {(p) => (
                   <Input
                     {...p}
                     inputMode="numeric"
-                    value={value.alerts.diskFreePct === null ? '' : String(value.alerts.diskFreePct)}
+                    value={
+                      value.alerts.diskFreePct === null ? '' : String(value.alerts.diskFreePct)
+                    }
                     onChange={(e) =>
-                      set({ alerts: { ...value.alerts, diskFreePct: e.target.value === '' ? null : Number(e.target.value.replace(/\D/g, '')) } })
+                      set({
+                        alerts: {
+                          ...value.alerts,
+                          diskFreePct:
+                            e.target.value === ''
+                              ? null
+                              : Number(e.target.value.replace(/\D/g, '')),
+                        },
+                      })
                     }
                   />
                 )}
@@ -496,7 +560,9 @@ function PurgeSection() {
         'Les données plus anciennes que les durées choisies vont être supprimées définitivement. Les données légales ne sont jamais touchées.',
       impact: [
         `${fr(p.totalRows)} ligne(s), environ ${formatBytes(p.totalBytes)}`,
-        archive ? 'Une copie compressée sera téléchargeable pendant 30 jours.' : 'Aucune copie ne sera gardée.',
+        archive
+          ? 'Une copie compressée sera téléchargeable pendant 30 jours.'
+          : 'Aucune copie ne sera gardée.',
         'L’opération est notée dans le journal d’audit et ne peut pas être annulée.',
       ],
       confirmLabel: 'Purger',
@@ -510,8 +576,8 @@ function PurgeSection() {
       <CardHeader>
         <CardTitle>Purge</CardTitle>
         <CardDescription>
-          Ce qu’une purge supprimerait maintenant, avec les durées enregistrées ci-dessus (aperçu : rien n’est
-          supprimé tant que vous ne confirmez pas).
+          Ce qu’une purge supprimerait maintenant, avec les durées enregistrées ci-dessus (aperçu :
+          rien n’est supprimé tant que vous ne confirmez pas).
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -529,7 +595,9 @@ function PurgeSection() {
               {p.classes.map((c) => (
                 <tr key={c.classId}>
                   <td>{c.label}</td>
-                  <td className="whitespace-nowrap tabular-nums">{c.cutoff ? formatDateTime(c.cutoff).split(' ')[0] : ''}</td>
+                  <td className="whitespace-nowrap tabular-nums">
+                    {c.cutoff ? formatDateTime(c.cutoff).split(' ')[0] : ''}
+                  </td>
                   <td className="text-right tabular-nums">{fr(c.rows)}</td>
                   <td className="text-right tabular-nums">{formatBytes(c.bytes)}</td>
                 </tr>
@@ -546,28 +614,43 @@ function PurgeSection() {
         )}
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <Checkbox id="purge-archive" checked={archive} onChange={(e) => setArchive(e.target.checked)} />
+            <Checkbox
+              id="purge-archive"
+              checked={archive}
+              onChange={(e) => setArchive(e.target.checked)}
+            />
             <Label htmlFor="purge-archive">Garder une copie compressée</Label>
           </div>
-          <Button variant="destructive" disabled={!p || !p.totalRows || running || start.isPending} onClick={() => void run()}>
+          <Button
+            variant="destructive"
+            disabled={!p || !p.totalRows || running || start.isPending}
+            onClick={() => void run()}
+          >
             <Trash2 /> Purger maintenant
           </Button>
-          <Button variant="outline" onClick={() => void preview.refetch()} disabled={preview.isFetching}>
+          <Button
+            variant="outline"
+            onClick={() => void preview.refetch()}
+            disabled={preview.isFetching}
+          >
             Recalculer l’aperçu
           </Button>
         </div>
         {start.isError ? <Alert>{start.error.message}</Alert> : null}
         {running ? (
           <Alert variant="info">
-            Purge en cours{status.data?.current ? ` : ${status.data.current}` : ''}, {fr(status.data?.rows ?? 0)}{' '}
-            ligne(s) supprimée(s)…
+            Purge en cours{status.data?.current ? ` : ${status.data.current}` : ''},{' '}
+            {fr(status.data?.rows ?? 0)} ligne(s) supprimée(s)…
           </Alert>
         ) : null}
         {last && !running ? (
           <Alert variant={last.error ? 'error' : 'success'}>
-            Dernière purge ({last.trigger === 'nightly' ? 'de nuit' : 'manuelle'}, {formatDateTime(last.finishedAt)}) :{' '}
-            {fr(last.total)} ligne(s), base de {formatBytes(last.bytesBefore)} à {formatBytes(last.bytesAfter)}.
-            {last.truncated ? ' Le temps imparti est épuisé : le reste sera purgé à la prochaine fois.' : ''}
+            Dernière purge ({last.trigger === 'nightly' ? 'de nuit' : 'manuelle'},{' '}
+            {formatDateTime(last.finishedAt)}) : {fr(last.total)} ligne(s), base de{' '}
+            {formatBytes(last.bytesBefore)} à {formatBytes(last.bytesAfter)}.
+            {last.truncated
+              ? ' Le temps imparti est épuisé : le reste sera purgé à la prochaine fois.'
+              : ''}
             {last.error ? ` Erreur : ${last.error}` : ''}
           </Alert>
         ) : null}
@@ -585,7 +668,8 @@ function InactiveSection() {
     queryFn: () => api.get<Inactive>('/admin/retention/inactive-members'),
   });
   const run = useMutation({
-    mutationFn: () => api.post<{ anonymized: number }>('/admin/retention/anonymize', { confirm: true }),
+    mutationFn: () =>
+      api.post<{ anonymized: number }>('/admin/retention/anonymize', { confirm: true }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['retention-inactive'] }),
   });
   if (error) return <QueryError error={error} />;
@@ -606,20 +690,29 @@ function InactiveSection() {
       <CardHeader>
         <CardTitle>Adhérents inactifs</CardTitle>
         <CardDescription>
-          Sans aucune activité depuis {data.years} an(s) (connexion, achat, cagnotte, paiement, adhésion,
-          précommande). Un adhérent avec une cagnotte non nulle, un rôle, une précommande ou un signalement ouvert
-          n’est jamais anonymisé.
+          Sans aucune activité depuis {data.years} an(s) (connexion, achat, cagnotte, paiement,
+          adhésion, précommande). Un adhérent avec une cagnotte non nulle, un rôle, une précommande
+          ou un signalement ouvert n’est jamais anonymisé.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="flex flex-wrap items-center gap-4">
           <span>
-            <strong>{data.candidates.length}</strong> à anonymiser, <strong>{data.excluded.length}</strong> exclu(s).
+            <strong>{data.candidates.length}</strong> à anonymiser,{' '}
+            <strong>{data.excluded.length}</strong> exclu(s).
           </span>
-          <Button variant="destructive" disabled={!data.candidates.length || run.isPending} onClick={() => void go()}>
+          <Button
+            variant="destructive"
+            disabled={!data.candidates.length || run.isPending}
+            onClick={() => void go()}
+          >
             Anonymiser maintenant
           </Button>
-          {run.isSuccess ? <span role="status" className="text-sm text-success">{run.data.anonymized} adhérent(s) anonymisé(s).</span> : null}
+          {run.isSuccess ? (
+            <span role="status" className="text-sm text-success">
+              {run.data.anonymized} adhérent(s) anonymisé(s).
+            </span>
+          ) : null}
         </div>
         {run.isError ? <Alert>{run.error.message}</Alert> : null}
         {data.candidates.length || data.excluded.length ? (
@@ -637,7 +730,9 @@ function InactiveSection() {
                 <tr key={m.id}>
                   <td className="tabular-nums">{m.number}</td>
                   <td>{m.name}</td>
-                  <td className="whitespace-nowrap tabular-nums">{formatDateTime(m.lastActivity).split(' ')[0]}</td>
+                  <td className="whitespace-nowrap tabular-nums">
+                    {formatDateTime(m.lastActivity).split(' ')[0]}
+                  </td>
                   <td>
                     {m.reasons?.length ? (
                       <Badge variant="muted">Exclu : {m.reasons.join(', ')}</Badge>
@@ -661,7 +756,10 @@ function ArchivesSection() {
   const queryClient = useQueryClient();
   const { data, error } = useQuery({
     queryKey: ['retention-archives'],
-    queryFn: () => api.get<{ keepDays: number; files: { name: string; bytes: number; at: string }[] }>('/admin/retention/archives'),
+    queryFn: () =>
+      api.get<{ keepDays: number; files: { name: string; bytes: number; at: string }[] }>(
+        '/admin/retention/archives',
+      ),
   });
   const del = useMutation({
     mutationFn: (name: string) => api.delete(`/admin/retention/archives/${name}`),
@@ -674,9 +772,9 @@ function ArchivesSection() {
       <CardHeader>
         <CardTitle>Archives des purges</CardTitle>
         <CardDescription>
-          Copies compressées de ce qui a été purgé (une ligne JSON par ligne supprimée). Elles contiennent des
-          données personnelles : téléchargez-les pour les ranger en lieu sûr ; elles sont effacées du serveur
-          après {data.keepDays} jours.
+          Copies compressées de ce qui a été purgé (une ligne JSON par ligne supprimée). Elles
+          contiennent des données personnelles : téléchargez-les pour les ranger en lieu sûr ; elles
+          sont effacées du serveur après {data.keepDays} jours.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -696,14 +794,24 @@ function ArchivesSection() {
                 <td className="whitespace-nowrap tabular-nums">{formatDateTime(f.at)}</td>
                 <td className="text-right tabular-nums">{formatBytes(f.bytes)}</td>
                 <td className="whitespace-nowrap text-right">
-                  <a className="inline-flex items-center gap-1 text-primary hover:underline" href={`/api/v1/admin/retention/archives/${f.name}`}>
+                  <a
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    href={`/api/v1/admin/retention/archives/${f.name}`}
+                  >
                     <Download className="size-4" /> Télécharger
                   </a>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={async () => {
-                      if (await confirmNow({ title: 'Supprimer cette archive ?', message: 'Le fichier sera effacé du serveur.', destructive: true, confirmLabel: 'Supprimer' }))
+                      if (
+                        await confirmNow({
+                          title: 'Supprimer cette archive ?',
+                          message: 'Le fichier sera effacé du serveur.',
+                          destructive: true,
+                          confirmLabel: 'Supprimer',
+                        })
+                      )
                         del.mutate(f.name);
                     }}
                   >

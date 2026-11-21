@@ -9,7 +9,8 @@ import { anonymizeMember } from '../../members/anonymize';
 // Someone who still has a cagnotte balance, an open obligation or a role is never a candidate:
 // the exclusions are listed, not hidden.
 
-export type ExclusionReason = 'BALANCE' | 'ROLE' | 'OPEN_PREORDER' | 'OPEN_FEEDBACK' | 'PENDING_EMAIL';
+export type ExclusionReason =
+  'BALANCE' | 'ROLE' | 'OPEN_PREORDER' | 'OPEN_FEEDBACK' | 'PENDING_EMAIL';
 
 export const EXCLUSION_LABELS: Record<ExclusionReason, string> = {
   BALANCE: 'Cagnotte non nulle',
