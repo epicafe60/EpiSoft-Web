@@ -922,6 +922,7 @@ stateDiagram-v2
   5. verrouillage de l'exercice.
 
   La réouverture est réservée à `ADMIN`.
+- **R-CPT-20** Extraction des allocations comptables (Comptabilité › Éditions › « Allocations comptables ») : sur une période de jours, une ligne par ticket et par paiement hors ticket, avec le don, l'adhésion, le versement sur la cagnotte, l'achat, le total (= don + adhésion + achat, un versement sur la cagnotte n'est pas un achat) et un contrôle. Tickets annulés exclus, mouvements de cagnotte sans ticket repris (débits historiques, corrections). Écran, Excel et PDF ; réservé au rôle COMPTA. **[nouveau]**
 - **R-CPT-19** Export FEC (format légal français) ou export Excel pour l'expert-comptable ou le commissaire aux comptes. **[nouveau, optionnel]**
 - **CA :**
   - Importer deux fois le même fichier OFX ne crée aucune écriture en double.

@@ -24,10 +24,18 @@ const REPORTS = [
   { key: 'wallet-411', label: 'Rapprochement cagnottes / 411000' },
   { key: 'aged-payables', label: 'Dettes fournisseurs par ancienneté' },
   { key: 'vat', label: 'TVA collectée et déductible (CA3)' },
+  { key: 'allocations', label: 'Allocations comptables (tickets, dons, adhésions, cagnotte)' },
 ] as const;
 
 /** Editions that cover every fiscal year. */
-const NO_YEAR: string[] = ['aged-payables', 'wallet-411'];
+const NO_YEAR: string[] = ['aged-payables', 'wallet-411', 'allocations'];
+
+/** Editions over a period of days. */
+const BY_PERIOD: string[] = ['vat', 'allocations'];
+
+/** YYYY-MM-DD of a local date. */
+const isoDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export function ReportsPage() {
   const years = useFiscalYears();
@@ -50,7 +58,7 @@ export function ReportsPage() {
   const fy = fiscalYearId || years.data?.[0]?.id || '';
   const params = new URLSearchParams();
   if (fy && !NO_YEAR.includes(report)) params.set('fiscalYearId', fy);
-  if (report === 'vat' && (periodFrom || periodTo)) {
+  if (BY_PERIOD.includes(report) && (periodFrom || periodTo)) {
     params.delete('fiscalYearId');
     if (periodFrom) params.set('from', periodFrom);
     if (periodTo) params.set('to', periodTo);
@@ -59,7 +67,9 @@ export function ReportsPage() {
   if (accountFrom) params.set('accountFrom', accountFrom);
   if (accountTo) params.set('accountTo', accountTo);
   if (validatedOnly) params.set('status', 'VALIDATED');
-  const ready = NO_YEAR.includes(report) || !!fy;
+  // The extract of the allocations needs its two dates.
+  const ready =
+    report === 'allocations' ? !!periodFrom && !!periodTo : NO_YEAR.includes(report) || !!fy;
   const { data, error, isFetching } = useQuery({
     queryKey: ['report', report, params.toString()],
     queryFn: () => api.get<ReportTableData>(`/reports/${report}?${params}`),
@@ -77,7 +87,16 @@ export function ReportsPage() {
               {...p}
               className="w-72"
               value={report}
-              onChange={(e) => setReport(e.target.value as typeof report)}
+              onChange={(e) => {
+                const next = e.target.value as typeof report;
+                setReport(next);
+                // Proposed: the month so far.
+                if (next === 'allocations' && !periodFrom && !periodTo) {
+                  const now = new Date();
+                  setPeriodFrom(isoDay(new Date(now.getFullYear(), now.getMonth(), 1)));
+                  setPeriodTo(isoDay(now));
+                }
+              }}
             >
               {REPORTS.filter((r) => r.key !== 'vat' || vatApplies).map((r) => (
                 <option key={r.key} value={r.key}>
@@ -105,9 +124,16 @@ export function ReportsPage() {
             )}
           </Field>
         ) : null}
-        {report === 'vat' ? (
+        {BY_PERIOD.includes(report) ? (
           <>
-            <Field label="Du" hint="Facultatif : un mois ou un trimestre (CA3)">
+            <Field
+              label="Du"
+              hint={
+                report === 'vat'
+                  ? 'Facultatif : un mois ou un trimestre (CA3)'
+                  : 'Premier jour de la période'
+              }
+            >
               {(p) => (
                 <Input
                   {...p}

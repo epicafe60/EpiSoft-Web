@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -6,15 +6,21 @@ import {
   entry,
   entryLine,
   fiscalYear,
+  household,
   journal,
+  memberPayment,
   supplier,
   supplierInvoice,
+  walletEntry,
   type Db,
 } from '@episoft/db';
 import {
+  ALLOCATION_COLUMN_LABELS,
   AGE_BUCKETS,
   AGE_BUCKET_LABELS,
   agedPayables,
+  allocationLines,
+  allocationTotals,
   balanceOf,
   balanceSheet,
   centsToDecimal,
@@ -23,6 +29,9 @@ import {
   formatVatRate,
   vatBreakdownIncl,
   incomeStatement,
+  operationTypeOfPurpose,
+  type OperationRow,
+  type PaymentMethod,
   reportQuerySchema,
   situation,
   type Section,
@@ -33,6 +42,7 @@ import { loadPdfConfig, loadPdfLogo } from '../../lib/pdf-template';
 import { reportPdf, reportXlsx, type ReportLine, type ReportTable } from '../../lib/report-output';
 import { badRequest, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
+import { listOperations } from '../pos/operations';
 import { budgetFor } from './budget';
 import { accountBalances, entryFilters, type BalanceFilter } from './service';
 
@@ -84,6 +94,164 @@ export const reportRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
   // --- Builders ------------------------------------------------------------------------------------
 
   const builders: Record<string, (q: z.infer<typeof query>) => Promise<ReportTable>> = {
+    /**
+     * R-CPT-20: the extract of the accounting allocations. One line per ticket and per payment made
+     * outside a ticket, with its donation, membership, top-up of the cagnotte and purchase, over a
+     * period of days.
+     */
+    async allocations(q) {
+      if (!q.from || !q.to)
+        throw badRequest('Indiquez la période de l’extraction (du … au …).', [
+          { path: q.from ? 'to' : 'from', message: 'Date requise.' },
+        ]);
+      if (q.from > q.to)
+        throw badRequest('La date de début doit précéder la date de fin.', [
+          { path: 'to', message: 'Date de fin avant la date de début.' },
+        ]);
+      // The tickets (and the change of a cancelled ticket paid into the cagnotte), by the day of
+      // the sale. The payments made outside a ticket come from their own table below: those of the
+      // back office, or taken over from the previous software, have no cash session.
+      const tickets = (await listOperations(db, { from: q.from, to: q.to })).filter(
+        (o) => o.type === 'SALE' || o.id.endsWith(':change'),
+      );
+      const paid = await db
+        .select({
+          id: memberPayment.id,
+          date: memberPayment.date,
+          createdAt: memberPayment.createdAt,
+          amount: memberPayment.amount,
+          purpose: memberPayment.purpose,
+          method: memberPayment.method,
+          session: memberPayment.cashSessionId,
+          referent: sql<
+            string | null
+          >`(select r.first_name || ' ' || r.last_name from app.member r where r.id = ${household.referentMemberId})`,
+          cancelled: sql<boolean>`exists (select 1 from app.wallet_entry w
+            join app.wallet_entry x on x.cancels_entry_id = w.id where w.payment_id = ${memberPayment.id})`,
+        })
+        .from(memberPayment)
+        .innerJoin(household, eq(household.id, memberPayment.householdId))
+        .where(
+          and(
+            isNull(memberPayment.saleId),
+            sql`${memberPayment.date} between ${q.from}::date and ${q.to}::date`,
+          ),
+        );
+      const payments: OperationRow[] = paid.map((p) => ({
+        id: p.id,
+        origin: 'SERVER',
+        type: operationTypeOfPurpose(p.purpose),
+        // A payment taken at a till keeps its time; the others only have their day.
+        at: p.session ? p.createdAt.toISOString() : `${p.date}T12:00:00.000Z`,
+        number: null,
+        cashierName: null,
+        deviceName: null,
+        memberName: p.referent,
+        payments: p.method ? [{ method: p.method as PaymentMethod, amount: p.amount }] : [],
+        total: p.amount,
+        donation: p.purpose === 'DONATION' ? p.amount : '0.00',
+        membership: p.purpose === 'MEMBERSHIP' ? p.amount : '0.00',
+        wallet: p.purpose === 'TOPUP' ? p.amount : '0.00',
+        walletCash: '0.00',
+        cancelled: p.cancelled,
+        sync: 'SENT',
+        error: null,
+      }));
+      const operations = [...tickets, ...payments];
+      // Cagnotte movements that belong to no ticket and no payment: debits taken over from the
+      // previous software, manual corrections (a cancellation of a top-up is already in its payment).
+      const moved = await db
+        .select({
+          id: walletEntry.id,
+          at: walletEntry.at,
+          kind: walletEntry.kind,
+          amount: walletEntry.amount,
+          comment: walletEntry.comment,
+          memberName: sql<
+            string | null
+          >`(select r.first_name || ' ' || r.last_name from app.member r where r.id = ${household.referentMemberId})`,
+        })
+        .from(walletEntry)
+        .innerJoin(household, eq(household.id, walletEntry.householdId))
+        .where(
+          and(
+            isNull(walletEntry.saleId),
+            isNull(walletEntry.paymentId),
+            isNull(walletEntry.cancelsEntryId),
+            inArray(walletEntry.kind, ['PURCHASE', 'CORRECTION']),
+            sql`(${walletEntry.at} at time zone ${tzSql()})::date between ${q.from}::date and ${q.to}::date`,
+          ),
+        );
+      const lines = allocationLines({
+        operations,
+        movements: moved.map((m) => ({
+          id: m.id,
+          at: m.at.toISOString(),
+          kind: m.kind as 'PURCHASE' | 'CORRECTION',
+          amount: m.amount,
+          comment: m.comment,
+          memberName: m.memberName,
+        })),
+      });
+      if (lines.length > MAX_ROWS)
+        throw badRequest(
+          `Trop d’opérations (${lines.length}) : choisissez une période plus courte.`,
+        );
+      const totals = allocationTotals(lines);
+      const cancelled = operations.filter((o) => o.type === 'SALE' && o.cancelled).length;
+      const L = ALLOCATION_COLUMN_LABELS;
+      return {
+        title: 'Allocations comptables',
+        subtitle: `${await periodLabel(q)} · ${lines.length} opération(s) · ${cancelled} ticket(s) annulé(s) non listé(s) · un versement sur la cagnotte n’est pas un achat : il reste hors du total`,
+        columns: [
+          { key: 'date', label: L.date, type: 'text', width: 1 },
+          { key: 'label', label: L.label, type: 'text', width: 2.6 },
+          { key: 'who', label: L.who, type: 'text', width: 2 },
+          { key: 'mode', label: L.mode, type: 'text', width: 2 },
+          { key: 'don', label: L.don, type: 'money', width: 1 },
+          { key: 'adh', label: L.adh, type: 'money', width: 1.2 },
+          { key: 'cag', label: L.cag, type: 'money', width: 1.3 },
+          { key: 'achat', label: L.achat, type: 'money', width: 1 },
+          { key: 'total', label: L.total, type: 'money', width: 1.1 },
+          { key: 'check', label: L.check, type: 'money', width: 1 },
+          { key: 'note', label: L.note, type: 'text', width: 3 },
+        ],
+        rows: [
+          ...lines.map((l) =>
+            cell({
+              date: frDate(toShopDate(new Date(l.at))),
+              label: l.label,
+              who: l.who,
+              mode: l.mode,
+              don: money(l.donCents),
+              adh: money(l.adhCents),
+              cag: money(l.cagCents),
+              achat: money(l.achatCents),
+              total: money(l.totalCents),
+              check: money(l.totalCents - (l.donCents + l.adhCents + l.achatCents)),
+              note: l.note || null,
+            }),
+          ),
+          cell(
+            {
+              date: null,
+              label: 'Total',
+              who: null,
+              mode: null,
+              don: totals.don,
+              adh: totals.adh,
+              cag: totals.cag,
+              achat: totals.achat,
+              total: totals.total,
+              check: '0.00',
+              note: null,
+            },
+            true,
+          ),
+        ],
+      };
+    },
+
     /** Journal: entry lines in date order. */
     async journal(q) {
       const rows = await db

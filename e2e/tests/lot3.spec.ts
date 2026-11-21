@@ -43,6 +43,17 @@ test('lot 3: a treasurer enters, validates and reads an entry; the closing page 
   await page.getByLabel('Édition').selectOption({ label: 'Balance des comptes' });
   await expect(page.getByRole('row', { name: /531000/ })).toContainText('42,50');
 
+  // R-CPT-20: the extract of the allocations has its period, its total line and its Excel file.
+  await page
+    .getByLabel('Édition')
+    .selectOption({ label: 'Allocations comptables (tickets, dons, adhésions, cagnotte)' });
+  await expect(page.getByLabel('Du', { exact: true })).toHaveValue(/^\d{4}-\d{2}-01$/);
+  await expect(page.getByRole('cell', { name: 'Total', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Excel' })).toHaveAttribute(
+    'href',
+    /reports\/allocations\?.*from=.*&to=.*&format=xlsx/,
+  );
+
   // R-CPT-18: the guided closing shows its checks and stays disabled without confirmation.
   await page.goto('/compta/cloture');
   await expect(page.getByRole('button', { name: 'Clôturer l’exercice' })).toBeDisabled();
