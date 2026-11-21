@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { category, priceHistory, product, supplier, universe, type Db } from '@episoft/db';
 import {
   bulkPricesSchema,
+  salePriceProblem,
   categorySchema,
   centsToDecimal,
   decimalToCents,
@@ -21,7 +22,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { eur, pdfText, render } from '../../lib/pdf';
-import { conflict, notFound } from '../../lib/problem';
+import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
@@ -177,6 +178,18 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             (parsePrice4(r.purchasePriceExcl) ?? 0) !== (parsePrice4(p.purchasePriceExcl) ?? 0) ||
             r.vatRate !== p.vatRate;
           if (!priceChanged && status === p.status) continue;
+          if (priceChanged) {
+            const sale = salePriceProblem({
+              kind: p.kind,
+              salePrice: r.salePrice,
+              purchasePriceExcl: r.purchasePriceExcl,
+              vatRate: r.vatRate,
+            });
+            if (sale)
+              throw badRequest(`${p.name} : ${sale.message}`, [
+                { path: `rows.${rows.indexOf(r)}.${sale.path}`, message: sale.message },
+              ]);
+          }
           await tx
             .update(product)
             .set({

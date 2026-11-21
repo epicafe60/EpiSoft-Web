@@ -12,7 +12,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import type { Db } from '@episoft/db';
-import { setAppTimeZone, type RoleCode } from '@episoft/shared';
+import type { RoleCode } from '@episoft/shared';
 import type { Config } from './config';
 import { audit } from './lib/audit';
 import auth, { guardedRoles, isApiRequest } from './plugins/auth';
@@ -27,6 +27,7 @@ import { catalogRoutes } from './modules/catalog/routes';
 import { walletRoutes } from './modules/members/wallet-routes';
 import { supplierRoutes } from './modules/supplies/suppliers';
 import { orderRoutes } from './modules/supplies/orders';
+import { creditNoteRoutes } from './modules/supplies/credit-notes';
 import { invoiceRoutes } from './modules/supplies/invoices';
 import { stockRoutes } from './modules/stock/routes';
 import { catalogAdminRoutes } from './modules/catalog/admin';
@@ -36,6 +37,7 @@ import { closingRoutes } from './modules/accounting/closing';
 import { pushRoutes } from './modules/push/routes';
 import { budgetRoutes } from './modules/accounting/budget';
 import { proposalRoutes } from './modules/accounting/proposals';
+import { fecRoutes } from './modules/accounting/fec';
 import { reportRoutes } from './modules/accounting/reports';
 import { dashboardRoutes } from './modules/stats/dashboard';
 import { analysisRoutes } from './modules/stats/analysis';
@@ -52,7 +54,7 @@ import { seriesRoutes } from './modules/stats/series';
 import { preorderRoutes } from './modules/preorders/routes';
 import { revertRoutes } from './modules/admin/revert/routes';
 import { feedbackRoutes } from './modules/feedback/routes';
-import { loadSettings } from './modules/admin/settings-store';
+import { refreshTimeZone } from './modules/admin/settings-store';
 import { brandingRoutes } from './modules/branding/routes';
 import { emailTemplateRoutes } from './modules/admin/email-templates';
 import { pdfTemplateRoutes } from './modules/admin/pdf-templates';
@@ -83,7 +85,7 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
   app.setSerializerCompiler(serializerCompiler);
 
   // The time zone of the shop is a setting: read here, and again whenever it is saved.
-  setAppTimeZone((await loadSettings(db))['app.timezone'].timeZone);
+  await refreshTimeZone(db);
   await app.register(errors, { db, config });
   await app.register(helmet, {
     // The SPA is served from the same origin; inline styles are needed by some UI components.
@@ -165,11 +167,13 @@ export async function buildApp(db: Db, config: Config, opts: FastifyServerOption
       await api.register(supplierRoutes, { db, config });
       await api.register(orderRoutes, { db, config });
       await api.register(invoiceRoutes, { db, config });
+      await api.register(creditNoteRoutes, { db, config });
       await api.register(stockRoutes, { db, config });
       await api.register(catalogAdminRoutes, { db, config });
       await api.register(accountingRoutes, { db, config });
       await api.register(bankRoutes, { db, config });
       await api.register(reportRoutes, { db, config });
+      await api.register(fecRoutes, { db, config });
       await api.register(budgetRoutes, { db, config });
       await api.register(proposalRoutes, { db, config });
       await api.register(closingRoutes, { db, config });

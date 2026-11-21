@@ -6,9 +6,11 @@ Réponses de l'équipe (transmises par la responsable du projet) aux questions o
 
 L'outil ne cherche pas à anticiper tous les scénarios. La boutique a ouvert le 14 février 2026 : l'équipe de bénévoles est petite, et elle veut garder de la vigilance humaine à l'usage. On ne code pas de brique pour des usages ou des personnes qui n'existent pas encore. Avant d'ajouter un calcul automatique, un avertissement, un contrôle ou un module, on vérifie que l'équipe l'a demandé.
 
+> **Mise à jour du 15 novembre 2026 (propriétaire du projet) : la décision « Prix d'achat et TVA : saisis, jamais calculés » ci-dessous est REMPLACÉE** pour des raisons de conformité (TVA, plan comptable, loi anti-fraude TVA). Désormais, c'est le serveur qui garantit la cohérence : une TVA de fiche produit doit valoir PA HT × taux (à 1 centime près) ; une facture fournisseur est ventilée par taux (0, 2,1, 5,5, 10, 20 %), son HT, sa TVA et son TTC sont des sommes calculées, et une ligne dont la TVA s'écarte de plus de 2 centimes de HT × taux est refusée avec un message clair ; la TVA incluse dans un ticket est calculée par taux (jamais ligne par ligne). Le régime de TVA (assujetti, franchise en base art. 293 B, exonéré art. 261) est un paramètre daté, voir l'ADR 0016. Le reste du document (réception, modules à ne pas construire, consommation interne) reste valable.
+
 ## Décisions
 
-### Prix d'achat et TVA : saisis, jamais calculés
+### Prix d'achat et TVA : saisis, jamais calculés (REMPLACÉ le 15 novembre 2026, voir ci-dessus et ADR 0016)
 
 - **Fiche produit** : le PA HT, le montant de TVA (en €) et le PA TTC sont trois champs libres. L'outil ne les calcule pas et n'en recalcule aucun quand on en modifie un autre. (Le logiciel précédent avait une boucle de bug à cet endroit.) Si une suggestion de calcul existe un jour, la personne doit pouvoir l'écraser.
 - **Saisie d'une facture fournisseur** : montant total HT, montant de la TVA et montant total TTC, en €, sont trois champs libres. Un même fournisseur facture plusieurs taux de TVA (5,5 %, 20 %…) sur une même facture : le détail par taux n'est pas saisi.

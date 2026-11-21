@@ -5,7 +5,10 @@ import {
   lineTotalCents,
   formatQty,
   parseQtyToMilli,
+  formatVatRate,
+  ticketVat,
   PAYMENT_METHOD_LABELS,
+  type VatRegime,
   type SyncOp,
 } from '@episoft/shared';
 import { formatDateTime } from '@/lib/utils';
@@ -20,12 +23,37 @@ export function Receipt({
   sale,
   associationName,
   memberName,
+  address = null,
+  siren = null,
+  regime = 'LIABLE',
+  vatOf,
 }: {
   sale: SalePayload | null;
   associationName: string;
   memberName: string | null;
+  /** R-TVA-05: printed under the name, from the local snapshot (works offline). */
+  address?: string | null;
+  siren?: string | null;
+  regime?: VatRegime;
+  /** VAT rate of a product of the local catalogue, and whether it is out of the scope of VAT. */
+  vatOf?: (productId: string) => { rate: string; outOfScope: boolean } | undefined;
 }) {
   if (!sale) return null;
+  const vat = ticketVat(
+    sale.lines.map((l) => {
+      const v = vatOf?.(l.productId);
+      return {
+        rate: v?.rate ?? '0.00',
+        outOfScope: v?.outOfScope ?? false,
+        inclCents: lineTotalCents({
+          qtyMilli: parseQtyToMilli(l.qty) ?? 0,
+          unitPriceCents: decimalToCents(l.unitPrice),
+          discountCents: decimalToCents(l.discount),
+        }),
+      };
+    }),
+    regime,
+  );
   const change = sale.payments.reduce(
     (s, p) => s + (p.change && !p.changeToWallet ? Number(p.change) : 0),
     0,
@@ -33,6 +61,8 @@ export function Receipt({
   return (
     <div className="print-area receipt hidden font-mono text-[11px] leading-tight text-black print:block">
       <p className="text-center text-sm font-bold">{associationName}</p>
+      {address ? <p className="text-center">{address}</p> : null}
+      {siren ? <p className="text-center">SIREN {siren}</p> : null}
       <p className="text-center">
         Ticket {sale.provisionalNumber} · {formatDateTime(sale.soldAt)}
       </p>
@@ -65,6 +95,23 @@ export function Receipt({
         <span>TOTAL</span>
         <span>{formatEuro(sale.total)}</span>
       </p>
+      {vat.mention ? <p className="text-center">{vat.mention}</p> : null}
+      {vat.rows.length > 0 ? (
+        <div>
+          <p className="flex justify-between">
+            <span>TVA</span>
+            <span>HT · TVA</span>
+          </p>
+          {vat.rows.map((r) => (
+            <p key={r.rate} className="flex justify-between">
+              <span>{formatVatRate(r.rate)}</span>
+              <span>
+                {formatEuro(centsToDecimal(r.exclCents))} · {formatEuro(centsToDecimal(r.vatCents))}
+              </span>
+            </p>
+          ))}
+        </div>
+      ) : null}
       {sale.payments.map((p, i) => (
         <p key={i} className="flex justify-between">
           <span>{PAYMENT_METHOD_LABELS[p.method]}</span>

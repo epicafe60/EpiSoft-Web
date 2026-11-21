@@ -32,6 +32,7 @@ import { EditProductPage, NewProductPage } from './routes/catalog/product-form';
 import { SuppliesLayout } from './routes/supplies/layout';
 import { OrderPage, OrdersPage } from './routes/supplies/orders';
 import { NewSupplierPage, SupplierPage, SuppliersPage } from './routes/supplies/suppliers';
+import { CreditNotesPage } from './routes/supplies/credit-notes';
 import { InvoicePage, InvoicesPage, NewInvoicePage } from './routes/supplies/invoices';
 import { StockPage } from './routes/supplies/stock';
 import { InventoriesPage, InventoryPage } from './routes/supplies/inventories';
@@ -322,6 +323,11 @@ const invoiceRoute = createRoute({
   path: '/factures/$id',
   component: InvoicePage,
 });
+const creditNotesRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/avoirs',
+  component: CreditNotesPage,
+});
 const stockRoute = createRoute({
   getParentRoute: () => suppliesRoute,
   path: '/stock',
@@ -604,6 +610,7 @@ const routeTree = rootRoute.addChildren([
       newSupplierRoute,
       supplierRoute,
       invoicesRoute,
+      creditNotesRoute,
       newInvoiceRoute,
       invoiceRoute,
       stockRoute,

@@ -21,6 +21,9 @@ export function ClosingPage() {
   const [selected, setSelected] = useState('');
   const [stockValue, setStockValue] = useState('');
   const [confirm, setConfirm] = useState(false);
+  const [reason, setReason] = useState('');
+  const [agDate, setAgDate] = useState('');
+  const [agRef, setAgRef] = useState('');
   const year =
     years.data?.find((y) => y.id === selected) ??
     years.data?.find((y) => y.status === 'OPEN') ??
@@ -47,8 +50,21 @@ export function ClosingPage() {
     },
   });
   const reopen = useMutation({
-    mutationFn: () => api.post(`/fiscal-years/${year!.id}/reopen`),
+    mutationFn: () => api.post(`/fiscal-years/${year!.id}/reopen`, { reason }),
+    onSuccess: async () => {
+      setReason('');
+      await refresh();
+    },
+  });
+  const approve = useMutation({
+    mutationFn: () =>
+      api.post(`/fiscal-years/${year!.id}/approve`, { date: agDate, reference: agRef }),
     onSuccess: refresh,
+  });
+  const fecCheck = useQuery({
+    queryKey: ['fec-check', year?.id],
+    queryFn: () => api.get<FecCheckData>(`/reports/fec/${year!.id}/check`),
+    enabled: !!year && year.status === 'CLOSED',
   });
   const c = check.data;
   const isAdmin = me?.roles.includes('ADMIN');
@@ -158,18 +174,100 @@ export function ClosingPage() {
                 <p className="text-sm">
                   Cet exercice est clôturé : ses écritures ne peuvent plus changer.
                 </p>
-                {isAdmin ? (
+                {year.approvedOn ? (
+                  <Alert variant="success">
+                    Comptes approuvés par l’assemblée générale du {formatDate(year.approvedOn)} (
+                    {year.approvalReference}). L’exercice est définitif : il ne peut plus être
+                    rouvert, les corrections se passent dans l’exercice en cours.
+                  </Alert>
+                ) : (
+                  <div className="grid gap-3 rounded-md border p-3">
+                    <p className="text-sm font-medium">Approbation par l’assemblée générale</p>
+                    <p className="text-sm text-muted-foreground">
+                      Une fois les comptes approuvés, l’exercice est inaltérable et ne peut plus
+                      être rouvert. Indiquez la date de l’assemblée et la référence du
+                      procès-verbal.
+                    </p>
+                    {approve.error ? <Alert>{approve.error.message}</Alert> : null}
+                    <div className="flex flex-wrap items-end gap-3">
+                      <Field label="Date de l’assemblée">
+                        {(p) => (
+                          <Input
+                            {...p}
+                            type="date"
+                            value={agDate}
+                            onChange={(e) => setAgDate(e.target.value)}
+                          />
+                        )}
+                      </Field>
+                      <Field label="Référence du procès-verbal">
+                        {(p) => (
+                          <Input
+                            {...p}
+                            className="w-64"
+                            value={agRef}
+                            onChange={(e) => setAgRef(e.target.value)}
+                          />
+                        )}
+                      </Field>
+                      <Button
+                        disabled={approve.isPending || !agDate || agRef.trim().length < 3}
+                        onClick={async () => {
+                          if (
+                            await confirmNow({
+                              title: `Approuver les comptes de ${year.label} ?`,
+                              message:
+                                'L’exercice ne pourra plus jamais être rouvert. Cette action est définitive.',
+                              confirmLabel: 'Approuver les comptes',
+                              destructive: true,
+                            })
+                          )
+                            approve.mutate();
+                        }}
+                      >
+                        Enregistrer l’approbation
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {fecCheck.data ? (
+                  <div className="grid gap-1 text-sm">
+                    <p className="font-medium">
+                      Contrôle du FEC : {fecCheck.data.ok ? 'conforme' : 'anomalies à corriger'}
+                    </p>
+                    {fecCheck.data.anomalies.length ? (
+                      <ul className="list-disc pl-5">
+                        {fecCheck.data.anomalies.map((a, i) => (
+                          <li key={i} className={a.severity === 'error' ? 'text-destructive' : ''}>
+                            {a.message}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Numérotation continue, écritures équilibrées, dates dans l’exercice.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+                {isAdmin && !year.approvedOn ? (
                   <div className="grid gap-2">
                     <p className="text-sm text-muted-foreground">
                       Rouvrir l’exercice supprime les écritures de clôture (variation de stock,
-                      résultat, à-nouveaux). Action réservée à l’administrateur, tracée au journal
-                      d’audit.
+                      résultat, à-nouveaux). Seul le dernier exercice clôturé peut être rouvert,
+                      avant l’approbation des comptes. Action réservée à l’administrateur, motif
+                      obligatoire, tracée au journal d’audit.
                     </p>
                     {reopen.error ? <Alert>{reopen.error.message}</Alert> : null}
+                    <Field label="Motif de la réouverture">
+                      {(p) => (
+                        <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />
+                      )}
+                    </Field>
                     <div>
                       <Button
                         variant="destructive"
-                        disabled={reopen.isPending}
+                        disabled={reopen.isPending || reason.trim().length < 5}
                         onClick={async () => {
                           if (
                             await confirmNow({
@@ -196,6 +294,11 @@ export function ClosingPage() {
       {year ? <OpeningCheck yearId={year.id} /> : null}
     </div>
   );
+}
+
+interface FecCheckData {
+  ok: boolean;
+  anomalies: { code: string; severity: 'error' | 'warning'; message: string }[];
 }
 
 interface OpeningCheckData {

@@ -22,6 +22,8 @@ import {
 } from '@episoft/db';
 import {
   communeCreateSchema,
+  CORRECTION_ADMIN_THRESHOLD_CENTS,
+  hasAnyRole,
   decimalToCents,
   householdPatchSchema,
   MEMBER_STATUSES,
@@ -43,6 +45,7 @@ import { toShopDate, tzSql } from '../../lib/dates';
 import { anonymizeMember } from './anonymize';
 import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
+import { loadSettings } from '../admin/settings-store';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
 import { sendTopupReceipt } from '../pos/sync-service';
 
@@ -639,7 +642,41 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       db.transaction(async (tx) => {
         const h = await tx.query.household.findFirst({ where: eq(household.id, req.params.id) });
         if (!h) throw notFound('Foyer introuvable.');
+        // Separation of duties: nobody corrects the cagnotte of their own household.
+        const [self] = await tx
+          .select({ householdId: member.householdId })
+          .from(member)
+          .where(eq(member.id, req.user!.id));
+        if (self?.householdId === h.id)
+          throw badRequest('Vous ne pouvez pas corriger la cagnotte de votre propre foyer.', [
+            { path: 'amount', message: 'Demandez à une autre personne de faire cette correction.' },
+          ]);
+        // A large correction needs an administrator (second pair of eyes).
+        const cents = decimalToCents(req.body.amount);
+        if (
+          Math.abs(cents) > CORRECTION_ADMIN_THRESHOLD_CENTS &&
+          !hasAnyRole(req.user!.roles, ['ADMIN'])
+        )
+          throw badRequest(
+            'Une correction de plus de 100 € doit être faite par un administrateur.',
+            [{ path: 'amount', message: 'Montant réservé aux administrateurs (plus de 100 €).' }],
+          );
         const before = await lockedBalanceCents(tx, h.id);
+        if (cents < 0) {
+          const overdraft = decimalToCents(
+            (await loadSettings(tx))['wallet.overdraftLimit'].amount,
+          );
+          if (before + cents < -overdraft)
+            throw badRequest(
+              'Cette correction ferait descendre la cagnotte sous le découvert autorisé.',
+              [
+                {
+                  path: 'amount',
+                  message: 'Le solde deviendrait inférieur au découvert autorisé.',
+                },
+              ],
+            );
+        }
         const [entry] = await tx
           .insert(walletEntry)
           .values({
@@ -676,6 +713,20 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         if (!type) throw badRequest('Type d’adhésion inconnu.');
         const date = b.date ?? toShopDate(new Date());
         const amount = b.amount ?? type.price;
+        // The amount is the price of the type; another amount is an exception for an administrator, with a reason.
+        if (decimalToCents(amount) !== decimalToCents(type.price)) {
+          if (!hasAnyRole(req.user!.roles, ['ADMIN']))
+            throw badRequest('Le montant d’une adhésion est le tarif du type choisi.', [
+              {
+                path: 'amount',
+                message: `Le tarif est de ${type.price} € ; seul un administrateur peut déroger.`,
+              },
+            ]);
+          if (!b.reason)
+            throw badRequest('Indiquez le motif de ce montant différent du tarif.', [
+              { path: 'reason', message: 'Motif requis pour un montant différent du tarif.' },
+            ]);
+        }
         const [pay] = await tx
           .insert(memberPayment)
           .values({
@@ -708,7 +759,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           action: 'membership.create',
           entity: 'household',
           entityId: h.id,
-          after: ms,
+          after: b.reason ? { ...ms, reason: b.reason } : ms,
         });
         return ms;
       });

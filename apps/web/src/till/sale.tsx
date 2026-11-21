@@ -39,6 +39,8 @@ import {
   type SnapshotProduct,
   type SyncOp,
   cashierStale,
+  regimeAt,
+  shopFormat,
 } from '@episoft/shared';
 import { todayIso, formatDate } from '@/lib/format';
 import { useMe } from '@/lib/auth';
@@ -930,6 +932,22 @@ export function SalePage() {
         sale={lastSale}
         associationName={settings?.associationName ?? DEFAULT_BRANDING_INFO.associationName}
         memberName={lastMemberName}
+        address={settings?.associationAddress ?? null}
+        siren={settings?.associationSiren ?? null}
+        // R-TVA-07: the regime of the day of the ticket, from the local history (works offline).
+        regime={regimeAt(
+          settings?.vatRegimes ?? [],
+          lastSale
+            ? shopFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(
+                new Date(lastSale.soldAt),
+              )
+            : '',
+        )}
+        vatOf={(id) => {
+          const p = products.find((x) => x.id === id);
+          // The donation product is out of the scope of VAT (code 01004).
+          return p ? { rate: p.vatRate, outOfScope: p.code === '01004' } : undefined;
+        }}
       />
     </div>
   );

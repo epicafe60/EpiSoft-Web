@@ -56,8 +56,8 @@ export const QUALITY_LABELS: Record<Quality, string> = {
   STANDARD: 'Courant',
 };
 
-/** VAT rates allowed in the catalogue (§2.4.2). Q1: the association is presumed not liable. */
-export const VAT_RATES = ['0.00', '5.50', '10.00', '20.00'] as const;
+/** VAT rates allowed in the catalogue (§2.4.2): the French rates, see vat.ts. */
+export const VAT_RATES = ['0.00', '2.10', '5.50', '10.00', '20.00'] as const;
 
 export const PRICE_SOURCES = ['FORM', 'RECEIPT', 'IMPORT', 'BULK', 'MIGRATION'] as const;
 

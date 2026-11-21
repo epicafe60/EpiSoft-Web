@@ -5,6 +5,7 @@ import {
   correctionSchema,
   inventoryCountSchema,
   invoiceSchema,
+  resolveInvoiceAmounts,
   labelsSchema,
   lossSchema,
   orderLineSchema,
@@ -128,42 +129,76 @@ describe('stock forms (R-STK-03/04)', () => {
   });
 });
 
-describe('invoices (R-FAC-01)', () => {
+describe('invoices (R-FAC-01, R-TVA-03)', () => {
   const base = {
     supplierId: id(),
     pieceRef: 'F-1',
     date: '2026-10-01',
-    totalExcl: '100',
-    totalVat: '0',
-    totalIncl: '100',
+    vatLines: [{ rate: '0', excl: '100', vat: '0' }],
     paymentMethod: null,
     comment: '',
   };
-  it('accepts a zero VAT and normalises amounts', () => {
+  it('accepts a zero VAT line and normalises amounts and rates', () => {
     const r = invoiceSchema.parse(base);
     expect(r).toMatchObject({
-      totalExcl: '100.00',
-      totalVat: '0.00',
-      totalIncl: '100.00',
+      vatLines: [{ rate: '0.00', excl: '100.00', vat: '0.00' }],
       receiptIds: [],
       comment: null,
     });
   });
-  it('keeps HT, VAT and TTC as typed, and refuses totals that do not add up', () => {
-    const r = invoiceSchema.parse({
+  it('accepts several rates and refuses a VAT that does not match its rate', () => {
+    const ok = invoiceSchema.parse({
       ...base,
-      totalExcl: '100',
-      totalVat: '5,50',
-      totalIncl: '105.50',
+      vatLines: [
+        { rate: '5,5', excl: '100', vat: '5,50' },
+        { rate: '20', excl: '50', vat: '10' },
+      ],
     });
-    expect(r).toMatchObject({ totalExcl: '100.00', totalVat: '5.50', totalIncl: '105.50' });
-    const bad = (o: object) => invoiceSchema.safeParse({ ...base, ...o }).success;
-    expect(bad({ totalExcl: '100', totalVat: '5,50', totalIncl: '105,51' })).toBe(false);
-    expect(bad({ totalExcl: '-100', totalVat: '-5,50', totalIncl: '-105,50' })).toBe(false);
-    expect(bad({ totalExcl: '100', totalVat: '-5', totalIncl: '95' })).toBe(false);
-    expect(bad({ totalExcl: '100', totalVat: '25', totalIncl: '125' })).toBe(false);
-    expect(bad({ totalExcl: '100', totalVat: '20', totalIncl: '120' })).toBe(true);
-    expect(invoiceSchema.safeParse({ ...base, totalIncl: '' }).success).toBe(false);
+    expect(ok.vatLines.map((l) => l.rate)).toEqual(['5.50', '20.00']);
+    const bad = (vatLines: object[]) => invoiceSchema.safeParse({ ...base, vatLines }).success;
+    expect(bad([{ rate: '5.5', excl: '100', vat: '5,53' }])).toBe(false);
+    expect(bad([{ rate: '5.5', excl: '100', vat: '5,52' }])).toBe(true);
+    expect(bad([{ rate: '7', excl: '100', vat: '7' }])).toBe(false);
+    expect(bad([{ rate: '20', excl: '-100', vat: '-20' }])).toBe(false);
+    expect(bad([{ rate: '20', excl: '100', vat: '25' }])).toBe(false);
+    expect(
+      bad([
+        { rate: '20', excl: '100', vat: '20' },
+        { rate: '20.00', excl: '10', vat: '2' },
+      ]),
+    ).toBe(false);
+    expect(bad([])).toBe(false); // neither a breakdown nor a total
+  });
+  it('amounts by regime (R-TVA-03)', () => {
+    const lines = invoiceSchema.parse({
+      ...base,
+      vatLines: [{ rate: '20', excl: '100', vat: '20' }],
+    }).vatLines;
+    expect(resolveInvoiceAmounts('LIABLE', { vatLines: lines })).toMatchObject({
+      ok: true,
+      totalIncl: '120.00',
+      totalVat: '20.00',
+    });
+    expect(resolveInvoiceAmounts('LIABLE', { vatLines: [], totalIncl: '120.00' })).toMatchObject({
+      ok: false,
+    });
+    for (const regime of ['FRANCHISE', 'EXEMPT'] as const) {
+      expect(resolveInvoiceAmounts(regime, { vatLines: [], totalIncl: '120.00' })).toMatchObject({
+        ok: true,
+        totalExcl: '120.00',
+        totalVat: '0.00',
+        totalIncl: '120.00',
+        lines: [],
+      });
+      expect(resolveInvoiceAmounts(regime, { vatLines: lines })).toMatchObject({
+        ok: true,
+        totalIncl: '120.00',
+      });
+      expect(resolveInvoiceAmounts(regime, { vatLines: lines, totalIncl: '130.00' })).toMatchObject(
+        { ok: false },
+      );
+      expect(resolveInvoiceAmounts(regime, { vatLines: [] })).toMatchObject({ ok: false });
+    }
   });
   it('requires a piece number', () => {
     expect(invoiceSchema.safeParse({ ...base, pieceRef: ' ' }).success).toBe(false);

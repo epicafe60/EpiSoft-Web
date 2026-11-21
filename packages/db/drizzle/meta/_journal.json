@@ -285,15 +285,43 @@
     {
       "idx": 40,
       "version": "7",
-      "when": 1794778153213,
-      "tag": "0040_retention_tables",
+      "when": 1794778040428,
+      "tag": "0040_lot_d_schema",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1794778171353,
-      "tag": "0041_retention_purge",
+      "when": 1794778050998,
+      "tag": "0041_lot_d_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795254145979,
+      "tag": "0042_vat_lines_and_regime",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795254155432,
+      "tag": "0043_vat_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795255353637,
+      "tag": "0044_retention_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795255363815,
+      "tag": "0045_retention_purge",
       "breakpoints": true
     }
   ]

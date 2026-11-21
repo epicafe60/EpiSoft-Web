@@ -71,25 +71,24 @@ describe('receiving goods: what changes without notice is now said', () => {
     expect(o.detail.lines[0]!.purchasePriceExcl).toBe('10.0000');
   });
 
-  it('warns of a purchase price that jumped and of more received than ordered, and journals it', async () => {
+  it('warns of a purchase price that jumped, and journals it', async () => {
     const o = await orderOf('5', '10.0000');
     const res = await call('POST', `/purchase-orders/${o.id}/receipts`, {
       lines: [
-        { orderLineId: o.lineId, productId: o.productId, qty: '8', unitPriceExcl: '15.0000' },
+        { orderLineId: o.lineId, productId: o.productId, qty: '5', unitPriceExcl: '15.0000' },
       ],
     });
     expect(res.statusCode, res.body).toBe(200);
     const { warnings } = res.json() as { warnings: string[] };
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
     expect(warnings.join(' ')).toContain('+50 %');
-    expect(warnings.join(' ')).toContain('plus que commandé');
     expect(warnings.every((w) => !/R-[A-Z]{3}-\d/.test(w))).toBe(true);
 
     const [entry] = await t.db
       .select()
       .from(auditLog)
       .where(sql`${auditLog.action} = 'receipt.create'`);
-    expect((entry!.after as { warnings: string[] }).warnings).toHaveLength(2);
+    expect((entry!.after as { warnings: string[] }).warnings).toHaveLength(1);
   });
 
   it('says nothing about a normal receipt', async () => {

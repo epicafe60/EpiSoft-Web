@@ -135,6 +135,13 @@ export const settingSchemas = {
     stockVariation: account,
     surplus: account,
     deficit: account,
+    // Added with the VAT breakdown (R-TVA-04): an older saved value takes these defaults and keeps
+    // the accounts the administrators chose.
+    vatCollected20: account.default(DEFAULT_ACCOUNTS.vatCollected20),
+    vatCollected10: account.default(DEFAULT_ACCOUNTS.vatCollected10),
+    vatCollected55: account.default(DEFAULT_ACCOUNTS.vatCollected55),
+    vatCollected21: account.default(DEFAULT_ACCOUNTS.vatCollected21),
+    vatDeductible: account.default(DEFAULT_ACCOUNTS.vatDeductible),
   }),
   /** R-SES-02 step 6: the closing report is sent to this address. */
   'pos.treasurerEmail': z.object({

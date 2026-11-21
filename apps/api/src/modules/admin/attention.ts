@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, notLike, sql } from 'drizzle-orm';
 import type { Db } from '@episoft/db';
 import { DEFAULT_THRESHOLDS, type Thresholds } from '@episoft/shared';
+import { tzSql } from '../../lib/dates';
 import { EMAIL_DISABLED_NOTE } from '../../lib/mail';
 import { REFUSAL_PREFIX } from '../../plugins/errors';
 import { backupRun, emailOutbox, integrityRun, syncRejection, errorLog } from '@episoft/db';
@@ -67,12 +68,25 @@ export async function computeAttention(
     link: '/surveillance',
   });
 
+  // A sale that broke a rule of the association (discount, transfer, member, price…) went through
+  // because the ticket was already printed: it stays here, as an error, until someone reviews it.
+  const blocking = sql`exists (select 1 from jsonb_array_elements(warnings) w where w ->> 'severity' = 'blocking')`;
+  add({
+    code: 'SALE_POLICY_BREACH',
+    severity: 'error',
+    count: await count(sql`select count(*)::int as n from app.sale
+      where warnings is not null and warnings_reviewed_at is null and ${blocking}`),
+    label:
+      'Ticket(s) vendu(s) en dehors des règles de la boutique (remise, virement, prix, adhérent…) : à vérifier.',
+    link: '/surveillance',
+  });
   add({
     code: 'SALE_WARNINGS',
     severity: 'warning',
     count: await count(sql`select count(*)::int as n from app.sale
       where warnings is not null and jsonb_array_length(warnings) > 0
-        and warnings_reviewed_at is null and sold_at > now() - interval '30 days'`),
+        and warnings_reviewed_at is null and sold_at > now() - interval '30 days'
+        and not ${blocking}`),
     label: 'Ticket(s) enregistré(s) avec un avertissement (prix inhabituel, stock négatif…).',
     link: '/surveillance',
   });
@@ -146,7 +160,7 @@ export async function computeAttention(
     code: 'BANK_TO_MATCH',
     severity: 'warning',
     count: await count(sql`select count(*)::int as n from app.bank_line
-      where status = 'NEW' and date < current_date - 30`),
+      where status = 'NEW' and date < (now() at time zone ${tzSql()})::date - 30`),
     label: 'Ligne(s) bancaire(s) à rapprocher depuis plus d’un mois.',
     link: '/compta/banque',
   });

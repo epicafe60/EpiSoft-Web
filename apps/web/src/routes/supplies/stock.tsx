@@ -28,6 +28,7 @@ interface ToOrder {
 interface Valuation {
   date: string;
   basis: 'excl' | 'incl';
+  methodLabel?: string;
   total: string;
   rows: {
     id: string;
@@ -251,6 +252,12 @@ export function StockPage() {
                 <span className="text-sm font-normal text-muted-foreground">
                   pour {valuation.data.rows.length} produits en stock
                 </span>
+              </p>
+            ) : null}
+            {valuation.data?.methodLabel ? (
+              <p className="text-sm text-muted-foreground">
+                Méthode : {valuation.data.methodLabel}. Les entrées pèsent dans la moyenne, les
+                sorties et pertes sont valorisées au coût moyen.
               </p>
             ) : null}
           </CardContent>

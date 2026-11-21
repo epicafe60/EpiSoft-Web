@@ -189,10 +189,10 @@ test('R-EVO-20: the supplier of an invoice is found by typing its first letters'
   await expect(page.locator(`datalist option[value="${SEED.honey.supplier}"]`)).toHaveCount(1);
   const field = page.getByPlaceholder('Premières lettres du fournisseur…');
   await field.fill(SEED.honey.supplier);
-  await page.getByLabel('Total HT (€)').fill('10');
+  await page.getByLabel('HT (€)').fill('10');
   await page.getByLabel('TVA (€)').fill('0,55');
-  await page.getByLabel('Total TTC').fill('10,55');
-  await expect(page.getByLabel('Total TTC')).toHaveValue('10,55');
+  // The total is the sum of the VAT lines, shown under them.
+  await expect(page.getByText(/TTC\s*10,55/)).toBeVisible();
 });
 
 test('R-EVO-04: at the till, the cagnotte is green while it covers the ticket, red once it does not', async ({
