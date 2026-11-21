@@ -11,6 +11,8 @@ import {
   userRole,
   type Db,
 } from '@episoft/db';
+import { identityAddress } from '@episoft/shared';
+import { loadRegimeChanges } from '../../lib/vat-regime';
 import type {
   MemberStatus,
   ProductKind,
@@ -140,6 +142,9 @@ export async function buildSnapshot(db: Db, since: Date | null): Promise<Snapsho
         ? settings['pos.scaleBarcodes'].valueKind
         : null,
       associationName: settings['association.identity'].name,
+      vatRegimes: await loadRegimeChanges(db),
+      associationAddress: identityAddress(settings['association.identity']),
+      associationSiren: settings['association.identity'].siren,
       cashierPinRequired: settings['pos.cashierSwitch'].requirePin,
       thresholds: settings['controls.thresholds'],
       // R-EVO-06: the open sessions of the shop (one drawer, several tills).

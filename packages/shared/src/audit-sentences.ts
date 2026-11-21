@@ -38,7 +38,10 @@ export const AUDIT_SENTENCES = {
   'entry.reverse': () => 'a contre-passé une écriture comptable',
   'fiscal_year.create': () => 'a créé un exercice comptable',
   'fiscal_year.close': () => 'a clôturé un exercice comptable',
-  'fiscal_year.reopen': () => 'a rouvert un exercice comptable',
+  'vat_regime.change': () => 'a changé le régime de TVA de l’association',
+  'fiscal_year.reopen': (a) => `a rouvert un exercice comptable${named(a, 'reason')}`,
+  'fiscal_year.approve': () =>
+    'a enregistré l’approbation des comptes d’un exercice par l’assemblée générale',
   'journal.create': () => 'a créé un journal comptable',
   'journal.update': () => 'a modifié un journal comptable',
   'template.create': () => 'a créé un guide de saisie',
@@ -144,6 +147,13 @@ export const AUDIT_SENTENCES = {
   'invoice.update': () => 'a modifié une facture fournisseur',
   'invoice.document': () => 'a joint le document d’une facture',
   'invoice.pay': () => 'a enregistré le paiement d’une facture fournisseur',
+  'invoice.cancel': (a) => `a annulé une facture fournisseur${named(a, 'reason')}`,
+  'invoice.payment_reverse': (a) =>
+    `a annulé le règlement d’une facture fournisseur${named(a, 'reason')}`,
+  'credit_note.create': () => 'a saisi un avoir fournisseur',
+  'credit_note.apply': () => 'a imputé un avoir fournisseur sur une facture',
+  'credit_note.unapply': () => 'a retiré l’imputation d’un avoir fournisseur',
+  'credit_note.cancel': (a) => `a annulé un avoir fournisseur${named(a, 'reason')}`,
   'stock.loss': () => 'a déclaré une perte de stock',
   'stock.correction': () => 'a corrigé un stock',
   'stock.batch.add': () => 'a ajouté une date limite de stock',
@@ -173,6 +183,9 @@ export const AUDIT_SENTENCES = {
     a?.kind === 'RESTORE_TEST'
       ? `Test de restauration ${a?.ok ? 'réussi' : 'en échec'}`
       : `Sauvegarde ${a?.ok ? 'réussie' : 'en échec'}`,
+  'retention.purge': (a) =>
+    `a purgé des données anciennes${typeof a?.total === 'number' ? ` (${a.total} ligne(s))` : ''}${a?.trigger === 'nightly' ? ' : purge de nuit' : ''}`,
+  'retention.archive_delete': (a) => `a supprimé une archive de purge${named(a, 'file')}`,
   'audit.revert': (a) =>
     `a annulé une action du journal${typeof a?.reason === 'string' && a.reason ? ` (motif : ${a.reason})` : ''}`,
 } satisfies Record<string, (after: After) => string>;

@@ -14,9 +14,6 @@ import {
   membershipType,
   product,
   sale,
-  productFavorite,
-  productReview,
-  pushSubscription,
   session,
   userRole,
   walletEntry,
@@ -25,6 +22,8 @@ import {
 } from '@episoft/db';
 import {
   communeCreateSchema,
+  CORRECTION_ADMIN_THRESHOLD_CENTS,
+  hasAnyRole,
   decimalToCents,
   householdPatchSchema,
   MEMBER_STATUSES,
@@ -44,9 +43,11 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toShopDate, tzSql } from '../../lib/dates';
+import { anonymizeMember } from './anonymize';
 import { afterIdentityChange, checkIdentityChange } from '../../lib/identity';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { consentHistory, recordConsent } from '../compliance/consents';
+import { loadSettings } from '../admin/settings-store';
 import { currentMembershipEnd, lockedBalanceCents } from '../pos/wallet';
 import { sendTopupReceipt } from '../pos/sync-service';
 
@@ -462,7 +463,10 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         const nowAsked: [ConsentPurpose, boolean | undefined][] = [
           ['NEWSLETTER', newsletter],
           ['IMAGE_RIGHTS', imageConsent],
-          ['EMAIL_RECEIPTS', fields.ticketEmailOptOut === undefined ? undefined : !fields.ticketEmailOptOut],
+          [
+            'EMAIL_RECEIPTS',
+            fields.ticketEmailOptOut === undefined ? undefined : !fields.ticketEmailOptOut,
+          ],
         ];
         for (const [purpose, granted] of nowAsked)
           if (granted !== undefined)
@@ -551,35 +555,9 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           .where(eq(member.id, req.params.id))
           .for('update');
         if (!m) throw notFound('Membre introuvable.');
-        await tx.delete(userRole).where(eq(userRole.memberId, m.id));
-        await tx.delete(session).where(eq(session.memberId, m.id));
-        // Free-text reviews and devices are personal data too.
-        await tx.delete(productReview).where(eq(productReview.memberId, m.id));
-        await tx.delete(productFavorite).where(eq(productFavorite.memberId, m.id));
-        await tx.delete(pushSubscription).where(eq(pushSubscription.memberId, m.id));
-        await tx
-          .update(member)
-          .set({
-            lastName: `Membre #${m.number}`,
-            firstName: '-',
-            street: null,
-            postcode: null,
-            communeId: null,
-            phone: null,
-            email: null,
-            username: null,
-            passwordHash: null,
-            qrTokenHash: null,
-            tillPasswordHash: null,
-            tillPasswordSalt: null,
-            newsletterOptInAt: null,
-            publicVisible: false,
-            status: 'ARCHIVED',
-          })
-          .where(eq(member.id, m.id));
-        await audit(tx, req, { action: 'member.anonymize', entity: 'member', entityId: m.id });
-        // R-MBR-08: the journals keep that something changed, not the personal values.
-        await tx.execute(sql`select app.scrub_member(${m.id}::uuid)`);
+        await anonymizeMember(tx, m, () =>
+          audit(tx, req, { action: 'member.anonymize', entity: 'member', entityId: m.id }),
+        );
       });
       return { ok: true };
     },
@@ -702,7 +680,41 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
       db.transaction(async (tx) => {
         const h = await tx.query.household.findFirst({ where: eq(household.id, req.params.id) });
         if (!h) throw notFound('Foyer introuvable.');
+        // Separation of duties: nobody corrects the cagnotte of their own household.
+        const [self] = await tx
+          .select({ householdId: member.householdId })
+          .from(member)
+          .where(eq(member.id, req.user!.id));
+        if (self?.householdId === h.id)
+          throw badRequest('Vous ne pouvez pas corriger la cagnotte de votre propre foyer.', [
+            { path: 'amount', message: 'Demandez à une autre personne de faire cette correction.' },
+          ]);
+        // A large correction needs an administrator (second pair of eyes).
+        const cents = decimalToCents(req.body.amount);
+        if (
+          Math.abs(cents) > CORRECTION_ADMIN_THRESHOLD_CENTS &&
+          !hasAnyRole(req.user!.roles, ['ADMIN'])
+        )
+          throw badRequest(
+            'Une correction de plus de 100 € doit être faite par un administrateur.',
+            [{ path: 'amount', message: 'Montant réservé aux administrateurs (plus de 100 €).' }],
+          );
         const before = await lockedBalanceCents(tx, h.id);
+        if (cents < 0) {
+          const overdraft = decimalToCents(
+            (await loadSettings(tx))['wallet.overdraftLimit'].amount,
+          );
+          if (before + cents < -overdraft)
+            throw badRequest(
+              'Cette correction ferait descendre la cagnotte sous le découvert autorisé.',
+              [
+                {
+                  path: 'amount',
+                  message: 'Le solde deviendrait inférieur au découvert autorisé.',
+                },
+              ],
+            );
+        }
         const [entry] = await tx
           .insert(walletEntry)
           .values({
@@ -739,6 +751,20 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
         if (!type) throw badRequest('Type d’adhésion inconnu.');
         const date = b.date ?? toShopDate(new Date());
         const amount = b.amount ?? type.price;
+        // The amount is the price of the type; another amount is an exception for an administrator, with a reason.
+        if (decimalToCents(amount) !== decimalToCents(type.price)) {
+          if (!hasAnyRole(req.user!.roles, ['ADMIN']))
+            throw badRequest('Le montant d’une adhésion est le tarif du type choisi.', [
+              {
+                path: 'amount',
+                message: `Le tarif est de ${type.price} € ; seul un administrateur peut déroger.`,
+              },
+            ]);
+          if (!b.reason)
+            throw badRequest('Indiquez le motif de ce montant différent du tarif.', [
+              { path: 'reason', message: 'Motif requis pour un montant différent du tarif.' },
+            ]);
+        }
         const [pay] = await tx
           .insert(memberPayment)
           .values({
@@ -771,7 +797,7 @@ export const memberRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           action: 'membership.create',
           entity: 'household',
           entityId: h.id,
-          after: ms,
+          after: b.reason ? { ...ms, reason: b.reason } : ms,
         });
         return ms;
       });

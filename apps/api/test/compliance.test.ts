@@ -63,9 +63,9 @@ describe('product information and claims', () => {
   });
 
   it('refuses a food product without ingredients, or honey without origin', async () => {
-    expect(
-      (await post(productBody({ isFood: true, allergensDecision: 'NONE' }))).statusCode,
-    ).toBe(400);
+    expect((await post(productBody({ isFood: true, allergensDecision: 'NONE' }))).statusCode).toBe(
+      400,
+    );
     const honey = productBody({
       isFood: true,
       ingredients: 'Miel',
@@ -81,11 +81,8 @@ describe('product information and claims', () => {
   it('refuses « local » without justification', async () => {
     expect((await post(productBody({ qualities: ['LOCAL'] }))).statusCode).toBe(400);
     expect(
-      (
-        await post(
-          productBody({ qualities: ['LOCAL'], localJustification: 'Ferme Durand, 5 km' }),
-        )
-      ).statusCode,
+      (await post(productBody({ qualities: ['LOCAL'], localJustification: 'Ferme Durand, 5 km' })))
+        .statusCode,
     ).toBe(200);
   });
 
@@ -100,13 +97,11 @@ describe('product information and claims', () => {
     expect(missing.statusCode).toBe(400);
     expect(missing.body).toMatch(/pas de certificat bio complet/);
 
-    await t.db
-      .update(supplier)
-      .set({
-        organicCertNumber: 'FR-BIO-01-1',
-        organicCertBody: 'Ecocert',
-        organicCertExpiry: day(-1),
-      });
+    await t.db.update(supplier).set({
+      organicCertNumber: 'FR-BIO-01-1',
+      organicCertBody: 'Ecocert',
+      organicCertExpiry: day(-1),
+    });
     const expired = await post(bio);
     expect(expired.statusCode).toBe(400);
     expect(expired.body).toMatch(/a expiré le/);
@@ -275,7 +270,12 @@ describe('lot traceability (178/2002)', () => {
         url: `/api/v1/traceability/lots/${lotB.id}`,
         headers: ap,
       })
-    ).json() as { soldQty: string; remainingQty: string; tickets: { member: { id: string } | null }[]; method: string };
+    ).json() as {
+      soldQty: string;
+      remainingQty: string;
+      tickets: { member: { id: string } | null }[];
+      method: string;
+    };
     expect(report.method).toBe('FEFO');
     expect(report.soldQty).toBe('3.000');
     expect(report.remainingQty).toBe('2.000');
@@ -416,15 +416,16 @@ describe('RGPD: consents and legal pages', () => {
 
   it('lets a member withdraw a consent, but not the information record', async () => {
     const m = await createUser(t.db, { roles: [] });
-    await t.db.update(member).set({ imageConsentAt: new Date() }).where(sql`id = ${m.id}`);
+    await t.db
+      .update(member)
+      .set({ imageConsentAt: new Date() })
+      .where(sql`id = ${m.id}`);
     const h = await login(t.app, m.username!);
     const put = (payload: object) =>
       t.app.inject({ method: 'PUT', url: '/api/v1/me/consents', headers: h, payload });
     const out = await put({ purpose: 'IMAGE_RIGHTS', granted: false });
     expect(out.statusCode).toBe(200);
-    const row = await t.db.execute(
-      sql`select image_consent_at from app.member where id = ${m.id}`,
-    );
+    const row = await t.db.execute(sql`select image_consent_at from app.member where id = ${m.id}`);
     expect((row.rows[0] as { image_consent_at: unknown }).image_consent_at).toBeNull();
     const none = await t.db.execute(
       sql`select count(*)::int as n from app.consent where member_id = ${m.id}`,
@@ -513,6 +514,9 @@ describe('RGPD: consents and legal pages', () => {
       'goods_receipt',
       'purchase_order',
       'supplier_invoice',
+      'supplier_credit_note',
+      'supplier_credit_allocation',
+      'vat_regime_change',
       'price_history',
       'stock_movement',
       'inventory_session',

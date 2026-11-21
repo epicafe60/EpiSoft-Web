@@ -7,11 +7,15 @@ import {
   membershipTypePatchSchema,
   positiveAmountInput,
   walletTopupSchema,
+  walletCorrectionSchema,
+  salePriceProblem,
+  purchasePricesProblem,
 } from './forms';
 import {
   inventoryCreateSchema,
   inventoryValidateSchema,
   invoicePaySchema,
+  invoiceSchema,
   orderCreateSchema,
   orderSchema,
   receiptCorrectionSchema,
@@ -155,5 +159,60 @@ describe('other supplies forms', () => {
     expect(pay('2026-11-08', 'TRANSFER')).toBe(true);
     expect(pay('8/11', 'TRANSFER')).toBe(false);
     expect(pay('2026-11-08', 'BITCOIN')).toBe(false);
+  });
+});
+
+describe('lot A: integrity of entries', () => {
+  const base = {
+    kind: 'GOODS',
+    salePrice: '1.00',
+    purchasePriceExcl: '2.0000',
+    vatRate: '5.50',
+  };
+  it('refuses a sale price of 0 for goods but not for a service', () => {
+    expect(salePriceProblem({ ...base, salePrice: '0.00' })?.path).toBe('salePrice');
+    expect(salePriceProblem({ ...base, kind: 'SERVICE', salePrice: '0.00' })).toBeNull();
+  });
+  it('refuses a resale at a loss unless a reason is given (L442-5)', () => {
+    expect(salePriceProblem(base)?.message).toMatch(/revente à perte/);
+    expect(salePriceProblem({ ...base, belowCostReason: 'Date courte' })).toBeNull();
+    // 2.00 HT at 5.5 % = 2.11 TTC: 2.11 is at cost, 2.10 is below.
+    expect(salePriceProblem({ ...base, salePrice: '2.11' })).toBeNull();
+    expect(salePriceProblem({ ...base, salePrice: '2.10' })).not.toBeNull();
+  });
+  it('checks the VAT amount against the rate, one cent apart', () => {
+    const p = { purchasePriceExcl: '10.0000', vatRate: '5.50' };
+    expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.5500' })).toBeNull();
+    expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.5600' })).toBeNull();
+    expect(purchasePricesProblem({ ...p, purchaseVatAmount: '0.7000' })).toMatch(
+      /taux de 5,5 % du produit/,
+    );
+    expect(
+      purchasePricesProblem({ purchasePriceExcl: '10.0000', purchaseVatAmount: '0.7000' }),
+    ).toBeNull();
+  });
+  it('caps top-ups, corrections and invoices', () => {
+    expect(walletTopupSchema.safeParse({ amount: '1000.01', method: 'CASH' }).success).toBe(false);
+    expect(walletTopupSchema.safeParse({ amount: '1000', method: 'CASH' }).success).toBe(true);
+    expect(
+      walletCorrectionSchema.safeParse({ amount: '-500.01', comment: 'erreur de saisie' }).success,
+    ).toBe(false);
+    expect(
+      walletCorrectionSchema.safeParse({ amount: '-500', comment: 'erreur de saisie' }).success,
+    ).toBe(true);
+    // The ceiling applies to the total derived from the VAT lines (R-TVA-03).
+    const inv = (vatLines: object[]) =>
+      invoiceSchema.safeParse({
+        supplierId: id(),
+        pieceRef: 'F-1',
+        date: '2026-10-01',
+        vatLines,
+        paymentMethod: null,
+        comment: '',
+      });
+    const tooBig = inv([{ rate: '0.00', excl: '100000.01', vat: '0' }]);
+    expect(tooBig.success).toBe(false);
+    expect(JSON.stringify(tooBig.error?.issues)).toMatch(/trop élevé/);
+    expect(inv([{ rate: '20.00', excl: '100.00', vat: '20.00' }]).success).toBe(true);
   });
 });

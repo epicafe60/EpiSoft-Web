@@ -22,6 +22,7 @@ import { SettingsPage } from './routes/admin/settings';
 import { UsersPage } from './routes/admin/users';
 import { AuditPage } from './routes/admin/audit';
 import { LoginsPage } from './routes/admin/logins';
+import { DatabasePage } from './routes/admin/database';
 import { MembershipTypesPage, TillAdminPage } from './routes/admin/till';
 import { NotFound, RouteError } from './routes/errors';
 import { MembersPage } from './routes/members/list';
@@ -32,6 +33,7 @@ import { EditProductPage, NewProductPage } from './routes/catalog/product-form';
 import { SuppliesLayout } from './routes/supplies/layout';
 import { OrderPage, OrdersPage } from './routes/supplies/orders';
 import { NewSupplierPage, SupplierPage, SuppliersPage } from './routes/supplies/suppliers';
+import { CreditNotesPage } from './routes/supplies/credit-notes';
 import { InvoicePage, InvoicesPage, NewInvoicePage } from './routes/supplies/invoices';
 import { TraceabilityPage } from './routes/supplies/traceability';
 import { RegisterPage } from './routes/admin/register';
@@ -336,6 +338,11 @@ const invoiceRoute = createRoute({
   path: '/factures/$id',
   component: InvoicePage,
 });
+const creditNotesRoute = createRoute({
+  getParentRoute: () => suppliesRoute,
+  path: '/avoirs',
+  component: CreditNotesPage,
+});
 const stockRoute = createRoute({
   getParentRoute: () => suppliesRoute,
   path: '/stock',
@@ -565,6 +572,11 @@ const adminLoginsRoute = createRoute({
   component: LoginsPage,
 });
 
+const adminDatabaseRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: '/base',
+  component: DatabasePage,
+});
 const adminTypesRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: '/adhesions',
@@ -625,6 +637,7 @@ const routeTree = rootRoute.addChildren([
       newSupplierRoute,
       supplierRoute,
       invoicesRoute,
+      creditNotesRoute,
       newInvoiceRoute,
       invoiceRoute,
       stockRoute,
@@ -662,6 +675,7 @@ const routeTree = rootRoute.addChildren([
       adminUsersRoute,
       adminAuditRoute,
       adminLoginsRoute,
+      adminDatabaseRoute,
       adminIntegrityRoute,
       adminTypesRoute,
       adminTillRoute,

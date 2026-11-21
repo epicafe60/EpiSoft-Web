@@ -26,6 +26,11 @@ afterAll(() => t.close());
 beforeEach(async () => {
   till = await openTill(t);
   ({ cashier, admin, deviceId, sessionId, cashierId } = till);
+  // These tests are about unusual tickets, not about the member rule (see integrity-entries).
+  await t.db.execute(
+    sql`insert into app.setting (key, value) values ('pos.options', '{"allowTransfer":false,"discountsEnabled":true,"membershipExpiredBlocking":false,"requireMemberFirst":false}'::jsonb)
+        on conflict (key) do update set value = excluded.value`,
+  );
 });
 
 const push = (ops: SyncOp[]) => till.push(ops);

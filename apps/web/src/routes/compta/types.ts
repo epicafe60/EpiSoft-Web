@@ -22,6 +22,9 @@ export interface FiscalYearRow {
   startDate: string;
   endDate: string;
   status: 'OPEN' | 'CLOSED';
+  /** Lot D: approval of the accounts by the general assembly (inalterable from then on). */
+  approvedOn?: string | null;
+  approvalReference?: string | null;
   entries: number;
   drafts: number;
 }

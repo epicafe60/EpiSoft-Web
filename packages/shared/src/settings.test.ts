@@ -30,6 +30,25 @@ describe('settings', () => {
     }
   });
 
+  it('an accounts setting saved before the VAT accounts keeps its accounts and takes the defaults', () => {
+    const old: Record<string, string> = {
+      ...SETTING_DEFAULTS['accounting.accounts'],
+      sales: '707100',
+    };
+    for (const k of [
+      'vatCollected20',
+      'vatCollected10',
+      'vatCollected55',
+      'vatCollected21',
+      'vatDeductible',
+    ])
+      delete old[k];
+    const r = settingSchemas['accounting.accounts'].parse(old);
+    expect(r.sales).toBe('707100');
+    expect(r.vatCollected20).toBe('445712');
+    expect(r.vatDeductible).toBe('445660');
+  });
+
   it('normalises amounts and refuses a negative overdraft (Q4)', () => {
     expect(settingSchemas['pos.defaultFloat'].parse({ amount: '50,5' })).toEqual({
       amount: '50.50',

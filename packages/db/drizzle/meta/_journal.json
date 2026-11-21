@@ -285,15 +285,57 @@
     {
       "idx": 40,
       "version": "7",
-      "when": 1794778513514,
-      "tag": "0040_traceability_consent",
+      "when": 1794778040428,
+      "tag": "0040_lot_d_schema",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1794778568196,
-      "tag": "0041_compliance_extras",
+      "when": 1794778050998,
+      "tag": "0041_lot_d_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795254145979,
+      "tag": "0042_vat_lines_and_regime",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795254155432,
+      "tag": "0043_vat_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795255353637,
+      "tag": "0044_retention_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795255363815,
+      "tag": "0045_retention_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795256533499,
+      "tag": "0046_traceability_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795256540368,
+      "tag": "0047_compliance_extras",
       "breakpoints": true
     }
   ]

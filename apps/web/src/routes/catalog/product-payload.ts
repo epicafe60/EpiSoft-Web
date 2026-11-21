@@ -49,6 +49,7 @@ export interface ProductFormState {
   origin: string;
   originFamily: OriginFamily | '';
   localJustification: string;
+  belowCostReason: string;
 }
 
 export const EMPTY_PRODUCT_FORM: ProductFormState = {
@@ -84,6 +85,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormState = {
   origin: '',
   originFamily: '',
   localJustification: '',
+  belowCostReason: '',
 };
 
 const dec = (v: string | null) =>
@@ -131,6 +133,7 @@ export function productToForm(p: ProductDetail): ProductFormState {
     origin: p.origin ?? '',
     originFamily: p.originFamily ?? '',
     localJustification: p.localJustification ?? '',
+    belowCostReason: '',
   };
 }
 
@@ -168,6 +171,7 @@ export function productToPayload(f: ProductFormState): ProductCreate {
     origin: f.isFood ? f.origin : '',
     originFamily: f.isFood && f.originFamily ? f.originFamily : null,
     localJustification: f.qualities.includes('LOCAL') ? f.localJustification : '',
+    ...(f.belowCostReason.trim() ? { belowCostReason: f.belowCostReason.trim() } : {}),
     ...(f.code ? { code: f.code } : {}),
   });
 }
@@ -205,6 +209,7 @@ const FIELD_LABELS: Record<string, string> = {
   origin: 'Origine',
   originFamily: 'Famille d’origine obligatoire',
   localJustification: 'Justification « local »',
+  belowCostReason: 'Motif de vente sous le prix d’achat',
 };
 
 /** « Prix de vente TTC : Montant invalide. » for each refused field, so the user knows where to look. */

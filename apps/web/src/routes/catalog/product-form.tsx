@@ -583,6 +583,16 @@ function ProductForm({ product, notice }: { product: ProductDetail | null; notic
                   ? `Taux de marque : ${margin.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % (Q2, définition à valider).`
                   : ''}
               </p>
+              {errors.salePrice && /revente à perte/.test(errors.salePrice) ? (
+                <div className="grid gap-2">
+                  {text(
+                    'belowCostReason',
+                    'Motif de vente sous le prix d’achat',
+                    {},
+                    'Exception exceptionnelle (produit périssable menacé, fin de série) : le motif est conservé dans le journal.',
+                  )}
+                </div>
+              ) : null}
               {belowCost ? (
                 <Alert>
                   Le prix de vente est inférieur au prix d’achat TTC : chaque vente fera perdre de

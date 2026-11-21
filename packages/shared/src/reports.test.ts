@@ -151,8 +151,48 @@ describe('FEC (R-CPT-19)', () => {
     expect(head!.split('\t')).toEqual([...FEC_COLUMNS]);
     const cells = row!.split('\t');
     expect(cells).toHaveLength(18);
-    expect(cells.slice(3, 7)).toEqual(['20260203', '401005', 'Les Bons Miels', '401005']);
+    // CompteNum is the collective account, CompAuxNum the supplier's own (official layout).
+    expect(cells.slice(3, 9)).toEqual([
+      '20260203',
+      '401000',
+      'Fournisseurs',
+      '401005',
+      'Les Bons Miels',
+      'F-12',
+    ]);
     expect(cells.slice(11, 16)).toEqual(['0,00', '255,64', 'AA', '20260301', '20260401']);
     expect(cells[10]).toBe('Facture miel');
+  });
+});
+
+describe('FEC layout (art. A47 A-1 LPF)', () => {
+  const base = {
+    journalCode: 'VTE',
+    journalLabel: 'Ventes',
+    entryNumber: 'VTE-2026-0001',
+    date: '2026-02-03',
+    accountLabel: 'Ventes',
+    pieceRef: null,
+    label: 'Caisse',
+    debitCents: 0,
+    creditCents: 100,
+    lettering: null,
+    letteredOn: null,
+    validatedOn: '2026-02-04',
+  };
+
+  it('keeps a general account as it is, falls back to the entry number as piece reference', () => {
+    const [, row] = buildFec([{ ...base, account: '707000' }]).split('\r\n');
+    const c = row!.split('\t');
+    expect(c.slice(4, 8)).toEqual(['707000', 'Ventes', '', '']);
+    expect(c[8]).toBe('VTE-2026-0001');
+    expect(c[17]).toBe('');
+  });
+
+  it('writes member accounts as 411000 with the auxiliary account', () => {
+    const [, row] = buildFec([{ ...base, account: '411012', accountLabel: 'Dupont' }]).split(
+      '\r\n',
+    );
+    expect(row!.split('\t').slice(4, 8)).toEqual(['411000', 'Clients', '411012', 'Dupont']);
   });
 });

@@ -3,14 +3,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_THRESHOLDS,
   THRESHOLD_LABELS,
+  VAT_REGIME_LABELS,
+  VAT_REGIMES,
+  type VatRegime,
   type SettingKey,
   type Settings,
 } from '@episoft/shared';
 import { api, ApiError } from '@/lib/api';
+import { formatDate, todayIso } from '@/lib/format';
+import { useVatRegime } from '@/lib/vat-regime';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, Checkbox, Field, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
+import { useConfirm } from '@/components/confirm';
 import { QueryError } from '../errors';
 import { ImagePicker } from './email/rich-editor';
 import { brandingLogoUrl, DEFAULT_BRANDING } from '@episoft/shared';
@@ -33,6 +39,11 @@ const ACCOUNT_FIELDS = [
   ['stockVariation', 'Variation de stock'],
   ['surplus', 'Résultat : excédent'],
   ['deficit', 'Résultat : déficit'],
+  ['vatCollected20', 'TVA collectée 20 %'],
+  ['vatCollected10', 'TVA collectée 10 %'],
+  ['vatCollected55', 'TVA collectée 5,5 %'],
+  ['vatCollected21', 'TVA collectée 2,1 %'],
+  ['vatDeductible', 'TVA déductible'],
 ] as const;
 
 /** One card per setting key, saved independently (R-ADM-01). */
@@ -71,8 +82,24 @@ function SettingCard<K extends SettingKey>({
   const errors = save.error instanceof ApiError ? save.error.fieldErrors() : {};
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
 
-  const submit = (e: FormEvent) => {
+  const confirm = useConfirm();
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
+    // The time zone decides the day of every ticket, closing and statistic: ask before changing it.
+    if (
+      settingKey === 'app.timezone' &&
+      !(await confirm({
+        title: 'Changer le fuseau horaire ?',
+        message:
+          'Le fuseau horaire détermine le jour de chaque ticket, de chaque clôture et de chaque statistique. Il s’applique tout de suite, pour toute la boutique.',
+        impact: [
+          'Les tickets déjà enregistrés ne changent pas, mais leur jour affiché peut changer.',
+        ],
+        confirmLabel: 'Changer le fuseau',
+        destructive: true,
+      }))
+    )
+      return;
     save.mutate(value);
   };
 
@@ -143,6 +170,78 @@ function LogoField({
         }}
       />
     </div>
+  );
+}
+
+/** R-TVA-07: the VAT regime, effective from a date, with its history (past operations never change). */
+function VatRegimeCard() {
+  const queryClient = useQueryClient();
+  const info = useVatRegime();
+  const [regime, setRegime] = useState<VatRegime>('LIABLE');
+  const [from, setFrom] = useState(todayIso());
+  const save = useMutation({
+    mutationFn: () => api.post('/vat-regime', { regime, effectiveFrom: from }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vat-regime'] }),
+  });
+  const history = [...(info.data?.changes ?? [])].reverse();
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Régime de TVA</CardTitle>
+        <CardDescription>
+          Assujettie : TVA par taux sur les tickets, les clôtures et les états, écritures de TVA.
+          Franchise en base (art. 293 B) ou exonérée (art. 261) : aucune TVA facturée ni
+          récupérable, les ventes sont comptées TTC et les factures fournisseurs en charge TTC. Un
+          changement s’applique à partir d’une date et ne modifie jamais les opérations passées.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <p className="text-sm">
+          Régime actuel : <strong>{VAT_REGIME_LABELS[info.data?.current ?? 'LIABLE']}</strong>
+        </p>
+        <form
+          className="grid gap-3 sm:grid-cols-[1fr_12rem_auto] sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate();
+          }}
+        >
+          <Field label="Nouveau régime">
+            {(p) => (
+              <Select
+                {...p}
+                value={regime}
+                onChange={(e) => setRegime(e.target.value as VatRegime)}
+              >
+                {VAT_REGIMES.map((r) => (
+                  <option key={r} value={r}>
+                    {VAT_REGIME_LABELS[r]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="À partir du">
+            {(p) => (
+              <Input {...p} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            )}
+          </Field>
+          <Button type="submit" disabled={save.isPending}>
+            Enregistrer
+          </Button>
+        </form>
+        {save.isError ? <Alert>{save.error.message}</Alert> : null}
+        {history.length ? (
+          <ul className="text-sm text-muted-foreground">
+            {history.map((c) => (
+              <li key={c.effectiveFrom}>
+                Depuis le {formatDate(c.effectiveFrom)} : {VAT_REGIME_LABELS[c.regime]}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -723,6 +822,8 @@ export function SettingsPage() {
             </Field>
           )}
         </SettingCard>
+
+        <VatRegimeCard />
 
         <SettingCard
           settingKey="accounting.accounts"

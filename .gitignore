@@ -30,3 +30,6 @@ apps/web/.vite/
 
 # Security audit reports: they list findings that are not all fixed, and the repository is public.
 /apps/audit/
+
+# Purge archives (personal data)
+archives/

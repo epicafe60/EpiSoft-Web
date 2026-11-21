@@ -5,6 +5,7 @@ import { DEFAULT_THRESHOLDS } from './controls';
 import { brandingSchema, DEFAULT_BRANDING } from './branding';
 import { DEFAULT_LEGAL_TEXTS, legalTextsSchema } from './legal';
 import { DEFAULT_TIME_ZONE, isValidTimeZone } from './timezone';
+import { DEFAULT_RETENTION, retentionSchema } from './retention';
 
 // Settings editable in the app (spec §4.15 R-ADM-01). Each key has its own schema.
 // Lot 0 covers the general settings; later lots add their keys here.
@@ -38,6 +39,8 @@ export const settingSchemas = {
       .trim()
       .refine(isValidTimeZone, 'Fuseau horaire inconnu (exemple : Europe/Paris).'),
   }),
+  /** Data retention (ADR 0017): durations per class, nightly purge, anonymisation, size alerts. */
+  'data.retention': retentionSchema,
   'association.identity': z.object({
     name: z.string().trim().min(1, 'Nom requis.').max(200),
     street: optionalText(200),
@@ -135,6 +138,13 @@ export const settingSchemas = {
     stockVariation: account,
     surplus: account,
     deficit: account,
+    // Added with the VAT breakdown (R-TVA-04): an older saved value takes these defaults and keeps
+    // the accounts the administrators chose.
+    vatCollected20: account.default(DEFAULT_ACCOUNTS.vatCollected20),
+    vatCollected10: account.default(DEFAULT_ACCOUNTS.vatCollected10),
+    vatCollected55: account.default(DEFAULT_ACCOUNTS.vatCollected55),
+    vatCollected21: account.default(DEFAULT_ACCOUNTS.vatCollected21),
+    vatDeductible: account.default(DEFAULT_ACCOUNTS.vatDeductible),
   }),
   /** R-SES-02 step 6: the closing report is sent to this address. */
   'pos.treasurerEmail': z.object({
@@ -174,6 +184,7 @@ export const SETTING_KEYS = Object.keys(settingSchemas) as SettingKey[];
 export const SETTING_DEFAULTS: Settings = {
   'app.branding': { ...DEFAULT_BRANDING },
   'app.timezone': { timeZone: DEFAULT_TIME_ZONE },
+  'data.retention': DEFAULT_RETENTION,
   'association.identity': {
     name: 'Épicafé de Montjavoult',
     street: null,
