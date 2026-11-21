@@ -45,6 +45,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { afterIdentityChange, rolesOf } from '../../lib/identity';
+import { foodInfoEnabled } from '../catalog/food-info';
 import { headerFileName } from '../../lib/files';
 import { badRequest, forbidden } from '../../lib/problem';
 import { lockedBalanceCents } from '../pos/wallet';
@@ -498,6 +499,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           });
       }
       if (kind === 'products') {
+        const foodInfo = await foodInfoEnabled(tx);
         const { plan, supplierIds } = await planProducts(tx, file.records, supplierMap);
         for (const r of plan) {
           const v = r.value;
@@ -508,7 +510,7 @@ export const importRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = a
           const supplierId = v.supplierName ? (supplierIds.get(v.supplierName) ?? null) : null;
           if (r.action === 'create') {
             const foodIncomplete =
-              v.isFood && (!v.allergensDecision || (v.ingredients ?? '').length < 2);
+              foodInfo && v.isFood && (!v.allergensDecision || (v.ingredients ?? '').length < 2);
             if (foodIncomplete) result.incompleteFood++;
             const vat = v.vatRate === null ? '0' : String(v.vatRate);
             const [created] = await tx

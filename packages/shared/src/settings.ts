@@ -59,6 +59,11 @@ export const settingSchemas = {
   }),
   /** The two public pages (mentions légales, politique de confidentialité): texts written by the association. */
   'legal.texts': legalTextsSchema,
+  /**
+   * Information of the consumer on the food products (règlement UE 1169/2011): allergens, ingredients,
+   * net quantity, origin. An option: off, nothing is asked, printed or shown about it.
+   */
+  'catalog.foodInfo': z.object({ enabled: z.boolean() }),
   'pos.defaultFloat': z.object({ amount }),
   // Q4 (open): default is no overdraft (0 €). Flagged in spec §11.3.
   'wallet.overdraftLimit': z.object({
@@ -196,6 +201,7 @@ export const SETTING_DEFAULTS: Settings = {
     phone: null,
   },
   'legal.texts': { ...DEFAULT_LEGAL_TEXTS },
+  'catalog.foodInfo': { enabled: false },
   'pos.defaultFloat': { amount: '0.00' },
   'wallet.overdraftLimit': { amount: '0.00' },
   'pos.sellToNonMembers': { enabled: true },

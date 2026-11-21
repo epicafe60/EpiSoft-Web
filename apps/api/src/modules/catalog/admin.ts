@@ -29,6 +29,7 @@ import { toShopDate } from '../../lib/dates';
 import { eur, pdfText, render } from '../../lib/pdf';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { loadSettings } from '../admin/settings-store';
+import { foodInfoEnabled } from './food-info';
 
 const idParams = { params: z.object({ id: z.string().uuid() }) };
 
@@ -270,9 +271,10 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
       // A label states what the law requires of the product: no label for a food product whose
       // allergens, ingredients or origin are missing, nor for a « bio » claim nothing backs.
       const today = toShopDate(new Date());
+      const foodInfo = await foodInfoEnabled(db);
       const refused: string[] = [];
       for (const p of prods) {
-        const food = foodInfoProblems(p)[0];
+        const food = foodInfoProblems(p, { foodInfo })[0];
         if (food) refused.push(`${p.name} : ${food.message}`);
         else if ((p.qualities as Quality[]).includes('ORGANIC')) {
           const bio = organicClaimProblem(
@@ -346,9 +348,9 @@ export const catalogAdminRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
             // product has a weight or volume) and supplier (nothing without one).
             const legal: string[] = [];
             // Allergens first, never cut: they are what the law requires on a loose or relabelled product.
-            const allergens = p.isFood ? allergenSentence(p) : null;
+            const allergens = foodInfo && p.isFood ? allergenSentence(p) : null;
             if (allergens) legal.push(allergens);
-            if (p.origin) legal.push(`Origine : ${p.origin}`);
+            if (foodInfo && p.origin) legal.push(`Origine : ${p.origin}`);
             if (p.qualities.includes('LOCAL') && p.localJustification)
               legal.push(`Local : ${p.localJustification}`);
             if (p.qualities.includes('ORGANIC') && p.organicNumber)

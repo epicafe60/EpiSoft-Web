@@ -248,6 +248,8 @@ export interface ProductDetail {
 }
 
 export interface CatalogRefs {
+  /** The association asks for allergens, ingredients and origin on food (an option). */
+  foodInfo: boolean;
   universes: { id: string; code: string; name: string; sort: number }[];
   categories: {
     id: string;

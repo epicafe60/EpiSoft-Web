@@ -20,7 +20,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge, Card, Table } from '@/components/ui/card';
 import { Checkbox, Input, Label } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
-import type { ProductListItem } from '@/lib/types';
+import type { CatalogRefs, ProductListItem } from '@/lib/types';
 import { PageHeader } from '../shell';
 import { SortTh, useSort, NoMatchRow } from '@/components/ui/sortable';
 import { QueryError } from '../errors';
@@ -59,6 +59,13 @@ export function ProductsPage() {
     queryKey: ['suppliers', 'active'],
     queryFn: () => api.get<{ id: string; name: string }[]>('/suppliers?active=true'),
   });
+  // The allergens and the ingredients are an option (Administration › Paramètres).
+  const foodInfo =
+    useQuery({
+      queryKey: ['catalog-refs'],
+      queryFn: () => api.get<CatalogRefs>('/catalog/refs'),
+      staleTime: 60_000,
+    }).data?.foodInfo ?? false;
   const sort = useSort(data, PRODUCT_SORT);
   const labelsDone = useMutation({
     mutationFn: (ids: string[]) => api.post('/products/labels/done', { ids }),
@@ -213,7 +220,7 @@ export function ProductsPage() {
                             ) : null}
                             {p.kind === 'SERVICE' ? <Badge variant="muted">Service</Badge> : null}
                             {p.labelPending ? <Badge>Étiquette</Badge> : null}
-                            {foodInfoProblems(p).length ? (
+                            {foodInfoProblems(p, { foodInfo }).length ? (
                               <Badge variant="destructive">Infos à compléter</Badge>
                             ) : null}
                             {p.qualities.includes('ORGANIC') && p.organic !== 'VALID' ? (
@@ -226,8 +233,8 @@ export function ProductsPage() {
                     <td className="hidden text-muted-foreground md:table-cell">{p.categoryName}</td>
                     <td className="hidden max-w-64 text-xs text-muted-foreground lg:table-cell">
                       {[
-                        p.isFood ? allergenSentence(p) : null,
-                        p.origin ? `Origine : ${p.origin}` : null,
+                        foodInfo && p.isFood ? allergenSentence(p) : null,
+                        foodInfo && p.origin ? `Origine : ${p.origin}` : null,
                       ]
                         .filter(Boolean)
                         .join(' ')}

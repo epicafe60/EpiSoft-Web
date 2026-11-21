@@ -34,6 +34,7 @@ import {
 import type { Config } from '../../config';
 import { audit } from '../../lib/audit';
 import { toShopDate } from '../../lib/dates';
+import { foodInfoEnabled } from './food-info';
 import { badRequest, conflict, notFound } from '../../lib/problem';
 import { fold } from '../members/routes';
 
@@ -56,6 +57,8 @@ export const catalogRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
 
   /** Lists for the product form and filters. */
   app.get('/catalog/refs', readers, async () => ({
+    // Whether the sheet asks for allergens, ingredients and origin (an option).
+    foodInfo: await foodInfoEnabled(db),
     universes: await db.select().from(universe).orderBy(universe.sort, universe.code),
     categories: await db.select().from(category).orderBy(category.sort, category.code),
     suppliers: await db
@@ -498,7 +501,7 @@ async function assertClaims(
   p: FoodInfo & { supplierId?: string | null },
   checkOrganic: boolean,
 ) {
-  const problems = foodInfoProblems(p);
+  const problems = foodInfoProblems(p, { foodInfo: await foodInfoEnabled(tx) });
   if (problems.length)
     throw badRequest(
       problems[0]!.message,

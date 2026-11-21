@@ -42,12 +42,21 @@ const productBody = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The option « information du consommateur » (Administration › Paramètres). */
+const setFoodInfo = (enabled: boolean) =>
+  t.db.execute(
+    sql`insert into app.setting (key, value) values ('catalog.foodInfo', ${JSON.stringify({ enabled })}::jsonb)
+        on conflict (key) do update set value = excluded.value`,
+  );
+
 describe('product information and claims', () => {
   let h: Record<string, string>;
   beforeEach(async () => {
     await t.reset();
     await t.db.execute(sql`delete from app.supplier`);
     h = await login(t.app, (await createUser(t.db, { roles: ['PRODUITS'] })).username!);
+    // The information on food is an option: in these tests it is switched on.
+    await setFoodInfo(true);
   });
   const post = (payload: object) =>
     t.app.inject({ method: 'POST', url: '/api/v1/products', headers: h, payload });
@@ -202,6 +211,93 @@ describe('product information and claims', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toMatch(/pdf/);
+  });
+});
+
+describe('the information on food is an option (Administration › Paramètres)', () => {
+  let h: Record<string, string>;
+  let admin: Record<string, string>;
+  beforeEach(async () => {
+    await t.reset();
+    await t.db.execute(sql`delete from app.supplier`);
+    h = await login(t.app, (await createUser(t.db, { roles: ['PRODUITS'] })).username!);
+    admin = await login(t.app, (await createUser(t.db, { roles: ['ADMIN'] })).username!);
+  });
+  const post = (payload: object) =>
+    t.app.inject({ method: 'POST', url: '/api/v1/products', headers: h, payload });
+  const refs = async () =>
+    (await t.app.inject({ url: '/api/v1/catalog/refs', headers: h })).json() as {
+      foodInfo: boolean;
+    };
+  const attention = async () =>
+    (await t.app.inject({ url: '/api/v1/admin/attention', headers: admin })).json() as {
+      code: string;
+      count: number;
+    }[];
+
+  it('is off until an administrator switches it on, and asks for nothing then', async () => {
+    expect((await refs()).foodInfo).toBe(false);
+    // A food product with nothing about allergens, ingredients or origin is accepted.
+    const bare = await post(productBody({ isFood: true }));
+    expect(bare.statusCode).toBe(200);
+    // The claim « local » is still justified, whatever the option.
+    expect((await post(productBody({ qualities: ['LOCAL'] }))).statusCode).toBe(400);
+    // No alert, no refusal of the label, the product stays in the shop.
+    expect((await attention()).find((i) => i.code === 'FOOD_INFO_MISSING')?.count ?? 0).toBe(0);
+    const { id } = bare.json() as { id: string };
+    const label = await t.app.inject({
+      method: 'POST',
+      url: '/api/v1/products/labels/pdf',
+      headers: h,
+      payload: { productIds: [id] },
+    });
+    expect(label.statusCode).toBe(200);
+  });
+
+  it('switched on from the administration, it applies at once, and off again keeps what was typed', async () => {
+    const on = await t.app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/catalog.foodInfo',
+      headers: admin,
+      payload: { enabled: true },
+    });
+    expect(on.statusCode).toBe(200);
+    expect((await refs()).foodInfo).toBe(true);
+    const refused = await post(productBody({ isFood: true, ingredients: 'Blé' }));
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toMatch(/Allergènes/);
+    const ok = await post(
+      productBody({
+        isFood: true,
+        ingredients: 'Blé',
+        allergensDecision: 'LISTED',
+        allergens: ['GLUTEN'],
+      }),
+    );
+    expect(ok.statusCode).toBe(200);
+
+    await t.app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/catalog.foodInfo',
+      headers: admin,
+      payload: { enabled: false },
+    });
+    expect((await refs()).foodInfo).toBe(false);
+    const [kept] = await t.db
+      .select()
+      .from(product)
+      .where(sql`${product.ingredients} = 'Blé'`);
+    expect(kept).toMatchObject({ allergensDecision: 'LISTED', allergens: ['GLUTEN'] });
+  });
+
+  it('is reserved to the administrators', async () => {
+    const res = await t.app.inject({
+      method: 'PUT',
+      url: '/api/v1/settings/catalog.foodInfo',
+      headers: h,
+      payload: { enabled: true },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });
 
