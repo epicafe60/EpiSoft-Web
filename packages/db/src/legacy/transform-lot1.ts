@@ -362,3 +362,15 @@ function vatAmount4(excl: string | null, incl: string | null): string | null {
     4,
   );
 }
+
+/**
+ * The universes of the food products (1 épicerie salée, 2 épicerie sucrée, 3 produits frais,
+ * 4 liquides): the products of these universes are marked as food on creation, with their
+ * allergens, ingredients and origin still to be filled in (règlement UE 1169/2011).
+ */
+export const FOOD_UNIVERSE_CODES = ['1', '2', '3', '4'] as const;
+
+export const isFoodUniverse = (kind: string, universeCode: string | null): boolean =>
+  kind === 'GOODS' &&
+  universeCode !== null &&
+  (FOOD_UNIVERSE_CODES as readonly string[]).includes(universeCode);

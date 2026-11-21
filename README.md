@@ -73,6 +73,17 @@ Cagnotte (R-CAG-02): from the first day of the real ticket history, balances are
 migrated tickets themselves; the legacy `01011` debits of that period, which did not always match
 the tickets, are not imported. Older debits are kept as they are.
 
+The import follows the rules of the new application without inventing anything: the products of the
+food universes (1 to 4) are marked as food on creation (allergens and ingredients left to complete);
+the opening stock enters at the known purchase price (weighted average cost); each supplier invoice
+is taken over under one VAT regime, `--vat-regime LIABLE|FRANCHISE|EXEMPT` (default **EXEMPT**, to be
+confirmed with the accountant), which also becomes the regime in force when none is recorded yet; under
+LIABLE only, each invoice gets a breakdown by VAT rate rebuilt from its three totals (exact on one
+standard rate, estimated on two rates otherwise, said in the report); tickets keep no seal (ADR 0016). The Excel report has a
+« Conformité » sheet listing what a person still has to complete: « bio » products without
+certificate, « local » products without justification, prices below cost, members with no consent
+trace.
+
 ## Deployment
 
 `docker/compose.yml` brings up PostgreSQL (from `deploy/db`), the application and Caddy

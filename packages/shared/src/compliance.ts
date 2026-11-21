@@ -127,7 +127,10 @@ export interface FoodProblem {
  * leaves out the allergens, the ingredients, the net quantity and the origin: the claims (« local »)
  * and the coherence of the sheet are still checked.
  */
-export function foodInfoProblems(p: FoodInfo, opts: { foodInfo?: boolean } = {}): FoodProblem[] {
+export function foodInfoProblems(
+  p: FoodInfo,
+  opts: { foodInfo?: boolean; claims?: boolean } = {},
+): FoodProblem[] {
   const foodInfo = opts.foodInfo !== false;
   const out: FoodProblem[] = [];
   const add = (path: string, message: string) => out.push({ path, message });
@@ -167,7 +170,13 @@ export function foodInfoProblems(p: FoodInfo, opts: { foodInfo?: boolean } = {})
     if (p.originFamily)
       add('originFamily', 'Une famille d’origine obligatoire ne concerne que l’alimentaire.');
   }
-  if ((p.qualities ?? []).includes('LOCAL') && (p.localJustification?.trim().length ?? 0) < 8)
+  // The claims are checked when they are made or changed: a product taken over from the previous
+  // software keeps its « local » mention until someone touches the claim (`claims: false`).
+  if (
+    opts.claims !== false &&
+    (p.qualities ?? []).includes('LOCAL') &&
+    (p.localJustification?.trim().length ?? 0) < 8
+  )
     add(
       'localJustification',
       'Un produit « local » doit être justifié : indiquez le producteur et la distance ou le lieu (par exemple « Ferme Durand, Montjavoult, 5 km »).',
@@ -176,8 +185,10 @@ export function foodInfoProblems(p: FoodInfo, opts: { foodInfo?: boolean } = {})
 }
 
 /** The first problem as a sentence, or null. */
-export const foodInfoProblem = (p: FoodInfo, opts: { foodInfo?: boolean } = {}): string | null =>
-  foodInfoProblems(p, opts)[0]?.message ?? null;
+export const foodInfoProblem = (
+  p: FoodInfo,
+  opts: { foodInfo?: boolean; claims?: boolean } = {},
+): string | null => foodInfoProblems(p, opts)[0]?.message ?? null;
 
 /** The fields of a product sheet whose change makes the food information worth checking again. */
 export const FOOD_INFO_TRIGGERS = [

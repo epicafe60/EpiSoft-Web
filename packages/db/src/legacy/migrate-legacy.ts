@@ -22,10 +22,15 @@ import {
   cleanText,
   parseAmountToCents,
   sha256Hex,
+  VAT_REGIMES,
   type RoleCode,
+  type VatRegime,
 } from '@episoft/shared';
 import { createDb, createPool, loadEnv, REPO_ROOT, requireEnv, type Tx } from '../index';
 import * as s from '../schema';
+import { reportCompliance } from './compliance';
+import { ensureRegimeHistory } from './regime';
+import { importOptions } from './options';
 import { DEFAULT_LEGACY_CONFIG, openLegacySource, type LegacySource } from './source';
 import {
   mergeRoles,
@@ -53,11 +58,17 @@ const { values: args } = parseArgs({
   args: process.argv.slice(2).filter((a) => a !== '--'),
   options: {
     'dry-run': { type: 'boolean', default: false },
+    'vat-regime': { type: 'string' },
     local: { type: 'boolean' },
     remote: { type: 'boolean' },
     config: { type: 'string' },
   },
 });
+
+const wantedRegime = (args['vat-regime'] ?? 'EXEMPT').toUpperCase();
+if (!(VAT_REGIMES as readonly string[]).includes(wantedRegime))
+  throw new Error(`--vat-regime : LIABLE, FRANCHISE ou EXEMPT (reçu : ${wantedRegime})`);
+importOptions.vatRegime = wantedRegime as VatRegime;
 
 loadEnv();
 const configPath = args.config ?? process.env.LEGACY_CONFIG ?? DEFAULT_LEGACY_CONFIG;
@@ -81,6 +92,9 @@ try {
     await migrateLot1(legacy, tx, { counts, issues, sheets });
     await migrateLot2(legacy, tx, { counts, issues, sheets });
     await migrateLot3(legacy, tx, { counts, issues, sheets });
+    await ensureRegimeHistory(tx);
+    // What the imported data still lacks against the rules of the new application.
+    await reportCompliance(tx, { counts, issues, sheets });
     if (args['dry-run']) throw new Rollback();
   });
   console.log('Migration validée.');

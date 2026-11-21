@@ -99,7 +99,7 @@ Le principe de l'équipe du 15/11 (« pas de contrôle, d'avertissement ni de mo
 
 ## 6. Effets de bord et points ouverts connus
 
-- **Reprise de l'ancien logiciel** : les produits importés n'ont ni information alimentaire ni certificat « bio » (142 produits « bio » sans certificat), 399 produits sont « local » sans justification, les 161 factures importées n'ont aucune ligne de TVA, et les 1 179 tickets historiques n'ont ni scellé ni numéro de caisse. 45 produits sont vendus sous leur prix d'achat HT et 9 sont à 0 €. L'adaptation de l'import reste à faire.
+- **Reprise de l'ancien logiciel** : l'import suit maintenant les nouvelles règles (marquage alimentaire des univers 1 à 4, coût moyen du stock initial, tickets et factures repris au régime exonéré par défaut, option `--vat-regime`, feuille « Conformité » dans le rapport). Restent à compléter par des personnes : 360 produits alimentaires sans allergènes ni ingrédients, 142 produits « bio » sans certificat, 399 produits « local » sans justification, 45 produits vendus sous leur prix d'achat, 9 à 0 €, 124 adhérents sans trace de consentement. Les tickets historiques restent sans scellé (voulu, ADR 0016).
 - **Écran des clôtures Z et de l'archive** : l'API existe, pas l'écran.
 - **Avoirs fournisseur** : l'écriture comptable de l'avoir reprend la TVA des factures, à vérifier en détail ; le rapport des dettes fournisseurs ne déduit pas les avoirs non imputés.
 - **Statistiques** : un avoir est encore compté comme un ticket ; le chiffre d'affaires reste en TTC.
