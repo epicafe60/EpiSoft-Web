@@ -41,6 +41,11 @@ const envSchema = z.object({
   /** Shared secret of the backup scripts, which report their result to the API (optional). */
   BACKUP_REPORT_TOKEN: z.string().min(16).optional(),
   /**
+   * ADR 0016: key of the HMAC that signs every entry of the till's journal. Kept outside the
+   * database (in /etc/episoft/): whoever rewrites the database cannot sign what they rewrote.
+   */
+  FISCAL_SEAL_KEY: z.string().min(32).optional(),
+  /**
    * Where the purge puts the compressed copy of what it removes (ADR 0017), for the
    * administrators to download. Holds personal data: outside the web root, readable by the
    * application only. Default: `archives` next to where the server is started.

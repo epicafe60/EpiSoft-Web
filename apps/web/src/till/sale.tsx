@@ -32,7 +32,6 @@ import {
   normalizeSearch,
   parseAmountToCents,
   parseQtyToMilli,
-  provisionalNumber,
   sha256Hex,
   UNIT_LABELS,
   type SnapshotMember,
@@ -56,7 +55,7 @@ import { activeDraft, newDraft, parkDraft, resumeDraft, updateDraft } from './dr
 import { addProduct, draftTotalCents, lineCents, saleOp } from './logic';
 import { PreorderPickupDialog, type PickupOrder } from './preorders';
 import { PaymentDialog, type PaymentResult } from './payment';
-import { enqueue } from './sync';
+import { enqueueSealed } from './sync';
 import { TopupDialog } from './topup';
 import { Receipt } from './receipt';
 import { WeightDialog, LineDialog } from './line-dialogs';
@@ -279,9 +278,10 @@ export function SalePage() {
       opIds.current = { draftId: draft.id, id: crypto.randomUUID() };
     const opId = opIds.current.id;
     let number = '';
-    const op = await enqueue(
-      (deviceSeq) => {
-        number = provisionalNumber(meta.device!.name, deviceSeq);
+    const op = await enqueueSealed(
+      meta.device.name,
+      ({ deviceSeq, number: registerNo }) => {
+        number = registerNo;
         return saleOp({
           id: opId,
           deviceSeq,

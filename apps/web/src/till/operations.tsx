@@ -15,7 +15,6 @@ import {
   parseQtyToMilli,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
-  provisionalNumber,
   type OperationFilter,
   type OperationRow,
   shopDay,
@@ -31,7 +30,8 @@ import { Alert, Checkbox, Field, Input } from '@/components/ui/form';
 import { Select } from '@/components/ui/inputs';
 import { tillDb, type OutboxEntry } from './db';
 import { useTill } from './context';
-import { enqueue } from './sync';
+import { enqueueSealed } from './sync';
+import { TicketActions } from './ticket-actions';
 import { draftFromSale } from './drafts';
 import { linesFromSale } from './logic';
 import {
@@ -183,8 +183,8 @@ export function OperationsPage() {
     setSelected(null);
   };
   const cancelSale = async (saleId: string) => {
-    await enqueue((deviceSeq) => ({
-      kind: 'SALE_CANCEL',
+    await enqueueSealed(meta.device!.name, ({ deviceSeq, number }) => ({
+      kind: 'SALE_CANCEL' as const,
       id: crypto.randomUUID(),
       deviceSeq,
       payload: {
@@ -195,7 +195,7 @@ export function OperationsPage() {
         cashierCheck,
         ...(cashierProof ? { cashierProof } : {}),
         at: new Date().toISOString(),
-        provisionalNumber: provisionalNumber(meta.device!.name, deviceSeq),
+        provisionalNumber: number,
         reason: reason.trim() || undefined,
       },
     }));
@@ -486,6 +486,27 @@ export function OperationsPage() {
                 </div>
               </div>
             ) : null}
+            {selected.status !== 'REJECTED' ? (
+              <TicketActions
+                saleId={selected.id}
+                number={selected.result?.number ?? selected.op.payload.provisionalNumber}
+                sale={selected.op.payload}
+                lines={selected.op.payload.lines.map((l, i) => ({
+                  lineNo: i + 1,
+                  label: l.label,
+                  qty: l.qty,
+                  unitPrice: l.unitPrice,
+                  discount: l.discount,
+                }))}
+                paidWith={selected.op.payload.payments.map((p) => p.method)}
+                hasMember={!!selected.op.payload.memberId}
+                cancelled={cancelledIds.has(selected.id)}
+                memberName={
+                  selected.op.payload.memberId ? nameOf(selected.op.payload.memberId) : null
+                }
+                onDone={() => setSelected(null)}
+              />
+            ) : null}
             {!cancelledIds.has(selected.id) && selected.status !== 'REJECTED' ? (
               <CancelBox
                 reason={reason}
@@ -663,6 +684,23 @@ function ServerTicketDialog({
               onCancel={() => onCancel(detail.data!.id)}
             />
           )}
+          <TicketActions
+            saleId={detail.data.id}
+            number={detail.data.number}
+            sale={{
+              provisionalNumber: detail.data.provisionalNumber ?? detail.data.number,
+              soldAt: detail.data.soldAt,
+              total: detail.data.total,
+              lines: detail.data.lines,
+              payments: detail.data.payments,
+            }}
+            lines={detail.data.lines}
+            paidWith={detail.data.payments.map((p) => p.method)}
+            hasMember={!!detail.data.memberId}
+            cancelled={!!detail.data.cancelledBy || cancelledIds.has(detail.data.id)}
+            memberName={detail.data.memberName}
+            onDone={onClose}
+          />
         </div>
       ) : (
         <p className="text-muted-foreground">

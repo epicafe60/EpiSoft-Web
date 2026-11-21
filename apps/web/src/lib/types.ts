@@ -153,6 +153,7 @@ export interface SaleDetail extends Omit<SaleListItem, 'payments'> {
   lines: {
     id: string;
     lineNo: number;
+    productId: string;
     label: string;
     qty: string;
     unitPrice: string;

@@ -337,6 +337,20 @@
       "when": 1795256540368,
       "tag": "0047_compliance_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795258957453,
+      "tag": "0048_fiscal_seal",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795258971462,
+      "tag": "0049_fiscal_guards",
+      "breakpoints": true
     }
   ]
 }

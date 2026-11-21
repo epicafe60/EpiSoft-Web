@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { startMailer } from './lib/mail';
 import { startReminderJob } from './modules/members/reminders';
 import { startIntegrityJob } from './modules/admin/integrity';
+import { startFiscalClosingJob } from './modules/fiscal/routes';
 import { startDailyDigestJob } from './modules/admin/digest';
 import { startRetentionJob } from './modules/admin/retention/job';
 import { startInvoiceAlertJob } from './modules/supplies/invoices';
@@ -40,6 +41,7 @@ const stopMailer = startMailer(jobsDb, config, app.log);
 const stopReminders = startReminderJob(jobsDb, app.log, config);
 const stopInvoiceAlerts = startInvoiceAlertJob(jobsDb, app.log);
 const stopIntegrity = startIntegrityJob(jobsDb, app.log);
+const stopFiscalClosing = startFiscalClosingJob(jobsDb, app.log);
 const stopDigest = startDailyDigestJob(jobsDb, config, app.log);
 const stopRetention = startRetentionJob(jobsDb, config, app.log);
 
@@ -49,6 +51,7 @@ const shutdown = async (signal: string) => {
   stopReminders();
   stopInvoiceAlerts();
   stopIntegrity();
+  stopFiscalClosing();
   stopDigest();
   stopRetention();
   await app.close();

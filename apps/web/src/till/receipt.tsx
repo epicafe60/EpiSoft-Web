@@ -15,6 +15,18 @@ import { formatDateTime } from '@/lib/utils';
 
 type SalePayload = Extract<SyncOp, { kind: 'SALE' }>['payload'];
 
+/** What the ticket prints: a ticket of the queue, or one read from the server. */
+export type ReceiptSale = Pick<SalePayload, 'provisionalNumber' | 'soldAt' | 'total'> & {
+  lines: Pick<
+    SalePayload['lines'][number],
+    'productId' | 'label' | 'qty' | 'unitPrice' | 'discount'
+  >[];
+  payments: Pick<
+    SalePayload['payments'][number],
+    'method' | 'amount' | 'tendered' | 'change' | 'changeToWallet'
+  >[];
+};
+
 /**
  * R-VTE-13 (optional, Q3): ticket for an 80 mm thermal printer, printed with the
  * browser's print dialog. Hidden on screen; only it is printed.
@@ -23,14 +35,17 @@ export function Receipt({
   sale,
   associationName,
   memberName,
+  duplicata,
   address = null,
   siren = null,
   regime = 'LIABLE',
   vatOf,
 }: {
-  sale: SalePayload | null;
+  sale: ReceiptSale | null;
   associationName: string;
   memberName: string | null;
+  /** ADR 0016 §4: a reprint says so, with the rank of the copy. */
+  duplicata?: number;
   /** R-TVA-05: printed under the name, from the local snapshot (works offline). */
   address?: string | null;
   siren?: string | null;
@@ -61,6 +76,9 @@ export function Receipt({
   return (
     <div className="print-area receipt hidden font-mono text-[11px] leading-tight text-black print:block">
       <p className="text-center text-sm font-bold">{associationName}</p>
+      {duplicata ? (
+        <p className="text-center text-sm font-bold">DUPLICATA (copie n° {duplicata})</p>
+      ) : null}
       {address ? <p className="text-center">{address}</p> : null}
       {siren ? <p className="text-center">SIREN {siren}</p> : null}
       <p className="text-center">

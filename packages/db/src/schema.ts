@@ -831,9 +831,31 @@ export const sale = app.table(
     warningsReviewedAt: tz('warnings_reviewed_at'),
     createdAt: createdAt(),
     legacyRef: text('legacy_ref').unique(),
+    /**
+     * ADR 0016. The till's seal: rank in the register's gapless counter of documents, its own hash,
+     * the hash it follows, and what the server found when it recomputed it (OK, ABSENT, INVALID,
+     * GAP, BROKEN_LINK, DUPLICATE).
+     */
+    registerSeq: integer('register_seq'),
+    tillHash: text('till_hash'),
+    tillPrevHash: text('till_prev_hash'),
+    tillSealStatus: text('till_seal_status'),
+    /** The day whose closing counts this document: the day sold, or the first open day if later. */
+    accountingDay: date('accounting_day')
+      .notNull()
+      .default(sql`'1970-01-01'`),
+    /** A credit note: the ticket it gives back part of, why, and how the money went back. */
+    returnsSaleId: uuid('returns_sale_id').references((): AnyPgColumn => sale.id),
+    returnReason: text('return_reason'),
+    refundMethod: paymentMethod('refund_method'),
   },
   (t) => [
     index('sale_session_idx').on(t.sessionId),
+    index('sale_accounting_day_idx').on(t.accountingDay),
+    index('sale_device_register_idx').on(t.deviceId, t.registerSeq),
+    index('sale_returns_idx')
+      .on(t.returnsSaleId)
+      .where(sql`${t.returnsSaleId} is not null`),
     index('sale_household_idx').on(t.householdId, t.soldAt),
     index('sale_member_idx').on(t.memberId, t.soldAt),
     index('sale_sold_at_idx').on(t.soldAt),
@@ -861,6 +883,8 @@ export const saleLine = app.table(
     discount: money('discount').notNull().default('0'),
     lineTotal: money('line_total').notNull(),
     vatRate: numeric('vat_rate', { precision: 5, scale: 2 }).notNull().default('0'),
+    /** ADR 0016: the line of the original ticket this credit-note line gives back. */
+    returnsLineId: uuid('returns_line_id').references((): AnyPgColumn => saleLine.id),
   },
   (t) => [index('sale_line_sale_idx').on(t.saleId), index('sale_line_product_idx').on(t.productId)],
 );
@@ -893,6 +917,76 @@ export const salePayment = app.table(
       sql`not ${t.changeToWallet} or ${t.method} = 'CASH'`,
     ),
   ],
+);
+
+/**
+ * ADR 0016: the chained, signed journal of the till's events (tickets, cancellations, credit
+ * notes, sessions, reprints, closings). Gapless `seq`; each hash covers the previous one; the
+ * signature (HMAC with a key the database does not hold) stops a rewrite of the whole chain.
+ */
+export const fiscalJournal = app.table(
+  'fiscal_journal',
+  {
+    id: id(),
+    seq: integer('seq').notNull().unique(),
+    at: tz('at').notNull(),
+    kind: text('kind').notNull(),
+    /** What the entry is about: a ticket, a session, a closing… */
+    refType: text('ref_type').notNull(),
+    refId: uuid('ref_id').notNull(),
+    /** The canonical fields frozen when the event happened (recomputable from the rows). */
+    data: jsonb('data').notNull(),
+    prevHash: text('prev_hash').notNull(),
+    hash: text('hash').notNull(),
+    signature: text('signature'),
+  },
+  (t) => [index('fiscal_journal_ref_idx').on(t.refType, t.refId)],
+);
+
+/** ADR 0016: day, month and year closings (« Z »), sealed, with the perpetual grand total. */
+export const periodClosing = app.table(
+  'period_closing',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    closedAt: tz('closed_at').notNull().defaultNow(),
+    closedBy: uuid('closed_by').references(() => member.id),
+    tickets: integer('tickets').notNull(),
+    cancellations: integer('cancellations').notNull(),
+    returns: integer('returns').notNull(),
+    salesTotal: money('sales_total').notNull(),
+    refundsTotal: money('refunds_total').notNull(),
+    netTotal: money('net_total').notNull(),
+    /** Perpetual grand total at the end of the period: it never decreases. */
+    grandTotal: numeric('grand_total', { precision: 14, scale: 2 }).notNull(),
+    /** byVat, byMethod, first and last numbers. */
+    totals: jsonb('totals').notNull(),
+    journalSeq: integer('journal_seq').notNull(),
+  },
+  (t) => [
+    uniqueIndex('period_closing_one').on(t.kind, t.periodStart),
+    check('period_closing_kind', sql`${t.kind} in ('DAY', 'MONTH', 'YEAR')`),
+  ],
+);
+
+/** ADR 0016: every « DUPLICATA » printed, whoever printed it, wherever it was offline. */
+export const ticketReprint = app.table(
+  'ticket_reprint',
+  {
+    id: uuid('id').primaryKey(),
+    saleId: uuid('sale_id')
+      .notNull()
+      .references(() => sale.id),
+    /** Rank of the copy for this ticket (1 = the first duplicata). */
+    copyNo: integer('copy_no').notNull(),
+    at: tz('at').notNull(),
+    cashierId: uuid('cashier_id').references(() => member.id),
+    deviceId: uuid('device_id').references(() => posDevice.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('ticket_reprint_copy').on(t.saleId, t.copyNo)],
 );
 
 /** §8.3 idempotency: one row per operation pushed by a device; replays return `result`. */

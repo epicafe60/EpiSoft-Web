@@ -211,6 +211,12 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'sale.cancel': none(
     'Une annulation de ticket est définitive (elle a rendu l’argent). Ressaisissez la vente si besoin.',
   ),
+  'sale.return': none(
+    'Un avoir est définitif (il a rendu l’argent). Ressaisissez la vente si besoin.',
+  ),
+  'sale.reprint': none('Un duplicata imprimé est tracé : il ne s’efface pas.'),
+  'period.close': none('Une clôture de période est définitive (ADR 0016).'),
+  'fiscal.archive': none('Un export ne modifie rien.'),
   'sale.email_sent': none(CANNOT_UNSEND),
   'sale.warnings_reviewed': restore,
   'sync.rejected': via(

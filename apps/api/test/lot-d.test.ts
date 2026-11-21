@@ -352,7 +352,7 @@ describe('payments in cash (art. D112-3 CMF)', () => {
       method: 'CASH',
     });
     expect(refused.statusCode).toBe(400);
-    expect(refused.json().detail).toContain('1000 €');
+    expect(refused.json().detail).toContain('1000.00 €');
     expect(
       (await post(`/api/v1/supplier-invoices/${big}/pay`, { date: today(), method: 'TRANSFER' }))
         .statusCode,
