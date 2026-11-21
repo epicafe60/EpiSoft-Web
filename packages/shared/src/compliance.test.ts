@@ -43,9 +43,9 @@ describe('foodInfoProblems', () => {
     expect(
       foodInfoProblems({ ...base, allergensDecision: 'NONE', allergens: ['MILK'] }),
     ).toHaveLength(1);
-    expect(
-      foodInfoProblems({ ...base, allergensDecision: 'LISTED', allergens: [] }),
-    ).toHaveLength(1);
+    expect(foodInfoProblems({ ...base, allergensDecision: 'LISTED', allergens: [] })).toHaveLength(
+      1,
+    );
   });
 
   it('asks the ingredients and, for a piece, the net quantity', () => {
@@ -128,9 +128,7 @@ describe('organic claim', () => {
   });
   it('is refused without supplier, without certificate, or with an expired one', () => {
     expect(organicClaimProblem(null, '2026-11-15')).toMatch(/fournisseur/);
-    expect(organicClaimProblem({ ...ok, number: null }, '2026-11-15')).toMatch(
-      /pas de certificat/,
-    );
+    expect(organicClaimProblem({ ...ok, number: null }, '2026-11-15')).toMatch(/pas de certificat/);
     expect(organicClaimProblem({ ...ok, expiry: '2026-11-14' }, '2026-11-15')).toMatch(
       /a expiré le 14\/11\/2026/,
     );
@@ -161,17 +159,13 @@ describe('allergen text', () => {
         allergenTraces: ['NUTS'],
       }),
     ).toBe('Contient : lait, œufs. Peut contenir des traces de : fruits à coque.');
-    expect(
-      allergenSentence({ allergensDecision: 'NONE', allergens: [], allergenTraces: [] }),
-    ).toBe('Aucun allergène déclaré.');
+    expect(allergenSentence({ allergensDecision: 'NONE', allergens: [], allergenTraces: [] })).toBe(
+      'Aucun allergène déclaré.',
+    );
     expect(allergenSentence({ allergensDecision: null })).toBeNull();
   });
   it('reads a typed list', () => {
-    expect(parseAllergenList('Lait, oeufs ; sésame').allergens).toEqual([
-      'EGGS',
-      'MILK',
-      'SESAME',
-    ]);
+    expect(parseAllergenList('Lait, oeufs ; sésame').allergens).toEqual(['EGGS', 'MILK', 'SESAME']);
     expect(parseAllergenList('aucun').decision).toBe('NONE');
     expect(parseAllergenList('lait, truc').unknown).toEqual(['truc']);
     expect(parseAllergenList('').decision).toBeNull();

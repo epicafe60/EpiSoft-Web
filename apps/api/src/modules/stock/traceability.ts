@@ -47,10 +47,7 @@ interface OutDetail extends FefoOut {
 
 /** Every lot of a product and every exit of its stock, with what FEFO says of them. */
 async function replayProduct(db: DbOrTx, productId: string) {
-  const lotRows = await db
-    .select()
-    .from(productLot)
-    .where(eq(productLot.productId, productId));
+  const lotRows = await db.select().from(productLot).where(eq(productLot.productId, productId));
   const lots: FefoLot[] = lotRows.map((l) => ({
     id: l.id,
     receivedOn: l.receivedOn,
@@ -306,7 +303,10 @@ export const traceabilityRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
           if (b.lotNumber.length < 2) throw badRequest('Numéro de lot obligatoire.');
         }
         if (b.supplierId) {
-          const [s] = await tx.select({ id: supplier.id }).from(supplier).where(eq(supplier.id, b.supplierId));
+          const [s] = await tx
+            .select({ id: supplier.id })
+            .from(supplier)
+            .where(eq(supplier.id, b.supplierId));
           if (!s) throw badRequest('Fournisseur inconnu.');
         }
         const [lot] = await tx
@@ -345,7 +345,10 @@ export const traceabilityRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config 
     const report = await lotReport(db, req.params.id);
     const byMember = new Map<
       string,
-      { member: NonNullable<SaleInfo['member']>; tickets: { number: string; soldAt: string; qty: string }[] }
+      {
+        member: NonNullable<SaleInfo['member']>;
+        tickets: { number: string; soldAt: string; qty: string }[];
+      }
     >();
     let anonymousMilli = 0;
     let anonymousTickets = 0;

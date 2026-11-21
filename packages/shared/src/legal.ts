@@ -77,7 +77,8 @@ export const CONSENTS: Record<ConsentPurpose, ConsentDefinition> = {
     label: 'Information sur le traitement des données',
     text: 'J’ai pris connaissance de la politique de confidentialité : mes données d’adhérent sont traitées pour gérer mon adhésion, mes achats et ma cagnotte.',
     version: '2026-11',
-    basis: 'Information de la personne (art. 13 du RGPD) ; le traitement repose sur le contrat d’adhésion',
+    basis:
+      'Information de la personne (art. 13 du RGPD) ; le traitement repose sur le contrat d’adhésion',
     withdrawable: false,
   },
 };
@@ -95,8 +96,7 @@ export interface ConsentRecord {
 /** The current choice for each purpose: the latest record. Purposes never answered are absent. */
 export function currentConsents(history: readonly ConsentRecord[]): Map<string, ConsentRecord> {
   const out = new Map<string, ConsentRecord>();
-  for (const r of [...history].sort((a, b) => a.at.localeCompare(b.at)))
-    out.set(r.purpose, r);
+  for (const r of [...history].sort((a, b) => a.at.localeCompare(b.at))) out.set(r.purpose, r);
   return out;
 }
 
@@ -341,7 +341,14 @@ export const PROCESSING_REGISTER: ProcessingActivity[] = [
     name: 'Gestion des adhérents et des foyers',
     purpose: 'Gérer les adhésions, les foyers et la relation avec les adhérents.',
     basis: 'Contrat d’adhésion (art. 6.1.b)',
-    data: ['Nom, prénom', 'Adresse, commune', 'Téléphone, courriel', 'Numéro d’adhérent', 'Statut', 'Cotisations'],
+    data: [
+      'Nom, prénom',
+      'Adresse, commune',
+      'Téléphone, courriel',
+      'Numéro d’adhérent',
+      'Statut',
+      'Cotisations',
+    ],
     people: 'Adhérents et membres de leur foyer',
     recipients: 'Bénévoles habilités (rôle ADHÉRENTS), hébergeur',
     retention: 'Durée de l’adhésion, puis 3 ans, puis anonymisation (spec. §5.7, Q8).',
@@ -356,18 +363,38 @@ export const PROCESSING_REGISTER: ProcessingActivity[] = [
     people: 'Adhérents, clients de passage (sans identité)',
     recipients: 'Bénévoles de la caisse et de la comptabilité, hébergeur',
     retention: 'Tickets et écritures : 10 ans (code de commerce, art. L123-22).',
-    tables: ['sale', 'sale_line', 'sale_payment', 'wallet_entry', 'wallet_snapshot', 'wallet_low_notice', 'cash_session'],
+    tables: [
+      'sale',
+      'sale_line',
+      'sale_payment',
+      'wallet_entry',
+      'wallet_snapshot',
+      'wallet_low_notice',
+      'cash_session',
+    ],
   },
   {
     id: 'access',
     name: 'Accès à l’application et sécurité',
     purpose: 'Authentifier les personnes et détecter les usages anormaux.',
     basis: 'Intérêt légitime (art. 6.1.f) : sécurité du système',
-    data: ['Identifiant, mot de passe haché', 'Adresse IP, date et résultat des connexions', 'Session'],
+    data: [
+      'Identifiant, mot de passe haché',
+      'Adresse IP, date et résultat des connexions',
+      'Session',
+    ],
     people: 'Adhérents et bénévoles qui se connectent',
     recipients: 'Administrateurs, hébergeur',
-    retention: 'Référence : sessions à leur expiration, journaux de connexion 12 mois (recommandation CNIL).',
-    tables: ['session', 'login_log', 'password_reset_token', 'user_role', 'till_cashier_proof', 'till_pin_attempt'],
+    retention:
+      'Référence : sessions à leur expiration, journaux de connexion 12 mois (recommandation CNIL).',
+    tables: [
+      'session',
+      'login_log',
+      'password_reset_token',
+      'user_role',
+      'till_cashier_proof',
+      'till_pin_attempt',
+    ],
   },
   {
     id: 'messages',
@@ -399,7 +426,8 @@ export const PROCESSING_REGISTER: ProcessingActivity[] = [
     data: ['Commandes', 'Avis et notes', 'Produits favoris'],
     people: 'Adhérents',
     recipients: 'Bénévoles de la préparation et de la modération, hébergeur',
-    retention: 'Commandes : comme les tickets (10 ans). Avis et favoris : jusqu’à la sortie de l’adhérent.',
+    retention:
+      'Commandes : comme les tickets (10 ans). Avis et favoris : jusqu’à la sortie de l’adhérent.',
     tables: ['preorder', 'product_review', 'product_favorite'],
   },
   {
@@ -407,10 +435,14 @@ export const PROCESSING_REGISTER: ProcessingActivity[] = [
     name: 'Journal des modifications',
     purpose: 'Savoir qui a fait quoi, pouvoir annuler une erreur et prouver les opérations.',
     basis: 'Intérêt légitime (art. 6.1.f) et obligation de contrôle comptable',
-    data: ['Auteur, date, adresse IP', 'Valeurs avant / après (données personnelles masquées à l’anonymisation)'],
+    data: [
+      'Auteur, date, adresse IP',
+      'Valeurs avant / après (données personnelles masquées à l’anonymisation)',
+    ],
     people: 'Adhérents et bénévoles',
     recipients: 'Administrateurs',
-    retention: 'Référence : 10 ans pour ce qui touche à la comptabilité ; sinon à définir (politique de conservation à venir).',
+    retention:
+      'Référence : 10 ans pour ce qui touche à la comptabilité ; sinon à définir (politique de conservation à venir).',
     tables: ['audit_log', 'data_change'],
   },
   {
@@ -420,7 +452,8 @@ export const PROCESSING_REGISTER: ProcessingActivity[] = [
     basis: 'Obligation légale (art. 6.1.c)',
     data: ['Lots reçus, tickets liés et adhérents identifiés'],
     people: 'Adhérents ayant acheté un produit alimentaire',
-    recipients: 'Bénévoles des produits et des approvisionnements ; autorités sanitaires sur demande',
+    recipients:
+      'Bénévoles des produits et des approvisionnements ; autorités sanitaires sur demande',
     retention: 'Référence : 5 ans après la date limite du produit, au moins.',
     tables: ['product_lot'],
   },

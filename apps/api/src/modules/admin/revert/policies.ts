@@ -235,7 +235,9 @@ export const REVERT_POLICIES: Record<AuditAction, Resolver> = {
   'preorder.status': restore,
   // Members
   'member.create': restore,
-  'consent.record': none('Un consentement est une preuve datée : pour le changer, enregistrez un nouveau choix (le retrait est un nouvel enregistrement).'),
+  'consent.record': none(
+    'Un consentement est une preuve datée : pour le changer, enregistrez un nouveau choix (le retrait est un nouvel enregistrement).',
+  ),
   'lot.create': restore,
   'lot.recall_view': none(CANNOT_UNSEND),
   'member.update': restore,

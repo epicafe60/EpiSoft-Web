@@ -136,7 +136,10 @@ export const consentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
     '/members/:id/consents',
     { preHandler: app.requireRoles('ADHERENTS'), schema: idParams },
     async (req) => {
-      const [m] = await db.select({ id: member.id }).from(member).where(eq(member.id, req.params.id));
+      const [m] = await db
+        .select({ id: member.id })
+        .from(member)
+        .where(eq(member.id, req.params.id));
       if (!m) throw notFound('Membre introuvable.');
       return consentSummary(db, m.id);
     },
@@ -157,13 +160,11 @@ export const consentRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = 
         'Ce point ne se retire pas ici : pour arrêter le traitement de vos données, écrivez à l’association (voir la politique de confidentialité).',
       );
     if (purpose === 'NOTIFICATIONS' && granted)
-      throw badRequest('Les notifications s’activent depuis l’appareil concerné (bouton « Activer »).');
+      throw badRequest(
+        'Les notifications s’activent depuis l’appareil concerné (bouton « Activer »).',
+      );
     return db.transaction(async (tx) => {
-      const [m] = await tx
-        .select()
-        .from(member)
-        .where(eq(member.id, req.user!.id))
-        .for('update');
+      const [m] = await tx.select().from(member).where(eq(member.id, req.user!.id)).for('update');
       if (!m) throw notFound('Compte introuvable.');
       // A choice the sheet already holds but whose record is missing is recorded first, so that
       // its withdrawal leaves a trace (and the audit entry that goes with the change).

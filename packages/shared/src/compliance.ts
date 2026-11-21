@@ -49,14 +49,7 @@ export const ALLERGEN_DECISION_LABELS: Record<AllergenDecision, string> = {
 };
 
 /** Families for which the origin is compulsory (règlements UE 1337/2013, 1169/2011, directive « miel »…). */
-export const ORIGIN_FAMILIES = [
-  'FRUIT_VEG',
-  'HONEY',
-  'MEAT',
-  'FISH',
-  'EGGS',
-  'OLIVE_OIL',
-] as const;
+export const ORIGIN_FAMILIES = ['FRUIT_VEG', 'HONEY', 'MEAT', 'FISH', 'EGGS', 'OLIVE_OIL'] as const;
 export type OriginFamily = (typeof ORIGIN_FAMILIES)[number];
 export const ORIGIN_FAMILY_LABELS: Record<OriginFamily, string> = {
   FRUIT_VEG: 'Fruits et légumes frais',
@@ -284,7 +277,8 @@ export function allergenSentence(p: {
   const parts: string[] = [];
   if (p.allergensDecision === 'NONE') parts.push('Aucun allergène déclaré.');
   else if (p.allergens?.length) parts.push(`Contient : ${names(p.allergens)}.`);
-  if (p.allergenTraces?.length) parts.push(`Peut contenir des traces de : ${names(p.allergenTraces)}.`);
+  if (p.allergenTraces?.length)
+    parts.push(`Peut contenir des traces de : ${names(p.allergenTraces)}.`);
   return parts.join(' ');
 }
 
@@ -295,12 +289,7 @@ export function parseAllergenList(raw: string): {
   unknown: string[];
 } {
   const fold = (s: string) =>
-    s
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/œ/gi, 'oe')
-      .toLowerCase()
-      .trim();
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/œ/gi, 'oe').toLowerCase().trim();
   const text = fold(raw);
   if (text === '') return { decision: null, allergens: [], unknown: [] };
   if (['aucun', 'aucun allergene', 'non', 'neant', '0'].includes(text))
@@ -329,7 +318,10 @@ export function parseAllergenList(raw: string): {
   };
   const found = new Set<Allergen>();
   const unknown: string[] = [];
-  for (const part of text.split(/[,;/]+/).map((s) => s.trim()).filter(Boolean)) {
+  for (const part of text
+    .split(/[,;/]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     const hit = byName.get(part) ?? extra[part];
     if (hit) found.add(hit);
     else unknown.push(part);
@@ -342,10 +334,10 @@ export function parseAllergenList(raw: string): {
 }
 
 /** How the claims of a product are shown to the public (the organic one only while it is valid). */
-export function publicClaims(p: {
-  qualities: readonly string[];
-  organic: OrganicState;
-}): { organic: boolean; local: boolean } {
+export function publicClaims(p: { qualities: readonly string[]; organic: OrganicState }): {
+  organic: boolean;
+  local: boolean;
+} {
   return {
     organic: p.qualities.includes('ORGANIC') && p.organic === 'VALID',
     local: p.qualities.includes('LOCAL'),

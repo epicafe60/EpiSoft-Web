@@ -58,9 +58,8 @@ export const legalRoutes: FastifyPluginAsyncZod<{ db: Db; config: Config }> = as
     for (const a of PROCESSING_REGISTER) {
       const tables = [];
       for (const t of a.tables) {
-        const [r] = (
-          await db.execute(sql`select count(*)::int as n from app.${sql.identifier(t)}`)
-        ).rows as { n: number }[];
+        const [r] = (await db.execute(sql`select count(*)::int as n from app.${sql.identifier(t)}`))
+          .rows as { n: number }[];
         tables.push({ table: t, rows: r!.n });
       }
       out.push({ ...a, tables });
