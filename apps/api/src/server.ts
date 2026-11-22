@@ -41,7 +41,11 @@ const stopMailer = startMailer(jobsDb, config, app.log);
 const stopReminders = startReminderJob(jobsDb, app.log, config);
 const stopInvoiceAlerts = startInvoiceAlertJob(jobsDb, app.log);
 const stopIntegrity = startIntegrityJob(jobsDb, app.log);
-const stopFiscalClosing = startFiscalClosingJob(jobsDb, app.log);
+if (!config.FISCAL_AUTOCLOSE)
+  app.log.warn('FISCAL_AUTOCLOSE=false: the automatic closing of the days is suspended.');
+const stopFiscalClosing = config.FISCAL_AUTOCLOSE
+  ? startFiscalClosingJob(jobsDb, app.log)
+  : () => undefined;
 const stopDigest = startDailyDigestJob(jobsDb, config, app.log);
 const stopRetention = startRetentionJob(jobsDb, config, app.log);
 
