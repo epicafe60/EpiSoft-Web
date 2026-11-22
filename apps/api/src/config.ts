@@ -51,6 +51,11 @@ const envSchema = z.object({
    * application only. Default: `archives` next to where the server is started.
    */
   ARCHIVE_DIR: z.string().optional(),
+  /**
+   * ADR 0016 §3: the nightly closing of the days gone by. `false` suspends it (the closings are
+   * final: suspend it while the first deployment is checked, then switch it on). Default: on.
+   */
+  FISCAL_AUTOCLOSE: bool.default(true),
 });
 
 export type Config = z.infer<typeof envSchema>;

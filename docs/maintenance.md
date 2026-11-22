@@ -227,3 +227,19 @@ Node 22 and daily backups kept elsewhere.
   sur le serveur, `/var/lib/postgresql`).
 - La purge des journaux passe par la fonction `app.retention_run` (propriétaire de la base) : elle ne protège
   l'historique qu'après la séparation des rôles (section « Database roles »).
+
+## Premier déploiement du lot « caisse inaltérable » (migrations 0028 à 0049)
+
+Décisions du propriétaire (2026-11-22) :
+
+- **Régime de TVA : exonéré.** Après les migrations, le propriétaire de la base exécute une fois
+  `deploy/db/set-vat-regime.sql` (voir son en-tête) : il ouvre l'historique des régimes (« exonéré » dès le
+  premier jour des données) et remet « exonéré » sur les tickets et factures que la migration 0043 a laissés
+  en « assujetti » (le défaut). Les montants, les lignes de TVA et les écritures déjà passées ne bougent pas :
+  la suite à donner aux écritures de TVA du passé revient à l'expert-comptable.
+- **Clôture automatique des journées suspendue** : mettre `FISCAL_AUTOCLOSE=false` dans `/etc/episoft/api.env`
+  avant le premier démarrage. Les clôtures Z sont définitives, et sans cet interrupteur la tâche clôturerait
+  d'un coup tous les jours passés depuis le lancement. Pour la réactiver : retirer la ligne (ou `true`) et
+  redémarrer ; les jours se clôturent aussi à la main (Comptabilité › Clôtures Z).
+- Ajouter aussi `FISCAL_SEAL_KEY` (32 caractères au moins, copie hors du serveur), `ARCHIVE_DIR` et
+  `DISK_CHECK_PATH` (voir ci-dessus).
